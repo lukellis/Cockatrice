@@ -108,6 +108,36 @@ void PhaseButton::triggerDoubleClickAction()
     }
 }
 
+PriorityButton::PriorityButton(QAction *_toggleAutoPassAction, QGraphicsItem *parent)
+    : PhaseButton(QStringLiteral("pass_priority"), parent, _toggleAutoPassAction, true)
+{
+}
+
+void PriorityButton::setAutoPassEnabled(bool _autoPassEnabled)
+{
+    if (autoPassEnabled == _autoPassEnabled) {
+        return;
+    }
+    autoPassEnabled = _autoPassEnabled;
+    update();
+}
+
+void PriorityButton::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
+{
+    PhaseButton::paint(painter, option, widget);
+    if (!autoPassEnabled) {
+        return;
+    }
+
+    const qreal dotDiameter = boundingRect().width() * 0.28;
+    QRectF dotRect(boundingRect().width() - dotDiameter - 3, 3, dotDiameter, dotDiameter);
+    painter->save();
+    painter->setBrush(QColor(80, 200, 255));
+    painter->setPen(Qt::white);
+    painter->drawEllipse(dotRect);
+    painter->restore();
+}
+
 PhasesToolbar::PhasesToolbar(QGraphicsItem *parent)
     : QGraphicsItem(parent), commanderGame(false), width(100), height(100), ySpacing(1), symbolSize(8)
 {
@@ -138,7 +168,10 @@ PhasesToolbar::PhasesToolbar(QGraphicsItem *parent)
     nextTurnButton = new PhaseButton("nextturn", this, nullptr, false);
     connect(nextTurnButton, &PhaseButton::clicked, this, &PhasesToolbar::actNextTurn);
 
-    passPriorityButton = new PhaseButton("pass_priority", this);
+    auto *aToggleAutoPassPriority = new QAction(this);
+    connect(aToggleAutoPassPriority, &QAction::triggered, this, &PhasesToolbar::actToggleAutoPassPriority);
+
+    passPriorityButton = new PriorityButton(aToggleAutoPassPriority, this);
     passPriorityButton->setVisible(false);
     connect(passPriorityButton, &PhaseButton::clicked, this, &PhasesToolbar::actPassPriority);
 
@@ -157,7 +190,14 @@ void PhasesToolbar::retranslateUi()
     for (int i = 0; i < buttonList.size(); ++i) {
         buttonList[i]->setToolTip(getLongPhaseName(i));
     }
-    passPriorityButton->setToolTip(tr("Pass priority"));
+    updatePassPriorityTooltip();
+}
+
+void PhasesToolbar::updatePassPriorityTooltip()
+{
+    passPriorityButton->setToolTip(autoPassPriority
+                                       ? tr("Pass priority (auto-pass is ON — double-click to turn off)")
+                                       : tr("Pass priority (double-click to auto-pass while you hold it)"));
 }
 
 QString PhasesToolbar::getLongPhaseName(int phase) const
@@ -261,6 +301,9 @@ void PhasesToolbar::setCommanderGame(bool isCommanderGame)
 void PhasesToolbar::setPriorityHolder(bool localPlayerHasPriority)
 {
     passPriorityButton->setActive(localPlayerHasPriority);
+    if (localPlayerHasPriority && autoPassPriority) {
+        actPassPriority();
+    }
 }
 
 void PhasesToolbar::setActivePhase(int phase)
@@ -320,4 +363,15 @@ void PhasesToolbar::actDrawCard()
 void PhasesToolbar::actPassPriority()
 {
     emit sendGameCommand(Command_PassPriority(), -1);
+}
+
+void PhasesToolbar::actToggleAutoPassPriority()
+{
+    autoPassPriority = !autoPassPriority;
+    passPriorityButton->setAutoPassEnabled(autoPassPriority);
+    updatePassPriorityTooltip();
+
+    if (autoPassPriority && passPriorityButton->getActive()) {
+        actPassPriority();
+    }
 }

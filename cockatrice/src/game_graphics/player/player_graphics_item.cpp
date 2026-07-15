@@ -59,6 +59,7 @@ PlayerGraphicsItem::PlayerGraphicsItem(PlayerLogic *_player) : player(_player)
     qreal avatarMargin =
         (counterAreaWidth + CardDimensions::HEIGHT_F + 15 - playerTarget->boundingRect().width()) / 2.0;
     playerTarget->setPos(QPointF(avatarMargin, avatarMargin));
+    connect(player, &PlayerLogic::holdsPriorityChanged, playerTarget, &PlayerTarget::setHoldsPriority);
 
     initializeZones();
 

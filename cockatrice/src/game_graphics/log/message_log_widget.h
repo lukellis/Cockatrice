@@ -83,6 +83,18 @@ public slots:
                         bool faceDown,
                         int amount,
                         bool isLentToAnotherPlayer);
+    /**
+     * @brief Commander-only (see GameMetaInfo::isCommanderGame): logs who now holds priority
+     * within the active phase's priority-passing round (see COMMANDER_IMPLEMENTATION_STATUS.md's
+     * Phase 5 section).
+     */
+    void logPriorityChanged(PlayerLogic *player);
+    /**
+     * @brief Logged when a priority round completes with everyone passing (see
+     * Server_Game::advancePriority) — priority simply stops until the next phase change or
+     * spell/ability, rather than auto-advancing the phase.
+     */
+    void logPriorityCleared();
     void logReverseTurn(PlayerLogic *player, bool reversed);
     void logRollDie(PlayerLogic *player, int sides, const QList<uint> &rolls);
     void logSay(PlayerLogic *player, QString message);

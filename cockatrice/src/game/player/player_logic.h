@@ -78,6 +78,13 @@ signals:
     void counterRemoved(int counterId);
     void rearrangeCounters();
     void activeChanged(bool active);
+    /**
+     * @brief Commander-only (see GameMetaInfo::isCommanderGame): whether this player currently
+     * holds priority within the active phase's priority-passing round. Separate from
+     * activeChanged (whose turn it is) — see COMMANDER_IMPLEMENTATION_STATUS.md's Phase 5
+     * section for why priority can belong to a non-active player.
+     */
+    void holdsPriorityChanged(bool holdsPriority);
     void zoneIdChanged(int zoneId);
     void concededChanged(int playerId, bool conceded);
     void clearCustomZonesMenu();
@@ -90,6 +97,7 @@ signals:
 
 public slots:
     void setActive(bool _active);
+    void setHoldsPriority(bool _holdsPriority);
     void onRequestZoneViewToggle(const QString &zoneName, int numberCards, bool isReversed);
 
 public:
@@ -111,6 +119,11 @@ public:
     bool getActive() const
     {
         return active;
+    }
+
+    bool getHoldsPriority() const
+    {
+        return holdsPriority;
     }
 
     AbstractGame *getGame() const
@@ -238,6 +251,7 @@ private:
     PlayerActions *playerActions;
 
     bool active;
+    bool holdsPriority = false;
     bool conceded;
 
     DeckList deck;

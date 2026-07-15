@@ -139,8 +139,9 @@ void PlayerTarget::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*o
     painter->drawText(translatedNameRect, Qt::AlignVCenter | Qt::AlignLeft, "  " + name);
     painter->restore();
 
-    QPen pen(QColor(100, 100, 100));
-    pen.setWidth(border);
+    const qreal priorityBorder = 4;
+    QPen pen(holdsPriority ? QColor(80, 200, 255) : QColor(100, 100, 100));
+    pen.setWidth(holdsPriority ? priorityBorder : border);
     pen.setJoinStyle(Qt::RoundJoin);
     painter->setPen(pen);
     painter->drawRect(boundingRect().adjusted(border / 2, border / 2, -border / 2, -border / 2));
@@ -148,6 +149,15 @@ void PlayerTarget::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*o
     if (getBeingPointedAt()) {
         painter->fillRect(boundingRect(), QBrush(QColor(255, 0, 0, 100)));
     }
+}
+
+void PlayerTarget::setHoldsPriority(bool _holdsPriority)
+{
+    if (holdsPriority == _holdsPriority) {
+        return;
+    }
+    holdsPriority = _holdsPriority;
+    update();
 }
 
 AbstractCounter *PlayerTarget::addCounter(CounterState *state)

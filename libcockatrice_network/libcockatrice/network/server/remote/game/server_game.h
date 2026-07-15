@@ -110,6 +110,10 @@ private:
                                      bool omniscient,
                                      bool withUserInfo);
     void storeGameInformation();
+    // Shared by setActivePhase() and resetPriorityTo(): clears who's passed, sets the new
+    // priority holder, and broadcasts it. Caller must hold gameMutex (recursive, so callers that
+    // already hold it — e.g. resetPriorityTo() — are safe).
+    void broadcastPriorityChange(int playerId);
 signals:
     void sigStartGameIfReady(bool override);
     void gameInfoChanged(ServerInfo_Game gameInfo);
@@ -260,13 +264,24 @@ public:
 
     /**
      * @brief Called when @p passingPlayerId passes priority. Advances priority to the next
-     * player in turn order (see nextPriorityPlayer()) who hasn't yet passed since the last
-     * phase/turn change; if everyone eligible has now passed, advances to the next phase (or,
-     * wrapping past the last phase, the next turn) instead — Commander's simplified stand-in
-     * for "the stack is empty and everyone passes in succession" (rule 117.4), since this fork
-     * doesn't model the stack as resolvable objects (see Phase 5 notes).
+     * player in turn order (see nextPriorityPlayer()) who hasn't yet passed since the current
+     * round started; if everyone eligible has now passed, priority simply stops (broadcasts
+     * priority_player_id -1, "no one") — Commander's simplified stand-in for "the stack is
+     * empty and everyone passes in succession" (rule 117.4), since this fork doesn't model the
+     * stack as resolvable objects (see Phase 5 notes). Deliberately does NOT auto-advance the
+     * phase/turn: this is a manual "physical simulator" fork (see CLAUDE.md), so phase changes
+     * are always a deliberate player action, never a side effect of priority passing.
      */
     void advancePriority(int passingPlayerId);
+
+    /**
+     * @brief Starts a new priority round at @p playerId (Commander games only; a no-op
+     * otherwise). Used both by setActivePhase() (a new phase/step starts a round at the active
+     * player, rule 117.3b/117.3c simplified) and by Server_Player::onCardBeingMoved() (a card
+     * moving onto the Stack zone — i.e. a spell cast or ability activation — starts a round at
+     * whoever moved it, rule 117.3d simplified).
+     */
+    void resetPriorityTo(int playerId);
 
     /**
      * @brief Pure logic: the next player, in ascending-id turn order starting just after

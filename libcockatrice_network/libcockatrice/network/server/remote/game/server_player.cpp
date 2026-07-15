@@ -255,6 +255,14 @@ void Server_Player::onCardBeingMoved(GameEventStorage &ges,
             }
         }
     }
+
+    // A card moving onto the Stack zone represents casting a spell or activating an ability
+    // (rules 601.2i/602.2h simplified) — starts a fresh priority round at whoever moved it (rule
+    // 117.3d simplified; see Server_Game::resetPriorityTo). Reordering cards already on the
+    // stack doesn't count as a new cast/activation.
+    if (targetzone->getName() == ZoneNames::STACK && startzone->getName() != ZoneNames::STACK) {
+        game->resetPriorityTo(playerId);
+    }
 }
 
 Response::ResponseCode

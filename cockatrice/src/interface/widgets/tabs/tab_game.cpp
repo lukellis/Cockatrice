@@ -208,6 +208,10 @@ void TabGame::connectMessageLogToGameEventHandler()
 
     connect(game->getGameEventHandler(), &GameEventHandler::logTurnReversed, messageLog,
             &MessageLogWidget::logReverseTurn);
+    connect(game->getGameEventHandler(), &GameEventHandler::logPriorityChanged, messageLog,
+            &MessageLogWidget::logPriorityChanged);
+    connect(game->getGameEventHandler(), &GameEventHandler::logPriorityCleared, messageLog,
+            &MessageLogWidget::logPriorityCleared);
 
     connect(game->getGameEventHandler(), &GameEventHandler::logConcede, messageLog, &MessageLogWidget::logConcede);
     connect(game->getGameEventHandler(), &GameEventHandler::logUnconcede, messageLog, &MessageLogWidget::logUnconcede);
@@ -895,6 +899,12 @@ void TabGame::setActivePhase(int phase)
 void TabGame::setPriorityPlayer(int priorityPlayerId)
 {
     phasesToolbar->setPriorityHolder(priorityPlayerId == game->getPlayerManager()->getLocalPlayerId());
+
+    QMapIterator<int, PlayerLogic *> i(game->getPlayerManager()->getPlayers());
+    while (i.hasNext()) {
+        i.next();
+        i.value()->setHoldsPriority(i.key() == priorityPlayerId);
+    }
 }
 
 void TabGame::newCardAdded(AbstractCardItem *card)

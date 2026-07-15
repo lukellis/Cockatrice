@@ -571,6 +571,16 @@ void MessageLogWidget::logRevealCards(PlayerLogic *player,
     }
 }
 
+void MessageLogWidget::logPriorityChanged(PlayerLogic *player)
+{
+    appendHtmlServerMessage(tr("%1 has priority.").arg(sanitizeHtml(player->getPlayerInfo()->getName())));
+}
+
+void MessageLogWidget::logPriorityCleared()
+{
+    appendHtmlServerMessage(tr("Everyone has passed. No one has priority."));
+}
+
 void MessageLogWidget::logReverseTurn(PlayerLogic *player, bool reversed)
 {
     appendHtmlServerMessage(tr("%1 reversed turn order, now it's %2.")

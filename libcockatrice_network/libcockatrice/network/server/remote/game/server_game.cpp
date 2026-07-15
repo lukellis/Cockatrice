@@ -746,12 +746,29 @@ void Server_Game::setActivePhase(int newPhase)
 
         // Priority resets to the active player at the start of every phase (rule 117.3b/117.3c
         // simplified — see advancePriority()/isCommanderGame() docs for what this doesn't model).
-        priorityPassedBy.clear();
-        priorityPlayerId = activePlayer;
-        Event_PriorityChanged priorityEvent;
-        priorityEvent.set_priority_player_id(priorityPlayerId);
-        sendGameEventContainer(prepareGameEvent(priorityEvent, -1));
+        broadcastPriorityChange(activePlayer);
     }
+}
+
+void Server_Game::resetPriorityTo(int playerId)
+{
+    QMutexLocker locker(&gameMutex);
+
+    if (!isCommanderGame()) {
+        return;
+    }
+
+    broadcastPriorityChange(playerId);
+}
+
+void Server_Game::broadcastPriorityChange(int playerId)
+{
+    // Caller holds gameMutex.
+    priorityPassedBy.clear();
+    priorityPlayerId = playerId;
+    Event_PriorityChanged event;
+    event.set_priority_player_id(priorityPlayerId);
+    sendGameEventContainer(prepareGameEvent(event, -1));
 }
 
 void Server_Game::advancePriority(int passingPlayerId)
@@ -781,16 +798,23 @@ void Server_Game::advancePriority(int passingPlayerId)
         return;
     }
 
-    // Everyone eligible has passed in succession. Rule 117.4 would resolve the top stack object
-    // here; this fork's Stack zone is a manual visual aid with no resolvable objects (see Phase
-    // 5 notes), so instead this is simplified to: advance to the next phase, wrapping past the
-    // last phase into the next turn (which itself resets priority via setActivePhase() above).
-    int nextPhase = (activePhase + 1) % COMMANDER_PHASE_COUNT;
-    if (nextPhase == 0) {
-        nextTurn();
-    } else {
-        setActivePhase(nextPhase);
-    }
+    // Everyone eligible has passed in succession without anyone starting a new round (rule 117.4
+    // would resolve the top stack object here; this fork's Stack zone is a manual visual aid with
+    // no resolvable objects, see Phase 5 notes) — priority simply stops. No one holds it again
+    // until the next priority-triggering event: a phase change (setActivePhase) or a spell/ability
+    // going on the stack (resetPriorityTo, see Server_Player::onCardBeingMoved). Deliberately does
+    // NOT auto-advance the phase/turn: this is a manual "physical simulator" fork (see CLAUDE.md's
+    // design principles) — phase advancement is always a deliberate player action, never an
+    // automatic side effect of priority passing. (An earlier version of this function did
+    // auto-advance here; in a solo/last-player-standing game that meant passing priority handed it
+    // right back to the same player with nothing else to wait on, which combined with the
+    // client's auto-pass toggle caused a genuine infinite loop, only stopped by servatrice's own
+    // flood-protection. This design removes the loop at its root instead of rate-limiting it.)
+    priorityPassedBy.clear();
+    priorityPlayerId = -1;
+    Event_PriorityChanged event;
+    event.set_priority_player_id(priorityPlayerId);
+    sendGameEventContainer(prepareGameEvent(event, -1));
 }
 
 int Server_Game::nextPriorityPlayer(const QList<int> &playerOrder,

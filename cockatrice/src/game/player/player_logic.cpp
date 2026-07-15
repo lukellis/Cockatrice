@@ -319,6 +319,15 @@ void PlayerLogic::setActive(bool _active)
     active = _active;
     emit activeChanged(active);
 }
+
+void PlayerLogic::setHoldsPriority(bool _holdsPriority)
+{
+    if (holdsPriority == _holdsPriority) {
+        return;
+    }
+    holdsPriority = _holdsPriority;
+    emit holdsPriorityChanged(holdsPriority);
+}
 void PlayerLogic::onRequestZoneViewToggle(const QString &zoneName, int numberCards, bool isReversed)
 {
     emit requestZoneViewToggle(this, zoneName, numberCards, isReversed);

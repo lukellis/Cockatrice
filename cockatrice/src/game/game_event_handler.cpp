@@ -509,6 +509,13 @@ void GameEventHandler::eventPriorityChanged(const Event_PriorityChanged &event,
                                             const GameEventContext & /*context*/)
 {
     emit priorityChanged(event.priority_player_id());
+
+    PlayerLogic *player = game->getPlayerManager()->getPlayers().value(event.priority_player_id(), nullptr);
+    if (player) {
+        emit logPriorityChanged(player);
+    } else {
+        emit logPriorityCleared();
+    }
 }
 
 void GameEventHandler::eventGameHostChanged(const Event_GameHostChanged & /*event*/,

@@ -30,6 +30,7 @@ class PlayerTarget : public ArrowTarget
 private:
     QPixmap fullPixmap;
     PlayerCounter *playerCounter;
+    bool holdsPriority = false;
 public slots:
     void counterDeleted();
 
@@ -49,6 +50,14 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
     AbstractCounter *addCounter(CounterState *state);
+public slots:
+    /**
+     * @brief Commander-only priority-holder indicator, visible to every player/spectator (unlike
+     * the Pass Priority toolbar button's highlight, which is local-only). Deliberately a
+     * different visual channel (badge border color) than the active-turn highlight on TableZone,
+     * since priority and the active turn are tracked separately (see PlayerLogic::holdsPriorityChanged).
+     */
+    void setHoldsPriority(bool _holdsPriority);
 };
 
 #endif

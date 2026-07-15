@@ -135,6 +135,8 @@ signals:
     void logConcede(int playerId);
     void logUnconcede(int playerId);
     void priorityChanged(int priorityPlayerId);
+    void logPriorityChanged(PlayerLogic *player);
+    void logPriorityCleared();
 };
 
 #endif // COCKATRICE_GAME_EVENT_HANDLER_H
