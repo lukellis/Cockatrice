@@ -8,6 +8,18 @@ that file first** before resuming work; it's kept up to date as the source of tr
 across sessions (this repo's build has previously been interrupted by sandbox OOM,
 so don't assume anything in conversation memory is current — check the file).
 
+The original design inspiration is
+[`doc/design-docs/mtg-commander-rules-engine.md`](doc/design-docs/mtg-commander-rules-engine.md)
+(mirrored in-repo from [jeffyche/fun-stuff](https://github.com/jeffyche/fun-stuff/blob/master/design-docs/mtg-commander-rules-engine.md)
+so it survives if the source disappears/changes). It proposes a much larger 9–13
+month, 9-phase roadmap (turn structure, stack/priority, mana, abilities, combat,
+full state-based actions, plus a 4-player UI overhaul) — this fork intentionally
+implements only its own §8 "Recommended Starting Point" (deck validation +
+commander damage/tax via existing counters + 40 life), not the full engine. See
+`COMMANDER_IMPLEMENTATION_STATUS.md`'s phase-tracking table before treating any
+unimplemented phase as an oversight — it's a scope decision, not a gap to
+silently fill without discussing size/risk first.
+
 ## Git remotes — read before pushing
 
 - `origin` = the real upstream `Cockatrice/Cockatrice` repo. **Not owned by this

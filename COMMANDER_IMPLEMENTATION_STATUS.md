@@ -11,10 +11,33 @@ in the sandbox). See the "Commander-Rules Fork of Cockatrice" section of
 Fork of [Cockatrice/Cockatrice](https://github.com/Cockatrice/Cockatrice), adding
 enforcement of the official [Commander/EDH rules](https://mtgcommander.net/index.php/rules/),
 loosely following the phased design in
-[jeffyche/fun-stuff's mtg-commander-rules-engine doc](https://github.com/jeffyche/fun-stuff/blob/master/design-docs/mtg-commander-rules-engine.md)
+[jeffyche/fun-stuff's mtg-commander-rules-engine doc](https://github.com/jeffyche/fun-stuff/blob/master/design-docs/mtg-commander-rules-engine.md),
+mirrored in-repo at
+[`doc/design-docs/mtg-commander-rules-engine.md`](doc/design-docs/mtg-commander-rules-engine.md)
 (that doc proposes a much larger 9–13 month roadmap; what's implemented here is a
 real, scoped-down subset — deck validation + command zone + tax/damage counters +
 life default — not the full stack/priority/combat engine).
+
+### Tracking against the design doc's phases (§3)
+
+| Design doc phase | Status here | Notes |
+|---|---|---|
+| §3 Phase 1: Foundation & Build Setup | **Diverged** | No separate `libcockatrice_rules/` library was created (doc §3 Phase 1); new logic instead lives directly in existing `libcockatrice_card`, `libcockatrice_models`, `libcockatrice_network` per Cockatrice's existing structure. Also stayed on Cockatrice's original branding/protocol rather than forking to an independent ecosystem (doc §0) — this fork intentionally stays protocol-compatible with upstream (zero `.proto` changes) rather than diverging, since that was assessed as lower-risk for a fork this size. Commander is a selectable game type (doc §3 Phase 1 item 4: done). |
+| §3 Phase 2: Commander Deck Validation | **Done** | `CommanderDeckValidator` (100-card count, singleton, color identity, legality), wired into both server-side game-start and a live client-side deck-editor status label. |
+| §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
+| §3 Phase 4: Turn Structure Enforcement | Not started | Out of current scope — see design philosophy above. |
+| §3 Phase 5: Priority & Stack System | Not started | Out of current scope. |
+| §3 Phase 6: Mana System | Not started | Out of current scope. |
+| §3 Phase 7: Card Ability System | Not started | Out of current scope. |
+| §3 Phase 8: Combat System | Not started | Out of current scope. |
+| §3 Phase 9: State-Based Actions | Not started | Only the "21 commander damage" SBA is covered, as an advisory warning rather than automatic loss. |
+| §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
+
+This fork's scope corresponds almost exactly to the design doc's own **§8
+"Recommended Starting Point"** (deck validation, commander damage tracking via the
+existing counter system, 40 starting life) — i.e. it deliberately validates the
+architecture with the doc's own lowest-risk/highest-value slice before attempting
+anything from Phases 4–9, rather than partially implementing the harder phases.
 
 ### Design philosophy (why it's built this way)
 
