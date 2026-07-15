@@ -15,8 +15,10 @@ void CommandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
 {
     // A faint background tint, drawn first, so the zone is still identifiable even when empty
     // (e.g. the commander is out on the battlefield) and not just when it holds a visible card.
+    QColor tint = CommandZoneAccent;
+    tint.setAlpha(50);
     painter->save();
-    painter->fillRect(boundingRect(), QColor(230, 190, 80, 50));
+    painter->fillRect(boundingRect(), tint);
     painter->restore();
 
     // PileZone::paint() leaves the painter's transform permanently altered (it rotates without
@@ -37,6 +39,6 @@ void CommandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
     font.setWeight(QFont::Bold);
     painter->setFont(font);
     painter->setPen(CommandZoneAccent);
-    painter->drawText(boundingRect(), Qt::AlignHCenter | Qt::AlignBottom, QStringLiteral("CMD"));
+    painter->drawText(boundingRect(), Qt::AlignHCenter | Qt::AlignBottom, tr("CMD"));
     painter->restore();
 }

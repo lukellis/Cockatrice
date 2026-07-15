@@ -258,6 +258,40 @@ Modified (see `git diff` for full detail):
 - `*/CMakeLists.txt` — register new source files.
 - `README.md` — fork documentation + attribution + known limitations.
 
+New files (command zone visibility fix, see below):
+- `cockatrice/src/game_graphics/zones/command_zone.{h,cpp}` — `CommandZone`, a
+  `PileZone` subclass giving the commander a gold-tinted, gold-bordered,
+  "CMD"-labeled pile distinct from deck/graveyard/exile.
+
+Modified (command zone visibility fix + small UX/compliance items):
+- `cockatrice/src/game_graphics/player/player_graphics_item.cpp` — instantiate
+  `CommandZone` instead of a plain `PileZone` for the command zone slot.
+- `cockatrice/src/game/player/player_logic.cpp` — **real bug fix**: added
+  `ZoneNames::COMMAND` to `eventGameStateChanged()`'s `builtinZones` allowlist.
+  Without it, every game-state refresh deleted the command zone's
+  `PileZoneLogic` and silently recreated an invisible, disconnected one for
+  the server's zone data — so the visible command-zone widget was
+  permanently bound to a stale, always-empty object and showed 0 cards even
+  once the commander had genuinely moved there. Root-caused and confirmed via
+  the client's own debug log (`Event_GameStateChanged`'s `zone_list { name:
+  "command" ... card_count: 1 }`) contradicting the on-screen "0" — not
+  discoverable by reading `command_zone.cpp` in isolation, since that file's
+  logic was already correct.
+- `cockatrice/src/game/game_meta_info.h` — `GameMetaInfo::isCommanderGame()`,
+  solving the previously-documented client-side Commander-detection gap
+  (mirrors `Server_Game::isCommanderGame()`).
+- `cockatrice/src/game/game_event_handler.cpp` — Commander-only advisory
+  `QMessageBox::warning` at Cleanup phase when hand size > 7 (rule 514.1),
+  using `isCommanderGame()` above. A pure warning, no auto-discard, matching
+  this fork's Assisted-Mode philosophy (discarding is a real choice, unlike
+  untap/draw).
+- `libcockatrice_models/.../commander_deck_validator.cpp` — CONTRIBUTING.md
+  translation-guideline fix: all 8 user-facing error strings were plain
+  `QStringLiteral(...)` with no translation context. Added a local `tr()`
+  free function (`QCoreApplication::translate("CommanderDeckValidator", ...)`,
+  since this is a free function, not a `QObject`, so plain `tr()` isn't
+  available) and wrapped every error string in it.
+
 Standalone verification aid (not part of the shipped diff):
 `/tmp/color_identity_algo_test.cpp` — non-Qt regex mirror of the color-identity
 algorithm, compiled with plain g++ and passed, to validate the trickiest new logic
@@ -499,33 +533,36 @@ as needing a card-rules engine this fork doesn't have).
   doesn't persist into active-game state). Doable, but real work, not a
   five-minute wire-up — left for a session with room to also visually
   iterate on icon/layout, now that UI testing makes that practical.
-- **Discard-to-hand-size at end step** — investigated, but it's a different
-  shape of feature than untap/draw: discarding involves a real *choice* (which
-  cards), so it can't be safely auto-executed the way untap/draw are (zero
-  decision points). The right version is an Assisted-Mode advisory warning
-  ("you have N cards, hand size is 7") at the Cleanup step (phase 10), not an
-  automatic discard. Client-side implementation sketch: hook
-  `GameEventHandler::eventSetActivePhase` (`cockatrice/src/game/game_event_handler.cpp`),
-  check `phase == 10`, confirm the active player is the local player, read
-  their hand zone's card count, and reuse the exact `QMessageBox::warning`
-  pattern already used for lethal commander damage
-  (`PlayerGraphicsItem::onCounterAdded()` in `player_graphics_item.cpp`) —
-  same "client-only, no protocol/server changes" shape as that feature. Also
-  needs the same client-side Commander-game-detection gap noted above.
+**Done since the above was written (this session, continued):**
+- **Client-side Commander-game detection** — `GameMetaInfo::isCommanderGame()`
+  (`cockatrice/src/game/game_meta_info.h`), mirroring the server's own
+  `isCommanderGame()`. Unblocks any future client-only Commander UI.
+- **Discard-to-hand-size at end step** — implemented per the sketch below,
+  using `isCommanderGame()` above. Advisory `QMessageBox::warning` only, no
+  auto-discard (discarding is a real choice, unlike untap/draw).
+- **Commander visible on the board** — direct user-reported gap: the
+  commander card had no distinct, visible location in the play area (it lived
+  in the same generic pile-zone slot as deck/graveyard/exile, no different in
+  appearance). Added `CommandZone` (gold border/tint, "CMD" label). Along the
+  way, found and fixed a real bug where the visible command-zone widget was
+  permanently stuck at "0 cards" regardless of the actual game state — see
+  the "Files added/changed" entry above for `player_logic.cpp`. Verified via
+  live servatrice + screenshot + client debug log, not just compilation.
+- **CONTRIBUTING.md translation-guideline gap** — `commander_deck_validator.cpp`'s
+  error strings now use `tr()`; see "Files added/changed" above.
 
 **Reasonable next increments, roughly in order of size/risk:**
-1. Solve client-side Commander-game detection once (e.g. thread the selected
-   game type through to `PlayerLogic`/`GameEventHandler` at game start) — both
-   of the next two items depend on it, so it's worth doing centrally rather
-   than twice.
-2. Discard-to-hand-size advisory warning (see sketch above) — smaller and
-   safer than the priority-passing UI since it's a pure warning dialog, no new
-   toolbar/icon work.
-3. Client-side UI for priority-passing (button + indicator) — makes tonight's
-   Phase 5 server work actually playable end-to-end.
-4. Anything from Phase 9 (State-Based Actions) that fits the existing
+1. Client-side UI for priority-passing (button + indicator) — makes Phase 5's
+   server work actually playable end-to-end. Still not started; see the
+   investigation notes above (phase toolbar is hand-painted with baked-in
+   layout constants, needs a new icon asset).
+2. Anything from Phase 9 (State-Based Actions) that fits the existing
    counter/warning pattern, similar to how lethal commander damage is already
    handled as an advisory warning rather than automatic loss.
-5. Phase 6+ (mana/abilities/combat) — needs a card-rules engine and real
+3. A broader CONTRIBUTING.md compliance pass across the rest of the fork's
+   diff (header guards, include ordering, brace style, `nullptr` usage,
+   Doxygen comment style) — the translation-guideline gap above was one
+   concrete instance found; not yet done as a systematic sweep.
+4. Phase 6+ (mana/abilities/combat) — needs a card-rules engine and real
    design discussion before implementation starts; not a reasonable
    unilateral next step at any scope.

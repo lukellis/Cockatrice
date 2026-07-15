@@ -59,6 +59,49 @@ C++/Qt — a naive full build has OOM-killed the session before.
 - Run heavy builds via a backgroundable shell command and wait for its completion
   notification rather than polling with `sleep` in a loop.
 
+## Testing methods used on this fork
+
+Every Commander-rules change should be verified by whichever of these actually
+exercises it — compiling is not verification. In order of how much of the
+real system each one exercises:
+
+1. **GTest unit/integration suite** (`tests/`, esp. `tests/commander/`) — pure
+   algorithmic logic (`commander_rules_test.cpp`) and integration tests
+   against the real `DeckListModel`/`CardDatabaseManager` pipeline
+   (`commander_deck_validator_test.cpp`), plus turn-structure/priority logic
+   (`tests/movecard_tests/commander_turn_structure_test.cpp`). Build with
+   `-DTEST=ON`, run via `ctest --output-on-failure` from `build/`, or run
+   individual binaries directly (e.g. `build/tests/commander/commander_rules_test`).
+   See `COMMANDER_IMPLEMENTATION_STATUS.md`'s "Testing" section for the full
+   current pass/fail count and what's covered.
+2. **`./format.sh --cmake --branch master`** — clang-format + cmake-format
+   lint, matching what CI's lint workflow checks. Always pass `--branch
+   master` explicitly (see note in the UI-testing section's sibling "Lint"
+   section of the status doc) — the default `--branch origin/master` points
+   at the real upstream remote and can pick up unrelated diffs.
+3. **Headless UI testing** (Xvfb + screenshots + input simulation) — the only
+   way to verify anything about how a change actually *looks* or *behaves* in
+   the running client/server, as opposed to whether it compiles or passes a
+   unit test written against the same assumptions as the code under test.
+   Full recipe below. **This is not optional for client-visible Commander
+   features** — it already caught two real bugs (a deck-validator
+   double-count, and a command-zone card-count display bug) that 100%-passing
+   GTest suites had completely missed, because both bugs were in the gap
+   between "the isolated logic is correct" and "the real UI/event flow wires
+   it up correctly."
+4. **Reading the client's own debug log** (`/tmp/cockatrice_gui.log` or
+   wherever stdout/stderr is redirected) — logs every protobuf message
+   (`IN`/`OUT`) in full since this is a debug build. Use this *alongside*
+   screenshots, not instead of them: screenshots confirm what a human would
+   see, the log confirms exact wire-level state (zone card counts, counter
+   values, event sequencing) that's easy to misread from pixels alone. The
+   command-zone card-count bug (item 3 above) was only conclusively
+   root-caused by cross-referencing a screenshot showing "0 cards" against
+   the log's `Event_GameStateChanged` showing `card_count: 1` for the same
+   zone at the same point in time — pixels alone would have suggested a
+   styling/positioning problem, not the actual bug (a zone-lifecycle bug in
+   `PlayerLogic::eventGameStateChanged()`).
+
 ## UI testing (screenshot + input simulation) in this sandbox
 
 There is no display and no screenshot/VNC tooling by default, but a real Qt GUI
