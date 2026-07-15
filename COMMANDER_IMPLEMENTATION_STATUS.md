@@ -116,15 +116,26 @@ likely root cause of the OOM kill that ended the prior session mid-build.
   (pulls in `commander_deck_validator.cpp` + `deck_list_model.cpp` changes), plus
   their dependencies (`libcockatrice_protocol`, `libcockatrice_deck_list`,
   `libcockatrice_rng`, `libcockatrice_interfaces`).
-- `libcockatrice_network` build (covers `server_player.cpp` / `server_game.cpp`,
-  the least "copy an existing pattern" / most novel code) was **in progress**
-  (`make -j2 libcockatrice_network_server_remote libcockatrice_network_server_local
-  libcockatrice_network_client_remote libcockatrice_network_client_local
-  libcockatrice_network_client_abstract`) when the sandbox OOM-killed the session.
-  Not yet confirmed compiling clean.
+- `libcockatrice_network` (all 5 targets: `server_remote`, `server_local`,
+  `client_remote`, `client_local`, `client_abstract` — covers `server_player.cpp` /
+  `server_game.cpp`, the least "copy an existing pattern" / most novel code) now
+  **built successfully with zero errors/warnings**, confirmed in the follow-up
+  session after fixing the OOM cause (see below).
 - Full `cockatrice` client binary and `servatrice` server binary: **not yet attempted**.
-- The Qt6 install directory under `/tmp/qt6install` does **not** survive a sandbox
-  restart (tmpfs) — it must be re-fetched via aqtinstall before resuming.
+- The Qt6 install directory under `/tmp/qt6install` did **not** survive the sandbox
+  restart after the OOM (tmpfs) — re-fetched via aqtinstall to a disk-backed path instead.
+
+**Root cause of the OOM (diagnosed in the follow-up session) and fix applied:**
+`/tmp` in this sandbox is tmpfs (RAM-backed, ~955 MiB cap) — installing the ~1.4 GiB
+Qt6 SDK there directly consumed system RAM, on top of `make -j2` running two
+`cc1plus`/MOC processes, with **no swap configured**, on a 2 vCPU / 1.9 GiB box.
+Fix: Qt6 now installed to `~/qt6install` (disk-backed, not tmpfs); added a 1.5 GiB
+swap file (`/swapfile`, `sudo swapon`); building with `-j1` instead of `-j2`, one
+target at a time, checking `free -h` between steps.
+
+**Fork/remote note:** `origin` is the real upstream `Cockatrice/Cockatrice` repo —
+not writable by this user. Work is pushed instead to a fork at
+`github.com/lukellis/Cockatrice`, branch `commander-rules` (remote name `fork`).
 
 **Recommended approach to resume without OOMing again:**
 1. Install Qt6 to a **disk-backed** path (e.g. `~/qt6install`), not `/tmp`, so it
@@ -140,8 +151,8 @@ likely root cause of the OOM kill that ended the prior session mid-build.
    `cockatrice` (client binary, heaviest due to GUI/MOC).
 
 **Remaining checklist for task #8:**
-- [ ] Re-provision Qt6 (disk-backed path) + swap file
-- [ ] Finish `libcockatrice_network` build, confirm clean
+- [x] Re-provision Qt6 (disk-backed path) + swap file
+- [x] Finish `libcockatrice_network` build, confirm clean
 - [ ] Build `servatrice` (server), confirm clean
 - [ ] Build `cockatrice` (client), confirm clean
 - [ ] If full build proves infeasible in sandbox resource budget, honestly report
