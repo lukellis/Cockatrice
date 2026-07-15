@@ -2,6 +2,7 @@
 
 #include "deck_list_model.h"
 
+#include <QCoreApplication>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/deck_list/deck_list.h>
@@ -11,6 +12,17 @@
 namespace CommanderDeckValidator
 {
 
+namespace
+{
+// A plain free function (not a QObject subclass) has no tr(); this is the direct Qt-idiomatic
+// equivalent, giving these user-facing strings (shown in the deck editor) a translation context
+// per CONTRIBUTING.md's translation guidelines.
+QString tr(const char *sourceText)
+{
+    return QCoreApplication::translate("CommanderDeckValidator", sourceText);
+}
+} // namespace
+
 Result validate(const DeckListModel &model)
 {
     Result result;
@@ -18,7 +30,7 @@ Result validate(const DeckListModel &model)
     const QSharedPointer<DeckList> deckList = model.getDeckList();
     if (!deckList) {
         result.isValid = false;
-        result.errors << QStringLiteral("No deck loaded.");
+        result.errors << tr("No deck loaded.");
         return result;
     }
 
@@ -26,7 +38,7 @@ Result validate(const DeckListModel &model)
     const CardRef commanderRef = deckList->getBannerCard();
     if (commanderRef.isEmpty()) {
         result.isValid = false;
-        result.errors << QStringLiteral("No commander has been designated for this deck.");
+        result.errors << tr("No commander has been designated for this deck.");
         return result;
     }
 
@@ -34,15 +46,14 @@ Result validate(const DeckListModel &model)
     const CardInfoPtr commanderInfo = commanderCard.getCardPtr();
     if (!commanderInfo) {
         result.isValid = false;
-        result.errors
-            << QStringLiteral("Commander \"%1\" could not be found in the card database.").arg(commanderRef.name);
+        result.errors << tr("Commander \"%1\" could not be found in the card database.").arg(commanderRef.name);
         return result;
     }
 
     if (!CommanderRules::canBeCommander(*commanderInfo)) {
         result.isValid = false;
-        result.errors << QStringLiteral("\"%1\" is not a legal commander (must be a legendary creature, or a card "
-                                        "whose text says it can be your commander).")
+        result.errors << tr("\"%1\" is not a legal commander (must be a legendary creature, or a card whose text "
+                            "says it can be your commander).")
                              .arg(commanderInfo->getName());
     }
 

@@ -5,6 +5,7 @@
 #include "../board/abstract_card_item.h"
 #include "../board/counter_general.h"
 #include "../hand_counter.h"
+#include "../zones/command_zone.h"
 #include "../zones/hand_zone.h"
 #include "../zones/pile_zone.h"
 #include "../zones/stack_zone.h"
@@ -112,7 +113,11 @@ void PlayerGraphicsItem::initializeZones()
     rfgZoneGraphicsItem = new PileZone(player->getRfgZone(), this);
     rfgZoneGraphicsItem->setPos(base + QPointF(0, 2 * h + h2 + 10));
 
-    commandZoneGraphicsItem = new PileZone(player->getCommandZone(), this);
+    // Same position in the pile stack as before, but with distinct visual treatment (colored
+    // border + "CMD" label, see CommandZone::paint()) so a player can spot their commander among
+    // the otherwise visually-identical piles (deck/graveyard/exile) without having to remember
+    // pile order — matching how physical Commander play sets the commander card visibly apart.
+    commandZoneGraphicsItem = new CommandZone(player->getCommandZone(), this);
     commandZoneGraphicsItem->setPos(base + QPointF(0, 3 * h + h2 + 10));
 
     tableZoneGraphicsItem = new TableZone(player->getTableZone(), mirrored, this);

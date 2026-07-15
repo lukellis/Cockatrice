@@ -3,7 +3,11 @@
 #include "../game_graphics/log/message_log_widget.h"
 #include "../interface/widgets/tabs/tab_game.h"
 #include "abstract_game.h"
+#include "player/player_logic.h"
+#include "player/player_manager.h"
+#include "zones/hand_zone_logic.h"
 
+#include <QMessageBox>
 #include <libcockatrice/network/client/abstract/abstract_client.h>
 #include <libcockatrice/protocol/get_pb_extension.h>
 #include <libcockatrice/protocol/pb/command_concede.pb.h>
@@ -536,5 +540,26 @@ void GameEventHandler::eventSetActivePhase(const Event_SetActivePhase &event,
         emit logActivePhaseChanged(phase);
     }
     game->getGameState()->setCurrentPhase(phase);
+
+    // Commander-only Assisted-Mode advisory: discarding down to the maximum hand size (rule
+    // 514.1) involves a real choice of which cards to discard, so — unlike untap/draw, which
+    // have no decision point — this warns rather than auto-discarding. Phase index matches the
+    // client's own phase order (Phases::phases[] in phase.cpp): 10 is End/Cleanup.
+    constexpr int CleanupPhase = 10;
+    constexpr int MaxHandSize = 7;
+    if (phase == CleanupPhase && game->getGameMetaInfo()->isCommanderGame()) {
+        PlayerLogic *localPlayer = game->getPlayerManager()->getPlayer(game->getPlayerManager()->getLocalPlayerId());
+        if (localPlayer) {
+            const int handSize = localPlayer->getHandZone()->getCards().size();
+            if (handSize > MaxHandSize) {
+                QMessageBox::warning(
+                    nullptr, tr("Hand size"),
+                    tr("You have %1 cards in hand; the maximum hand size is %2. Discard down to %2 (rule 514.1).")
+                        .arg(handSize)
+                        .arg(MaxHandSize));
+            }
+        }
+    }
+
     emitUserEvent();
 }

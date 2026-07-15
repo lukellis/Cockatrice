@@ -118,6 +118,7 @@ set(cockatrice_SOURCES
     src/game/zones/table_zone_logic.cpp
     src/game/zones/view_zone_logic.cpp
     src/game_graphics/zones/card_zone.cpp
+    src/game_graphics/zones/command_zone.cpp
     src/game_graphics/zones/hand_zone.cpp
     src/game_graphics/zones/pile_zone.cpp
     src/game_graphics/zones/select_zone.cpp

@@ -100,6 +100,7 @@ void PlayerLogic::processPlayerInfo(const ServerInfo_Player &info)
 {
     static QSet<QString> builtinZones{/* PileZones */
                                       ZoneNames::DECK, ZoneNames::GRAVE, ZoneNames::EXILE, ZoneNames::SIDEBOARD,
+                                      ZoneNames::COMMAND,
                                       /* TableZone */
                                       ZoneNames::TABLE,
                                       /* StackZone */
