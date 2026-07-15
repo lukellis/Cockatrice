@@ -21,6 +21,50 @@
 </pre><p><br>
 
 
+# Commander-Rules Fork of Cockatrice
+
+**This is a fork of [Cockatrice/Cockatrice](https://github.com/Cockatrice/Cockatrice)** that adds enforcement of the
+official [Commander/EDH](https://mtgcommander.net/index.php/rules/) deck-construction and gameplay rules on top of
+upstream Cockatrice, per the design in
+[jeffyche/fun-stuff's mtg-commander-rules-engine doc](https://github.com/jeffyche/fun-stuff/blob/master/design-docs/mtg-commander-rules-engine.md).
+Like upstream, it's distributed under the GPLv2 (see [LICENSE](LICENSE)); all credit for the base client/server goes
+to the Cockatrice project and its contributors.
+
+## What this fork adds
+
+- **Commander deck validation** (`libcockatrice_card/.../commander_rules.{h,cpp}`,
+  `libcockatrice_models/.../commander_deck_validator.{h,cpp}`): a card's *color identity* is now computed from its
+  colors plus mana symbols in its cost and rules text (reminder text excluded), and legality checks for
+  Commander-family formats (Commander, Duel Commander, Brawl, Standard Brawl, Oathbreaker, Pauper Commander, Predh)
+  reject cards outside the deck's designated commander's color identity, in addition to the existing 100-card
+  singleton checks. The deck editor's existing per-card legality highlighting now reflects this automatically, and
+  a new status label in the deck editor (`DeckEditorDeckDockWidget::updateCommanderValidation()`) runs the full
+  deck-level check (100 cards including the commander, legal commander designation, color identity) and shows a
+  green/red summary with a tooltip listing every issue, live as the deck is edited.
+- **Command zone**: a new `command` zone (server: `Server_Player::setupZones()`; client: `PlayerLogic::initializeZones()`)
+  holds the deck's designated commander (`DeckList::getBannerCard()`) instead of it starting in the library.
+- **Commander tax**: each player's commander gets an auto-created "Commander Tax: `<name>`" counter that increments
+  each time the commander is cast from the command zone (`Server_Player::onCardBeingMoved()`); displayed value × 2 is
+  the additional generic mana cost per rule 903.9.
+- **Commander damage**: at game start, every player gets a "Commander Damage: `<name>`" counter per opposing
+  commander (`Server_Game::doStartGameIfReady()`). Like life totals, these are incremented manually to match how
+  Cockatrice already tracks all other damage; crossing 21 on any one of them pops a client-side warning
+  (rule 704.5g).
+- **40 starting life**: selecting a "Commander" game type in the create-game dialog defaults starting life to 40 and
+  max players to 4.
+
+### Known limitations
+
+This follows Cockatrice's existing "physical simulator" design — mana payment, combat damage, and turn structure are
+still self-officiated by players, not automated. Commander tax and commander damage counters are auto-created but
+manually incremented for the same reason. Only a single designated commander is supported (no Partner/Background
+pairing yet), and color identity doesn't yet pull in a double-faced card's back face (see the note in
+`colorIdentity()`). The command zone has a basic visual placement in the player area but no dedicated context menu
+the way graveyard/exile do. A full automated rules/stack/priority engine, as scoped in the linked design doc, is a
+much larger undertaking than deck validation + zone/counter bookkeeping and is not attempted here.
+
+---
+
 # Cockatrice
 
 Cockatrice is an open-source, multiplatform application for playing tabletop card games over a network. The program's server design prevents users from manipulating the game for unfair advantage. The client also provides a single-player mode, which allows users to brew while offline.<br><br>

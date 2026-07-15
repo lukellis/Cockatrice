@@ -28,6 +28,7 @@
 #include "server_arrow.h"
 #include "server_card.h"
 #include "server_cardzone.h"
+#include "server_counter.h"
 #include "server_player.h"
 #include "server_spectator.h"
 
@@ -51,6 +52,8 @@
 #include <libcockatrice/protocol/pb/event_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_player.pb.h>
 #include <libcockatrice/protocol/pb/game_replay.pb.h>
+#include <libcockatrice/utility/color.h>
+#include <libcockatrice/utility/commander_counter_names.h>
 #include <libcockatrice/utility/zone_names.h>
 
 Server_Game::Server_Game(const ServerInfo_User &_creatorInfo,
@@ -345,6 +348,30 @@ void Server_Game::doStartGameIfReady(bool forceStartGame)
     players = getPlayers(); // players could have been kicked, get new list of players
     for (Server_AbstractPlayer *player : players.values()) {
         player->setupZones();
+    }
+
+    // Commander damage: every player gets a counter tracking damage received from each other
+    // player's commander(s) (rule 704.5g - 21 damage from a single commander is a loss).
+    // Zones are set up above, so every player's command zone is now populated.
+    for (Server_AbstractPlayer *defender : players.values()) {
+        auto *defenderPlayer = dynamic_cast<Server_Player *>(defender);
+        if (!defenderPlayer) {
+            continue;
+        }
+        for (Server_AbstractPlayer *attacker : players.values()) {
+            if (attacker == defender) {
+                continue;
+            }
+            Server_CardZone *attackerCommandZone = attacker->getZones().value(ZoneNames::COMMAND);
+            if (!attackerCommandZone) {
+                continue;
+            }
+            for (Server_Card *commander : attackerCommandZone->getCards()) {
+                defenderPlayer->addCounter(new Server_Counter(defenderPlayer->newCounterId(),
+                                                               CommanderCounterNames::damage(commander->getName()),
+                                                               makeColor(200, 40, 40), 15, 0));
+            }
+        }
     }
 
     gameStarted = true;

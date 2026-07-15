@@ -11,6 +11,8 @@
 #include <QSplitter>
 #include <QTextEdit>
 #include <libcockatrice/card/database/card_database_manager.h>
+#include <libcockatrice/card/format/commander_rules.h>
+#include <libcockatrice/models/deck_list/commander_deck_validator.h>
 #include <libcockatrice/utility/string_limits.h>
 
 static int findRestoreIndex(const CardRef &wanted, const QComboBox *combo)
@@ -65,6 +67,8 @@ void DeckEditorDeckDockWidget::createDeckDock()
             &DeckEditorDeckDockWidget::syncDisplayWidgetsToModel);
     connect(deckStateManager, &DeckStateManager::deckReplaced, this,
             &DeckEditorDeckDockWidget::applyActiveGroupCriteria);
+    connect(deckStateManager, &DeckStateManager::deckModified, this,
+            &DeckEditorDeckDockWidget::updateCommanderValidation);
 
     deckView = new QTreeView();
     deckView->setObjectName("deckView");
@@ -171,6 +175,11 @@ void DeckEditorDeckDockWidget::createDeckDock()
 
     activeGroupCriteriaLabel = new QLabel(this);
 
+    commanderValidationLabel = new QLabel(this);
+    commanderValidationLabel->setObjectName("commanderValidationLabel");
+    commanderValidationLabel->setWordWrap(true);
+    commanderValidationLabel->setVisible(false);
+
     activeGroupCriteriaComboBox = new QComboBox(this);
     activeGroupCriteriaComboBox->addItem(tr("Main Type"), DeckListModelGroupCriteria::MAIN_TYPE);
     activeGroupCriteriaComboBox->addItem(tr("Mana Cost"), DeckListModelGroupCriteria::MANA_COST);
@@ -223,6 +232,8 @@ void DeckEditorDeckDockWidget::createDeckDock()
 
     upperLayout->addWidget(activeGroupCriteriaLabel, 5, 0);
     upperLayout->addWidget(activeGroupCriteriaComboBox, 5, 1);
+
+    upperLayout->addWidget(commanderValidationLabel, 6, 0, 1, 2);
 
     hashLabel1 = new QLabel();
     hashLabel1->setObjectName("hashLabel1");
@@ -365,6 +376,28 @@ void DeckEditorDeckDockWidget::updateHash()
     hashLabel->setText(deckStateManager->getDeckHash());
 }
 
+void DeckEditorDeckDockWidget::updateCommanderValidation()
+{
+    const QString format = deckStateManager->getMetadata().gameFormat;
+    if (!CommanderRules::formatUsesColorIdentity(format)) {
+        commanderValidationLabel->setVisible(false);
+        return;
+    }
+
+    CommanderDeckValidator::Result result = CommanderDeckValidator::validate(*getModel());
+    commanderValidationLabel->setVisible(true);
+    if (result.isValid) {
+        commanderValidationLabel->setStyleSheet(QStringLiteral("color: green;"));
+        commanderValidationLabel->setText(tr("Legal Commander deck."));
+        commanderValidationLabel->setToolTip(QString());
+    } else {
+        commanderValidationLabel->setStyleSheet(QStringLiteral("color: red;"));
+        commanderValidationLabel->setText(
+            tr("Not a legal Commander deck (%n issue(s) - hover for details)", "", result.errors.size()));
+        commanderValidationLabel->setToolTip(result.errors.join(QStringLiteral("\n")));
+    }
+}
+
 void DeckEditorDeckDockWidget::updateBannerCardComboBox()
 {
     // Store current banner card identity
@@ -493,6 +526,8 @@ void DeckEditorDeckDockWidget::syncDisplayWidgetsToModel()
     deckTagsDisplayWidget->blockSignals(true);
     deckTagsDisplayWidget->setTags(deckStateManager->getMetadata().tags);
     deckTagsDisplayWidget->blockSignals(false);
+
+    updateCommanderValidation();
 }
 
 /**

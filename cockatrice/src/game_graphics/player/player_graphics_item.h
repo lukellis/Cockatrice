@@ -100,6 +100,10 @@ public:
     {
         return rfgZoneGraphicsItem;
     }
+    [[nodiscard]] PileZone *getCommandZoneGraphicsItem() const
+    {
+        return commandZoneGraphicsItem;
+    }
     [[nodiscard]] TableZone *getTableZoneGraphicsItem() const
     {
         return tableZoneGraphicsItem;
@@ -139,6 +143,7 @@ private:
     PileZone *sideboardGraphicsItem;
     PileZone *graveyardZoneGraphicsItem;
     PileZone *rfgZoneGraphicsItem;
+    PileZone *commandZoneGraphicsItem;
     TableZone *tableZoneGraphicsItem;
     StackZone *stackZoneGraphicsItem;
     HandZone *handZoneGraphicsItem;

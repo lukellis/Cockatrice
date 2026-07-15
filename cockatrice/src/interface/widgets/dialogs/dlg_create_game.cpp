@@ -101,6 +101,26 @@ void DlgCreateGame::sharedCtor()
     startingLifeTotalEdit->setValue(20);
     startingLifeTotalLabel->setBuddy(startingLifeTotalEdit);
 
+    // Commander games start at 40 life and are typically 4-player multiplayer; default these
+    // fields when a "Commander" game type is selected, so hosts don't have to remember to change
+    // them. The host can still freely override either value afterwards.
+    {
+        QMapIterator<int, QRadioButton *> commanderDefaultsIterator(gameTypeCheckBoxes);
+        while (commanderDefaultsIterator.hasNext()) {
+            commanderDefaultsIterator.next();
+            QRadioButton *gameTypeRadioButton = commanderDefaultsIterator.value();
+            if (!gameTypeRadioButton->text().contains("Commander", Qt::CaseInsensitive)) {
+                continue;
+            }
+            connect(gameTypeRadioButton, &QRadioButton::toggled, this, [this](bool checked) {
+                if (checked) {
+                    startingLifeTotalEdit->setValue(40);
+                    maxPlayersEdit->setValue(4);
+                }
+            });
+        }
+    }
+
     shareDecklistsOnLoadCheckBox = new QCheckBox(tr("Open decklists in lobby"));
 
     createGameAsJudgeCheckBox = new QCheckBox(tr("Create game as judge"));

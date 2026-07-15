@@ -47,6 +47,7 @@
 #include <libcockatrice/protocol/pb/serverinfo_user.pb.h>
 #include <libcockatrice/rng/rng_abstract.h>
 #include <libcockatrice/utility/color.h>
+#include <libcockatrice/utility/commander_counter_names.h>
 #include <libcockatrice/utility/string_limits.h>
 #include <libcockatrice/utility/zone_names.h>
 
@@ -91,6 +92,8 @@ void Server_Player::setupZones()
     addZone(new Server_CardZone(this, ZoneNames::STACK, false, ServerInfo_Zone::PublicZone));
     addZone(new Server_CardZone(this, ZoneNames::GRAVE, false, ServerInfo_Zone::PublicZone));
     addZone(new Server_CardZone(this, ZoneNames::EXILE, false, ServerInfo_Zone::PublicZone));
+    auto *commandZone = new Server_CardZone(this, ZoneNames::COMMAND, false, ServerInfo_Zone::PublicZone);
+    addZone(commandZone);
 
     addCounter(new Server_Counter(0, "life", makeColor(255, 255, 255), 25, game->getStartingLifeTotal()));
     addCounter(new Server_Counter(1, "w", makeColor(255, 255, 150), 20, 0));
@@ -103,17 +106,29 @@ void Server_Player::setupZones()
 
     // ------------------------------------------------------------------
 
-    // Assign card ids and create deck from deck list
-    auto insertCardsIntoZone = [this](auto cards, auto *zone) {
+    // Assign card ids and create deck from deck list. A card designated as the deck's
+    // commander (deck->getBannerCard()) starts in the command zone instead of the deck.
+    const CardRef commanderRef = deck->getBannerCard();
+    auto insertCardsIntoZone = [this, &commanderRef, commandZone](auto cards, auto *zone) {
         for (auto card : cards) {
+            Server_CardZone *targetZone =
+                (!commanderRef.isEmpty() && card->getName() == commanderRef.name) ? commandZone : zone;
             for (int k = 0; k < card->getNumber(); ++k) {
-                zone->insertCard(new Server_Card(card->toCardRef(), nextCardId++, 0, 0, zone), -1, 0);
+                targetZone->insertCard(new Server_Card(card->toCardRef(), nextCardId++, 0, 0, targetZone), -1, 0);
             }
         }
     };
 
     insertCardsIntoZone(deck->getCardNodes({DECK_ZONE_MAIN}), deckZone);
     insertCardsIntoZone(deck->getCardNodes({DECK_ZONE_SIDE}), sbZone);
+
+    // Commander tax counter: starts at 0 and is bumped by 1 each time the commander is cast
+    // from the command zone (see onCardBeingMoved). Displayed count * 2 = the additional
+    // generic mana cost per rule 903.9.
+    for (Server_Card *commander : commandZone->getCards()) {
+        addCounter(new Server_Counter(newCounterId(), CommanderCounterNames::tax(commander->getName()),
+                                      makeColor(230, 190, 80), 15, 0));
+    }
 
     const QList<MoveCard_ToZone> &sideboardPlan = deck->getCurrentSideboardPlan();
     for (const auto &m : sideboardPlan) {
@@ -216,6 +231,24 @@ void Server_Player::onCardBeingMoved(GameEventStorage &ges,
         int index = lastDrawList.lastIndexOf(card->getId());
         if (index != -1) {
             lastDrawList.erase(lastDrawList.begin(), lastDrawList.begin() + index);
+        }
+    }
+
+    // Commander tax: leaving the command zone to be cast bumps that commander's tax counter,
+    // per rule 903.9. (Moving straight back to the command zone, e.g. via an undo, isn't a
+    // cast and doesn't count.)
+    if (startzone->getName() == ZoneNames::COMMAND && targetzone->getName() != ZoneNames::COMMAND) {
+        const QString counterName = CommanderCounterNames::tax(card->getName());
+        for (Server_Counter *counter : counters) {
+            if (counter->getName() == counterName) {
+                if (counter->incrementCount(1)) {
+                    Event_SetCounter event;
+                    event.set_counter_id(counter->getId());
+                    event.set_value(counter->getCount());
+                    ges.enqueueGameEvent(event, playerId);
+                }
+                break;
+            }
         }
     }
 }

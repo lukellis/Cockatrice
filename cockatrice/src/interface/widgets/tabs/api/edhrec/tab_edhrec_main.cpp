@@ -23,15 +23,14 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <libcockatrice/card/database/card_database_manager.h>
+#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/models/database/card/card_completer_proxy_model.h>
 #include <libcockatrice/models/database/card/card_search_model.h>
 #include <version_string.h>
 
 static bool canBeCommander(const CardInfoPtr &cardInfo)
 {
-    return ((cardInfo->getCardType().contains("Legendary", Qt::CaseInsensitive) &&
-             cardInfo->getCardType().contains("Creature", Qt::CaseInsensitive))) ||
-           cardInfo->getText().contains("can be your commander", Qt::CaseInsensitive);
+    return CommanderRules::canBeCommander(*cardInfo);
 }
 
 TabEdhRecMain::TabEdhRecMain(TabSupervisor *_tabSupervisor) : Tab(_tabSupervisor)

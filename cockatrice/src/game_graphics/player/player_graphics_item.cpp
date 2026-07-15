@@ -13,6 +13,8 @@
 #include "player_dialogs.h"
 
 #include <QGraphicsView>
+#include <QMessageBox>
+#include <libcockatrice/utility/commander_counter_names.h>
 
 PlayerGraphicsItem::PlayerGraphicsItem(PlayerLogic *_player) : player(_player)
 {
@@ -110,6 +112,9 @@ void PlayerGraphicsItem::initializeZones()
     rfgZoneGraphicsItem = new PileZone(player->getRfgZone(), this);
     rfgZoneGraphicsItem->setPos(base + QPointF(0, 2 * h + h2 + 10));
 
+    commandZoneGraphicsItem = new PileZone(player->getCommandZone(), this);
+    commandZoneGraphicsItem->setPos(base + QPointF(0, 3 * h + h2 + 10));
+
     tableZoneGraphicsItem = new TableZone(player->getTableZone(), mirrored, this);
     connect(tableZoneGraphicsItem, &TableZone::sizeChanged, this, &PlayerGraphicsItem::updateBoundingRect);
     connect(this, &PlayerGraphicsItem::mirroredChanged, tableZoneGraphicsItem, &TableZone::setMirrored);
@@ -128,6 +133,7 @@ void PlayerGraphicsItem::initializeZones()
     zoneGraphicsItems.insert(player->getDeckZone()->getName(), deckZoneGraphicsItem);
     zoneGraphicsItems.insert(player->getGraveZone()->getName(), graveyardZoneGraphicsItem);
     zoneGraphicsItems.insert(player->getRfgZone()->getName(), rfgZoneGraphicsItem);
+    zoneGraphicsItems.insert(player->getCommandZone()->getName(), commandZoneGraphicsItem);
     zoneGraphicsItems.insert(player->getSideboardZone()->getName(), sideboardGraphicsItem);
     zoneGraphicsItems.insert(player->getTableZone()->getName(), tableZoneGraphicsItem);
     zoneGraphicsItems.insert(player->getStackZone()->getName(), stackZoneGraphicsItem);
@@ -198,6 +204,22 @@ void PlayerGraphicsItem::onCounterAdded(CounterState *state)
 
     if (playerMenu->getShortcutsActive()) {
         widget->setShortcutsActive();
+    }
+
+    if (CommanderCounterNames::isDamageCounter(state->getName())) {
+        // Assisted-mode warning: commander damage is tracked manually (like life), so flag the
+        // lethal threshold rather than silently letting it pass. Only fires on the crossing.
+        connect(state, &CounterState::valueChanged, this, [this, state](int oldValue, int newValue) {
+            if (oldValue < CommanderCounterNames::LETHAL_COMMANDER_DAMAGE &&
+                newValue >= CommanderCounterNames::LETHAL_COMMANDER_DAMAGE) {
+                QMessageBox::warning(nullptr, tr("Commander damage"),
+                                     tr("%1 has taken %2 damage from %3 and has lost the game (rule 704.5g).")
+                                         .arg(player->getPlayerInfo()->getName())
+                                         .arg(newValue)
+                                         .arg(CommanderCounterNames::commanderNameFromDamageCounter(
+                                             state->getName())));
+            }
+        });
     }
 
     rearrangeCounters();

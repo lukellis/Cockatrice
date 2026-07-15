@@ -1,6 +1,7 @@
 #include "deck_list_model.h"
 
 #include <libcockatrice/card/database/card_database_manager.h>
+#include <libcockatrice/card/format/commander_rules.h>
 
 DeckListModel::DeckListModel(QObject *parent)
     : QAbstractItemModel(parent), lastKnownColumn(1), lastKnownOrder(Qt::AscendingOrder)
@@ -751,7 +752,11 @@ static bool isCardQuantityLegalForFormat(const QString &format, const CardInfo &
     return quantity <= maxAllowed;
 }
 
-static bool isCardNodeLegalForFormat(const QString &format, const InnerDecklistNode *zone, const DecklistCardNode *card)
+static bool isCardNodeLegalForFormat(const QString &format,
+                                     const InnerDecklistNode *zone,
+                                     const DecklistCardNode *card,
+                                     bool hasCommanderIdentity,
+                                     const QSet<QChar> &commanderColorIdentity)
 {
     // Don't check legality for tokens
     if (zone->getName() == DECK_ZONE_TOKENS) {
@@ -764,16 +769,40 @@ static bool isCardNodeLegalForFormat(const QString &format, const InnerDecklistN
         return false;
     }
 
-    // actual check
-    return isCardQuantityLegalForFormat(format, exactCard.getInfo(), card->getNumber());
+    if (!isCardQuantityLegalForFormat(format, exactCard.getInfo(), card->getNumber())) {
+        return false;
+    }
+
+    // Commander/Brawl/Oathbreaker-style formats restrict every card to the color identity of
+    // the deck's designated commander (see CommanderDeckValidator for the full deck-level check).
+    if (hasCommanderIdentity &&
+        !CommanderRules::isWithinColorIdentity(CommanderRules::colorIdentity(exactCard.getInfo()),
+                                               commanderColorIdentity)) {
+        return false;
+    }
+
+    return true;
 }
 
 void DeckListModel::refreshCardFormatLegalities()
 {
     QString format = deckList->getGameFormat();
 
-    deckList->forEachCard([&format](const InnerDecklistNode *zone, DecklistCardNode *card) {
-        bool legal = isCardNodeLegalForFormat(format, zone, card);
+    bool hasCommanderIdentity = false;
+    QSet<QChar> commanderColorIdentity;
+    if (CommanderRules::formatUsesColorIdentity(format)) {
+        const CardRef bannerCard = deckList->getBannerCard();
+        if (!bannerCard.isEmpty()) {
+            ExactCard commanderCard = CardDatabaseManager::query()->getCard(bannerCard);
+            if (commanderCard) {
+                commanderColorIdentity = CommanderRules::colorIdentity(commanderCard.getInfo());
+                hasCommanderIdentity = true;
+            }
+        }
+    }
+
+    deckList->forEachCard([&](const InnerDecklistNode *zone, DecklistCardNode *card) {
+        bool legal = isCardNodeLegalForFormat(format, zone, card, hasCommanderIdentity, commanderColorIdentity);
         card->setFormatLegality(legal);
     });
 }

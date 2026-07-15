@@ -12,6 +12,7 @@ endif()
 
 add_library(
   libcockatrice_models_deck_list STATIC ${MOC_SOURCES} deck_list_model.cpp deck_list_sort_filter_proxy_model.cpp
+  commander_deck_validator.cpp commander_deck_validator.h
 )
 
 target_include_directories(libcockatrice_models_deck_list PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

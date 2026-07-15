@@ -45,6 +45,8 @@ add_library(
   libcockatrice/card/set/card_set_list.cpp
   libcockatrice/card/format/format_legality_rules.cpp
   libcockatrice/card/format/format_legality_rules.h
+  libcockatrice/card/format/commander_rules.cpp
+  libcockatrice/card/format/commander_rules.h
 )
 
 target_include_directories(

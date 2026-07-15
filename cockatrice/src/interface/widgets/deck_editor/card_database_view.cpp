@@ -9,14 +9,13 @@
 #include <QHeaderView>
 #include <QMenu>
 #include <libcockatrice/card/database/card_database_manager.h>
+#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/card/relation/card_relation.h>
 #include <libcockatrice/deck_list/tree/inner_deck_list_node.h>
 
 static bool canBeCommander(const CardInfo &cardInfo)
 {
-    return (cardInfo.getCardType().contains("Legendary", Qt::CaseInsensitive) &&
-            cardInfo.getCardType().contains("Creature", Qt::CaseInsensitive)) ||
-           cardInfo.getText().contains("can be your commander", Qt::CaseInsensitive);
+    return CommanderRules::canBeCommander(cardInfo);
 }
 
 CardDatabaseView::CardDatabaseView(QWidget *parent, CardDatabaseDisplayModel *model)

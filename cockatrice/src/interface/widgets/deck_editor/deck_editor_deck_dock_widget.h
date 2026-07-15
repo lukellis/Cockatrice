@@ -86,6 +86,7 @@ private:
     QComboBox *activeGroupCriteriaComboBox;
     QLabel *formatLabel;
     QComboBox *formatComboBox;
+    QLabel *commanderValidationLabel;
 
     QAction *aRemoveCard, *aIncrement, *aDecrement, *aSwapCard;
 
@@ -102,6 +103,7 @@ private slots:
     void applyActiveGroupCriteria();
     void setSelectedIndex(const QModelIndex &newCardIndex, bool preserveWidgetFocus);
     void updateHash();
+    void updateCommanderValidation();
     void refreshShortcuts();
     void updateShowBannerCardComboBox(bool visible);
     void updateShowTagsWidget(bool visible);

@@ -43,6 +43,7 @@ void PlayerLogic::initializeZones()
     addZone(new PileZoneLogic(this, ZoneNames::GRAVE, false, false, true, this));
     addZone(new PileZoneLogic(this, ZoneNames::EXILE, false, false, true, this));
     addZone(new PileZoneLogic(this, ZoneNames::SIDEBOARD, false, false, false, this));
+    addZone(new PileZoneLogic(this, ZoneNames::COMMAND, false, false, true, this));
     addZone(new TableZoneLogic(this, ZoneNames::TABLE, true, false, true, this));
     addZone(new StackZoneLogic(this, ZoneNames::STACK, true, false, true, this));
     bool visibleHand = playerInfo->getLocalOrJudge() ||
