@@ -785,7 +785,7 @@ void Server_Game::advancePriority(int passingPlayerId)
     // here; this fork's Stack zone is a manual visual aid with no resolvable objects (see Phase
     // 5 notes), so instead this is simplified to: advance to the next phase, wrapping past the
     // last phase into the next turn (which itself resets priority via setActivePhase() above).
-    int nextPhase = (activePhase + 1) % CommanderPhaseCount;
+    int nextPhase = (activePhase + 1) % COMMANDER_PHASE_COUNT;
     if (nextPhase == 0) {
         nextTurn();
     } else {
@@ -832,13 +832,13 @@ CommanderPhaseAutomation Server_Game::phaseAutomationFor(int phase, int turnNumb
     // Phase indices match the client's phase order (cockatrice/src/game/phase.cpp:
     // Phases::phases[]) — there's no shared server/client phase enum, so this is inherently
     // coupled to that ordering.
-    constexpr int UntapPhase = 0;
-    constexpr int DrawPhase = 2;
+    constexpr int UNTAP_PHASE = 0;
+    constexpr int DRAW_PHASE = 2;
 
-    if (phase == UntapPhase) {
+    if (phase == UNTAP_PHASE) {
         return CommanderPhaseAutomation::UntapActivePlayer;
     }
-    if (phase == DrawPhase) {
+    if (phase == DRAW_PHASE) {
         // Rule 103.8a/103.8c: only a strict two-player game's starting player skips their
         // first draw step; multiplayer Commander games never skip it.
         bool skipFirstDraw = turnNumber == 1 && playerCount == 2;

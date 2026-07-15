@@ -63,7 +63,7 @@ enum class CommanderPhaseAutomation
  * — see the caveat on CommanderPhaseAutomation above; same architectural gap (no shared
  * server/client phase enum), same Commander-games-only gating to contain the assumption.
  */
-constexpr int CommanderPhaseCount = 11;
+constexpr int COMMANDER_PHASE_COUNT = 11;
 
 class Server_Game : public QObject
 {

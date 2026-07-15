@@ -4,7 +4,7 @@
 
 namespace
 {
-const QColor CommandZoneAccent(230, 190, 80); // matches the Commander Tax counter's color
+const QColor COMMAND_ZONE_ACCENT(230, 190, 80); // matches the Commander Tax counter's color
 }
 
 CommandZone::CommandZone(PileZoneLogic *_logic, QGraphicsItem *parent) : PileZone(_logic, parent)
@@ -15,7 +15,7 @@ void CommandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
 {
     // A faint background tint, drawn first, so the zone is still identifiable even when empty
     // (e.g. the commander is out on the battlefield) and not just when it holds a visible card.
-    QColor tint = CommandZoneAccent;
+    QColor tint = COMMAND_ZONE_ACCENT;
     tint.setAlpha(50);
     painter->save();
     painter->fillRect(boundingRect(), tint);
@@ -29,7 +29,7 @@ void CommandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
     painter->restore();
 
     painter->save();
-    QPen goldPen(CommandZoneAccent, 4);
+    QPen goldPen(COMMAND_ZONE_ACCENT, 4);
     painter->setPen(goldPen);
     painter->setBrush(Qt::NoBrush);
     painter->drawRoundedRect(boundingRect().adjusted(2, 2, -2, -2), 4, 4);
@@ -38,7 +38,7 @@ void CommandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
     font.setPixelSize(11);
     font.setWeight(QFont::Bold);
     painter->setFont(font);
-    painter->setPen(CommandZoneAccent);
+    painter->setPen(COMMAND_ZONE_ACCENT);
     painter->drawText(boundingRect(), Qt::AlignHCenter | Qt::AlignBottom, tr("CMD"));
     painter->restore();
 }
