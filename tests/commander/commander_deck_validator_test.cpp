@@ -43,7 +43,8 @@ protected:
         CardDatabaseManager::setCardPreferenceProvider(new NoopCardPreferenceProvider());
         CardDatabaseManager::setCardDatabasePathProvider(new TestCommanderCardDatabasePathProvider());
         CardDatabaseManager::setCardSetPriorityController(new NoopCardSetPriorityController());
-        ASSERT_EQ(Ok, CardDatabaseManager::getInstance()->loadCardDatabases());
+        CardDatabaseManager::getInstance()->loadCardDatabases();
+        ASSERT_EQ(Ok, CardDatabaseManager::getInstance()->getLoadStatus());
     }
 };
 

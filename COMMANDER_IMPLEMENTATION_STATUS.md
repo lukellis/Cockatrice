@@ -212,8 +212,26 @@ gap:
     missing/illegal/unknown commander, text-granted commander eligibility, wrong
     card count, color identity violations (both directions), banned cards, singleton
     violations, and the basic-land exception.
-- Status of running these + the pre-existing suite via `-DTEST=1` + `ctest`: **pending**,
-  next step below.
+- Both new test binaries build clean and **all 28 cases pass**:
+  `commander_rules_test` (17/17) and `commander_deck_validator_test` (11/11),
+  run directly (`build/tests/commander/commander_rules_test`,
+  `.../commander_deck_validator_test`). One compile fix needed along the way:
+  `CardDatabase::loadCardDatabases()` returns `void` (status is a separate
+  `getLoadStatus()` call), not the `LoadStatus` the test initially assumed.
+- Full suite (`cmake -DTEST=ON` + `make -j1` all test targets + `ctest --output-on-failure`
+  from `build/`): **16/16 tests pass, 0 failed.** All pre-existing tests pass
+  unmodified — the Commander changes to `deck_list_model.cpp` didn't need any
+  existing test updated. Full list: `dummy_test`, `expression_test`,
+  `clamped_arithmetic_test`, `test_age_formatting`, `password_hash_test`,
+  `server_card_counter_test`, `server_counter_test`, `deck_hash_performance_test`,
+  `card_zone_algorithms_test`, `carddatabase_test`, `filter_string_test`,
+  `commander_rules_test`, `commander_deck_validator_test`,
+  `loading_from_clipboard_test`, `reverse_card_move_test`, `parse_cipt_test`.
+- **Testing is done and green.** This closes the gap identified earlier: the fork
+  now has real GTest coverage for the new Commander logic, verified against both
+  its own tests and the full pre-existing suite, matching this repo's actual CI
+  practice (`.ci/compile.sh --test` → `ctest`) instead of the original
+  standalone-non-Qt-mirror approach.
 
 ## Lint
 
