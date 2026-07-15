@@ -411,31 +411,43 @@ to just this fork's actual changes.
 ## Where this stands / next steps
 
 As of this writing: design doc §3 Phases 2–3 done, Phase 4 (turn structure)
-partially done (auto-untap/auto-draw only), everything compile- and
-test-verified (servatrice + cockatrice build clean, 17/17 test executables
-pass). All pushed to `fork/commander-rules`.
+partially done (auto-untap/auto-draw), Phase 5 (Priority & Stack System)
+partially done in simplified form (real priority-passing, no stack
+resolution — see "Phase 5" section above). Everything compile- and
+test-verified: `servatrice` + `cockatrice` build clean, 17 test executables /
+78+ individual test cases pass. All pushed to `fork/commander-rules`.
 
-**Stopped deliberately before Phase 5 (Priority & Stack System)** rather than
-continuing further unattended. Reason: every increment so far (Phases 2–4) was
-scoped to stay **protocol-compatible** — zero `.proto` changes — which was a
-deliberate risk-minimization choice documented from the start of this fork.
-Phase 5 as designed requires genuinely new protocol messages (`Command_PassPriority`,
-`Command_CastSpell`, `Event_StackObjectAdded`, etc. — see the mirrored design doc
-§3 Phase 5) and a much larger, more failure-prone subsystem (LIFO stack
-resolution, response-window timing) that can't be meaningfully verified without
-live multiplayer play-testing, which isn't possible in this sandbox. That's a
-bigger architectural commitment and risk-profile change than what's been done
-unilaterally so far, and worth the user's explicit go-ahead rather than a
-judgment call made solo overnight.
+Work initially stopped before Phase 5 pending explicit user sign-off, since it
+was the first phase needing actual `.proto` changes (breaking the
+zero-protocol-changes streak of Phases 2–4). The user then authorized
+continuing, asked for research into existing codified rules engines to borrow
+from, and to document simplifications/assumptions — which is what the "Phase
+5" section above records (XMage's `GameImpl.playPriority()` as the borrowed
+architectural reference, with the stack-resolution part explicitly scoped out
+as needing a card-rules engine this fork doesn't have).
+
+**Deliberately not attempted, and why:**
+- **Real stack resolution / card ability execution** (design doc Phases 6–8:
+  mana system, card ability parsing, combat). These need an actual card-rules
+  engine (parse rules text, execute effects, targeting, replacement effects)
+  — the same conclusion Forge/XMage's own scale of effort confirms (community
+  projects, years of work). Not attempted at any level here; would need a
+  real scoping/design conversation, not a unilateral implementation.
+- **Client-side UI for priority-passing.** Protocol and server logic are
+  complete and tested; no "Pass Priority" button or priority indicator exists
+  in the GUI yet. Scoped out because Qt widget/interaction changes are harder
+  to verify without live play-testing than server logic with automated tests,
+  and leaving the command unwired is safe (inert until a client sends it).
 
 **Reasonable next increments, roughly in order of size/risk:**
-1. Discard-to-hand-size at the end step (remaining, smaller piece of design doc
-   Phase 4) — similar shape to the untap/draw automation just added.
-2. Phase-order advisory warnings (not blocking) if a player tries an
-   out-of-sequence action — still no protocol changes needed, stays within
-   Assisted Mode philosophy.
+1. Client-side UI to actually use priority-passing (a button + indicator,
+   per design doc §12.3's mockup) — makes tonight's Phase 5 server work
+   actually playable.
+2. Discard-to-hand-size at the end step (remaining piece of design doc
+   Phase 4) — similar shape to the untap/draw automation already added.
 3. Anything from Phase 9 (State-Based Actions) that fits the existing
    counter/warning pattern, similar to how lethal commander damage is already
    handled as an advisory warning rather than automatic loss.
-4. Phase 5+ (stack/priority/mana/abilities/combat) — needs protocol changes and
-   real design discussion before implementation starts.
+4. Phase 6+ (mana/abilities/combat) — needs a card-rules engine and real
+   design discussion before implementation starts; not a reasonable
+   unilateral next step at any scope.
