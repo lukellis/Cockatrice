@@ -336,4 +336,35 @@ files that merely differ from upstream — happened once with root `CMakeLists.t
 (a pre-existing GCC16 workaround comment, reformatted and reverted, not part of
 this fork's diff). Always pass `--branch master` explicitly in this repo to scope
 to just this fork's actual changes.
-- [ ] Final summary to user: what's implemented, how to build/run, known limitations
+
+## Where this stands / next steps
+
+As of this writing: design doc §3 Phases 2–3 done, Phase 4 (turn structure)
+partially done (auto-untap/auto-draw only), everything compile- and
+test-verified (servatrice + cockatrice build clean, 17/17 test executables
+pass). All pushed to `fork/commander-rules`.
+
+**Stopped deliberately before Phase 5 (Priority & Stack System)** rather than
+continuing further unattended. Reason: every increment so far (Phases 2–4) was
+scoped to stay **protocol-compatible** — zero `.proto` changes — which was a
+deliberate risk-minimization choice documented from the start of this fork.
+Phase 5 as designed requires genuinely new protocol messages (`Command_PassPriority`,
+`Command_CastSpell`, `Event_StackObjectAdded`, etc. — see the mirrored design doc
+§3 Phase 5) and a much larger, more failure-prone subsystem (LIFO stack
+resolution, response-window timing) that can't be meaningfully verified without
+live multiplayer play-testing, which isn't possible in this sandbox. That's a
+bigger architectural commitment and risk-profile change than what's been done
+unilaterally so far, and worth the user's explicit go-ahead rather than a
+judgment call made solo overnight.
+
+**Reasonable next increments, roughly in order of size/risk:**
+1. Discard-to-hand-size at the end step (remaining, smaller piece of design doc
+   Phase 4) — similar shape to the untap/draw automation just added.
+2. Phase-order advisory warnings (not blocking) if a player tries an
+   out-of-sequence action — still no protocol changes needed, stays within
+   Assisted Mode philosophy.
+3. Anything from Phase 9 (State-Based Actions) that fits the existing
+   counter/warning pattern, similar to how lethal commander damage is already
+   handled as an advisory warning rather than automatic loss.
+4. Phase 5+ (stack/priority/mana/abilities/combat) — needs protocol changes and
+   real design discussion before implementation starts.
