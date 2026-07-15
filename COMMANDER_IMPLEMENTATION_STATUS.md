@@ -425,6 +425,40 @@ list). Fixed and reverified visually; see the commit for detail. Prefer this
 kind of live verification for any further client-visible Commander feature
 work, not just unit tests.
 
+**Full live end-to-end game verification (beyond the deck editor):** also ran
+an actual local `servatrice` (config at `.uitest/servatrice_local.ini`,
+gitignored — `type=none` database, `method=none` auth, room configured with
+"Commander" as a game type), connected the client to it, created and started
+a real 1-player Commander game, and read the exact wire protocol
+(`Event_GameStateChanged`, `Event_SetCardAttr`, `Event_DrawCards`,
+`Event_PriorityChanged`) straight out of the client's debug log
+(`/tmp/cockatrice_gui.log`, generated automatically since the client is a
+debug build — far more reliable than reading pixels off a cramped 1280×800
+screenshot for this level of detail). Confirmed, byte-for-byte, all in one
+session:
+- The commander (Atraxa, Praetors' Voice) correctly starts in the `command`
+  zone, not the deck (`zone_list { name: "command" ... card_count: 1 }`).
+- A `Commander Tax: Atraxa, Praetors' Voice` counter is created at game start,
+  starting at 0, with the exact expected name/color.
+- Starting life is 40, matching the create-game dialog default (also
+  confirmed visually: selecting the "Commander" radio button in the
+  create-game dialog live-updates Players to 4 and Starting life to 40).
+- Entering the Untap phase fires the auto-untap (`Event_SetCardAttr` on the
+  `table` zone) and entering Draw fires auto-draw (`Event_DrawCards { number:
+  0 }` — correctly handled the empty-library case gracefully, no crash).
+- Every phase/turn change correctly re-broadcasts `Event_PriorityChanged`.
+- All of the above is genuinely gated to Commander games — this room also had
+  a "Standard" game type configured, and none of this fires for it.
+- Also confirmed what was already known to be *not* done: the client's
+  existing "Pass" toolbar button sends `Command_NextTurn`, not the new
+  `Command_PassPriority` — there is no UI trigger for priority-passing yet,
+  exactly as documented in the Phase 5 section above.
+
+This is about as strong a confirmation as this sandbox can produce without a
+second real player: every server-side Commander mechanic implemented tonight
+(Phases 2–5) has now been exercised in an actual running game, not just unit
+tests, with zero discrepancies found beyond the one bug already fixed above.
+
 ## Where this stands / next steps
 
 As of this writing: design doc §3 Phases 2–3 done, Phase 4 (turn structure)

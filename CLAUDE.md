@@ -102,6 +102,25 @@ alone), so don't rediscover it from scratch. Recipe:
    test scenario in a way that didn't match how the real deck editor adds a
    commander. Prefer confirming any client-visible Commander feature this way
    before calling it done, not just via GTest.
+9. **For server-side behavior (command zone, counters, phase automation,
+   priority), spin up a real local `servatrice` too** — don't rely on the
+   client alone. `.uitest/servatrice_local.ini` (gitignored, copy of
+   `servatrice/servatrice.ini.example` with `type=none` database,
+   `method=none` auth, and room game types renamed to `"Commander"`/
+   `"Standard"`) needs no MySQL/auth setup:
+   `nohup ./build/servatrice/servatrice --config .uitest/servatrice_local.ini --log-to-console > /tmp/servatrice.log 2>&1 & disown`,
+   then connect the client via Home → Connect → New Host →
+   `127.0.0.1` : `4747` (any username, no password). Create/join a 1-player
+   game to self-test without needing a second real player.
+10. **Read the client's own debug log for ground truth**, not just
+    screenshots — `/tmp/cockatrice_gui.log` (or wherever you redirected
+    stdout/stderr) logs every protobuf message in full (`IN`/`OUT` lines with
+    the decoded message content) since this is a debug build. This is far
+    more precise than reading pixel colors/tooltips off a cramped 1280×800
+    screenshot for verifying exact counter names, zone contents, or event
+    sequencing — e.g. confirming `Event_GameStateChanged`'s `zone_list`/
+    `counter_list` fields directly, or that `Event_PriorityChanged` fires on
+    every phase change.
 
 ## Design principles for Commander-rules changes
 
