@@ -1,5 +1,6 @@
 tags
 build*
+.uitest/
 *.qm
 .directory
 mysql.cnf

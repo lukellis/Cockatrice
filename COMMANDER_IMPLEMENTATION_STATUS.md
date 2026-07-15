@@ -408,6 +408,23 @@ files that merely differ from upstream — happened once with root `CMakeLists.t
 this fork's diff). Always pass `--branch master` explicitly in this repo to scope
 to just this fork's actual changes.
 
+## UI testing capability (new)
+
+This sandbox can now actually run and screenshot the real `cockatrice` GUI
+headlessly (Xvfb + Qt xcb platform + XTest input simulation via
+`python-xlib`), not just build it. Full recipe, missing-library fixes, and
+the reusable driver script (`.uitest/uitest.py`, gitignored) are documented
+in `CLAUDE.md`. This immediately paid off: driving the real deck editor
+(create a Commander deck, add a commander, read the live validation tooltip
+off a screenshot) caught a real double-counting bug in
+`CommanderDeckValidator::validate()` that every GTest case had missed,
+because the tests set the banner card via the API directly without also
+adding it to the main deck list — not how the real UI actually builds a
+Commander deck (the Banner Card picker is populated *from* the main deck
+list). Fixed and reverified visually; see the commit for detail. Prefer this
+kind of live verification for any further client-visible Commander feature
+work, not just unit tests.
+
 ## Where this stands / next steps
 
 As of this writing: design doc §3 Phases 2–3 done, Phase 4 (turn structure)

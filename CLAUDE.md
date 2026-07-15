@@ -59,6 +59,50 @@ C++/Qt — a naive full build has OOM-killed the session before.
 - Run heavy builds via a backgroundable shell command and wait for its completion
   notification rather than polling with `sleep` in a loop.
 
+## UI testing (screenshot + input simulation) in this sandbox
+
+There is no display and no screenshot/VNC tooling by default, but a real Qt GUI
+*can* be driven and screenshotted headlessly here — this took real effort to
+figure out (missing-library errors are not obvious from the Qt error message
+alone), so don't rediscover it from scratch. Recipe:
+
+1. Disk is usually critically tight in this sandbox (often <100 MiB free on
+   the 8 GiB root fs) — check `df -h /` first and `sudo dnf clean all` /
+   remove stale screenshots if needed before installing anything below.
+2. Install: `sudo dnf install -y xorg-x11-server-Xvfb xcb-util-cursor libxkbcommon-x11 xcb-util-keysyms xcb-util-wm`
+   (the last four fix `libqxcb.so`'s missing dependencies — Qt's own error
+   message only names `xcb-cursor0`/`libxcb-cursor0`, but `ldd` on
+   `~/qt6install/6.7.0/gcc_64/plugins/platforms/libqxcb.so` reveals the rest:
+   `libxkbcommon-x11.so.0`, `libxcb-icccm.so.4`, `libxcb-keysyms.so.1`).
+3. `pip3 install --user python-xlib pillow` (screenshotting + XTest input
+   simulation; both pure-Python/small, safe even with little disk headroom).
+4. Start a virtual display once per session and leave it running in the
+   background: `Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &` then `disown`
+   (background processes survive across separate tool calls in this harness;
+   `xdpyinfo` isn't installed to check liveness — use
+   `DISPLAY=:99 python3 -c "from Xlib import display; display.Display(':99')"`
+   instead, or just check `ps aux | grep Xvfb`).
+5. Launch the client: `DISPLAY=:99 nohup ~/projects/cockatrice-commander/build/cockatrice/cockatrice > /tmp/cockatrice_gui.log 2>&1 & disown`
+6. **No card database exists by default** (`WITH_ORACLE=OFF`, and fetching a
+   real MTGJSON dataset isn't feasible with disk this tight). Drop a small
+   hand-crafted one at `~/.local/share/Cockatrice/Cockatrice/cards.xml` (see
+   `.uitest/sample_cards.xml` in this repo — gitignored, not part of the
+   Cockatrice product — for a working ~12-card example with a real commander
+   and format rules) before launching, or restart the client after adding it.
+7. Drive and observe with `.uitest/uitest.py` (gitignored, kept in-repo so it
+   survives across sessions): `python3 .uitest/uitest.py {shot <file.png> |
+   click <x> <y> | move <x> <y> | key <keysym> | type <text>}`, all against
+   `DISPLAY=:99`. Read the resulting PNG with the Read tool to actually look
+   at it. `move` + a ~2s pause before `shot` triggers Qt tooltips, which is
+   how the deck-editor Commander-validation tooltip text got read directly
+   off a live screenshot.
+8. **This already found a real bug**: the deck-editor Commander validator was
+   double-counting the commander (see `COMMANDER_IMPLEMENTATION_STATUS.md`),
+   caught only by actually driving the real UI — the unit tests had built the
+   test scenario in a way that didn't match how the real deck editor adds a
+   commander. Prefer confirming any client-visible Commander feature this way
+   before calling it done, not just via GTest.
+
 ## Design principles for Commander-rules changes
 
 - Cockatrice is a manual "physical simulator" (no automated mana/combat/turn
@@ -66,4 +110,9 @@ C++/Qt — a naive full build has OOM-killed the session before.
   follow that pattern: auto-created counters, manually incremented, advisory
   (non-blocking) warnings — not hard auto-loss.
 - Reuse existing generic mechanisms (Zone/Counter serialization, per-card legality
-  flags) instead of adding new protocol messages — keep the diff `.proto`-free.
+  flags) instead of adding new protocol messages where possible — most of this
+  fork's diff is `.proto`-free by design. Phase 5 (priority passing) was the
+  first exception, since real priority-passing genuinely has no existing
+  protocol hook to reuse; see `COMMANDER_IMPLEMENTATION_STATUS.md`'s Phase 5
+  section for why that one broke the streak and how it's still kept purely
+  additive.
