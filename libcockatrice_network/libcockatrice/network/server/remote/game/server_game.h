@@ -43,6 +43,20 @@ class ServerInfo_Game;
 class Server_AbstractUserInterface;
 class Event_GameStateChanged;
 
+/**
+ * @brief What (if anything) Commander turn-structure automation should do when entering a
+ * phase, given the phase index (see cockatrice/src/game/phase.cpp) and turn context. Kept as
+ * a pure decision separate from Server_Game::setActivePhase() so the logic (including the
+ * rule 103.8a/103.8c first-draw-skip arithmetic) is unit-testable without needing a fully
+ * constructed, participant-registered game.
+ */
+enum class CommanderPhaseAutomation
+{
+    None,
+    UntapActivePlayer,
+    DrawForActivePlayer
+};
+
 class Server_Game : public QObject
 {
     Q_OBJECT
@@ -62,6 +76,7 @@ private:
     int maxPlayers;
     QList<int> gameTypes;
     int activePlayer, activePhase;
+    int turnNumber = 0; // incremented once per nextTurn() call; turn 1 is the first turn of the game.
     bool onlyBuddies, onlyRegistered;
     bool spectatorsAllowed;
     bool spectatorsNeedPassword;
@@ -200,6 +215,25 @@ public:
     qint64 generateArrowId();
     void removeArrows(int newPhase, bool force = false);
     void nextTurn();
+    int getTurnNumber() const
+    {
+        return turnNumber;
+    }
+    /**
+     * @brief Whether this game's room game-type selection denotes a Commander-family game
+     * (see CommanderRules::gameTypeLabelIsCommander), used to gate Commander-specific
+     * server-side behavior (command zone placement, tax/damage tracking, turn-structure
+     * automation) so it doesn't affect other game types.
+     */
+    bool isCommanderGame() const;
+
+    /**
+     * @brief Pure decision logic for what CommanderPhaseAutomation applies when entering
+     * @p phase, given the game's current @p turnNumber and @p playerCount. Rule 103.8a/103.8c:
+     * only a strict two-player game's starting player skips their first draw step; multiplayer
+     * Commander games never skip it.
+     */
+    static CommanderPhaseAutomation phaseAutomationFor(int phase, int turnNumber, int playerCount);
     int getSecondsElapsed() const
     {
         return secondsElapsed;

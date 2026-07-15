@@ -36,7 +36,9 @@
 #include <QRegularExpression>
 #include <QTimer>
 #include <google/protobuf/descriptor.h>
+#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/deck_list/deck_list.h>
+#include <libcockatrice/protocol/pb/card_attributes.pb.h>
 #include <libcockatrice/protocol/pb/context_connection_state_changed.pb.h>
 #include <libcockatrice/protocol/pb/context_ping_changed.pb.h>
 #include <libcockatrice/protocol/pb/event_delete_arrow.pb.h>
@@ -722,6 +724,57 @@ void Server_Game::setActivePhase(int newPhase)
     Event_SetActivePhase event;
     event.set_phase(activePhase);
     sendGameEventContainer(prepareGameEvent(event, -1));
+
+    // Turn-structure automation, Commander games only (see isCommanderGame()) so other game
+    // types keep today's fully-manual behavior.
+    if (isCommanderGame()) {
+        CommanderPhaseAutomation automation = phaseAutomationFor(newPhase, turnNumber, getPlayerCount());
+        if (automation != CommanderPhaseAutomation::None) {
+            auto *activePlayerObj = dynamic_cast<Server_Player *>(getPlayers().value(activePlayer));
+            if (activePlayerObj) {
+                GameEventStorage ges;
+                if (automation == CommanderPhaseAutomation::UntapActivePlayer) {
+                    activePlayerObj->setCardAttrHelper(ges, activePlayer, ZoneNames::TABLE, -1, AttrTapped,
+                                                       QStringLiteral("0"));
+                } else if (automation == CommanderPhaseAutomation::DrawForActivePlayer) {
+                    activePlayerObj->drawCards(ges, 1);
+                }
+                ges.sendToGame(this);
+            }
+        }
+    }
+}
+
+bool Server_Game::isCommanderGame() const
+{
+    const QStringList &roomGameTypes = room->getGameTypes();
+    for (int typeIndex : gameTypes) {
+        if (typeIndex >= 0 && typeIndex < roomGameTypes.size() &&
+            CommanderRules::gameTypeLabelIsCommander(roomGameTypes.at(typeIndex))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+CommanderPhaseAutomation Server_Game::phaseAutomationFor(int phase, int turnNumber, int playerCount)
+{
+    // Phase indices match the client's phase order (cockatrice/src/game/phase.cpp:
+    // Phases::phases[]) — there's no shared server/client phase enum, so this is inherently
+    // coupled to that ordering.
+    constexpr int UntapPhase = 0;
+    constexpr int DrawPhase = 2;
+
+    if (phase == UntapPhase) {
+        return CommanderPhaseAutomation::UntapActivePlayer;
+    }
+    if (phase == DrawPhase) {
+        // Rule 103.8a/103.8c: only a strict two-player game's starting player skips their
+        // first draw step; multiplayer Commander games never skip it.
+        bool skipFirstDraw = turnNumber == 1 && playerCount == 2;
+        return skipFirstDraw ? CommanderPhaseAutomation::None : CommanderPhaseAutomation::DrawForActivePlayer;
+    }
+    return CommanderPhaseAutomation::None;
 }
 
 qint64 Server_Game::generateArrowId()
@@ -754,6 +807,8 @@ void Server_Game::nextTurn()
         qWarning() << "Server_Game::nextTurn was called while players is empty; gameId = " << gameId;
         return;
     }
+
+    ++turnNumber;
 
     auto players = getPlayers();
     const QList<int> keys = players.keys();

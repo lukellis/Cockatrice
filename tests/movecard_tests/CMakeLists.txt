@@ -14,3 +14,20 @@ target_link_libraries(
 )
 
 add_test(NAME reverse_card_move_test COMMAND reverse_card_move_test)
+
+add_executable(commander_turn_structure_test commander_turn_structure_test.cpp)
+
+if(NOT GTEST_FOUND)
+  add_dependencies(commander_turn_structure_test gtest)
+endif()
+
+target_link_libraries(
+  commander_turn_structure_test
+  PRIVATE libcockatrice_network_server_remote
+  PRIVATE libcockatrice_rng
+  PRIVATE Threads::Threads
+  PRIVATE ${GTEST_BOTH_LIBRARIES}
+  PRIVATE ${TEST_QT_MODULES}
+)
+
+add_test(NAME commander_turn_structure_test COMMAND commander_turn_structure_test)

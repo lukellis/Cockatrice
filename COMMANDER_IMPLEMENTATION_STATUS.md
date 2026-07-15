@@ -25,7 +25,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 1: Foundation & Build Setup | **Diverged** | No separate `libcockatrice_rules/` library was created (doc §3 Phase 1); new logic instead lives directly in existing `libcockatrice_card`, `libcockatrice_models`, `libcockatrice_network` per Cockatrice's existing structure. Also stayed on Cockatrice's original branding/protocol rather than forking to an independent ecosystem (doc §0) — this fork intentionally stays protocol-compatible with upstream (zero `.proto` changes) rather than diverging, since that was assessed as lower-risk for a fork this size. Commander is a selectable game type (doc §3 Phase 1 item 4: done). |
 | §3 Phase 2: Commander Deck Validation | **Done** | `CommanderDeckValidator` (100-card count, singleton, color identity, legality), wired into both server-side game-start and a live client-side deck-editor status label. |
 | §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
-| §3 Phase 4: Turn Structure Enforcement | Not started | Out of current scope — see design philosophy above. |
+| §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | Not started | Out of current scope. |
 | §3 Phase 6: Mana System | Not started | Out of current scope. |
 | §3 Phase 7: Card Ability System | Not started | Out of current scope. |
@@ -55,6 +55,87 @@ anything from Phases 4–9, rather than partially implementing the harder phases
 - Deck-construction rules (100-card singleton, color identity, legality) are
   enforced via the existing per-card legality-flag infrastructure in
   `DeckListModel`, extended rather than replaced.
+
+## Phase 4: Turn Structure Automation
+
+Implemented in a follow-up session after tasks 1–8 (which cover deck validation +
+command zone/tax/damage, i.e. design doc §3 Phases 2–3) were complete and fully
+tested. This is the first genuinely *automated* gameplay behavior in this fork —
+everything before this was either passive counters (manually incremented, like
+life totals) or client-side advisory warnings. Scoped narrowly given that higher
+risk profile:
+
+- **What it does:** `Server_Game::setActivePhase()` now triggers, Commander games
+  only:
+  - Entering the **Untap step** (phase index 0): untaps everything the active
+    player controls, reusing the exact same `Server_AbstractPlayer::setCardAttrHelper()`
+    call the existing manual "untap all" action already uses — including its
+    existing respect for `AttrDoesntUntap`-flagged permanents.
+  - Entering the **Draw step** (phase index 2): draws 1 card for the active
+    player via the existing `Server_Player::drawCards()`, **except** the very
+    first draw step of a strict **two-player** game's starting player (rule
+    103.8a). Verified against the actual rules text rather than trusting the
+    design doc's own phrasing ("skip on turn 1 in multiplayer") — rule 103.8c
+    says multiplayer games never skip the first draw step; only 2-player and
+    Two-Headed Giant games do. This fork's Commander default is 4-player
+    free-for-all, so in practice this skip essentially only matters for Duel
+    Commander (2-player).
+  - The decision of *what* to do (`CommanderPhaseAutomation::{None,UntapActivePlayer,DrawForActivePlayer}`)
+    is factored into a pure static method, `Server_Game::phaseAutomationFor(phase, turnNumber, playerCount)`,
+    kept separate from the mechanical/side-effecting part specifically so the
+    rules logic (including the skip-first-draw arithmetic) is unit-testable
+    without needing a fully constructed, participant-registered game.
+  - Phase index 0/2 meaning is only assumed *coupled to the client's phase
+    ordering* (`cockatrice/src/game/phase.cpp`) — there's no shared server/client
+    phase enum today (a pre-existing architectural gap, not something this
+    fork introduces). Documented in a code comment at the point of use.
+- **Correctness gap found and fixed along the way:** the existing command
+  zone/tax/damage hooks (`Server_Player::setupZones()`, `onCardBeingMoved()`,
+  `Server_Game::doStartGameIfReady()`) were **not actually gated by game format
+  at all** — they ran for every game unconditionally, only "self-gating" by
+  coincidence of deck content (a card happened to be set as the deck's banner
+  card). Added `Server_Game::isCommanderGame()` (checks the room's selected
+  game-type labels for a "commander" substring, mirroring the existing
+  client-side check in `dlg_create_game.cpp`, which was refactored to share the
+  same `CommanderRules::gameTypeLabelIsCommander()` helper) and gated the
+  command-zone redirect in `setupZones()` on it. This matters because
+  `DeckList::bannerCard` can be set as a purely cosmetic "cover card" on
+  non-Commander decks too — before this fix, such a deck's cover card would
+  have been incorrectly redirected into a command zone instead of the library.
+- **Deliberately not done:** phase-order enforcement (a player can still freely
+  jump to any phase in any order — Assisted Mode is about warnings, not
+  blocking, and enforcing strict order is a bigger UX change affecting all
+  play styles) and discard-to-hand-size at the end step (design doc's third
+  Phase 4 bullet; left for a future increment).
+- **Testing:** `tests/movecard_tests/commander_turn_structure_test.cpp` (12
+  cases) — pure logic tests for `phaseAutomationFor()` (all phase/turn/player-count
+  combinations, including the 103.8a/103.8c skip-first-draw distinction),
+  integration tests for `isCommanderGame()` against real `Server_Game`/`Server_Room`
+  objects (including an out-of-range game-type-index robustness case), and
+  direct verification of the reused `setCardAttrHelper`/`drawCards` mechanisms
+  (untap respects `AttrDoesntUntap`, draw moves the correct card). Plus 2 new
+  cases in `commander_rules_test.cpp` for `gameTypeLabelIsCommander()`.
+  **Not covered:** a true end-to-end test that `setActivePhase()` fires
+  automation for a *registered* game participant — `Server_Game::addPlayer()`
+  requires a live `Server_AbstractUserInterface`, and there's no lighter-weight
+  seam to inject a participant for testing. Compensated for by testing the
+  decision logic and the reused mechanisms separately, both directly.
+- **Pre-existing test-infrastructure fragility discovered (not part of this
+  fork's diff, but worth knowing for future sessions):** constructing and
+  destructing multiple `Server_Game`/`Server_Room` instances as stack locals in
+  sequence within one test process **segfaults deterministically** (reproduced
+  3/3 plain runs) but **does not reproduce under gdb** (5/5 passes) — a classic
+  signature of a timing/memory-layout-dependent bug in `Server_Game`/`Server_Room`
+  teardown. Root cause not fully diagnosed (ruled out: `pingClock` QTimer, since
+  `FakeServer::getGameShouldPing()` defaults to false so it's never constructed).
+  Every other existing test using these classes (`reverse_card_move_test.cpp`)
+  only ever constructs **one** instance per process, so this had never been hit
+  before. Workaround used here: heap-allocate `FakeServer`/`Server_Room`/`Server_Game`
+  and deliberately never free them (the test process is short-lived) rather than
+  use stack locals, which avoids exercising the crashing teardown path. This is a
+  workaround, not a fix — if a future session needs many `Server_Game` instances
+  per test process, or needs to actually test destruction behavior, this will
+  need real investigation (try Valgrind/ASan; this sandbox only had gdb available).
 
 ## Implementation status
 
@@ -120,6 +201,11 @@ context menu (graveyard/exile do). No automated stack/priority/combat engine —
 out of scope per the design doc's own phasing.
 
 ## Build status — where things stand and how to resume
+
+**Latest: Phase 4 (turn structure automation) changes rebuilt and verified clean
+end-to-end** — `libcockatrice_network_server_remote` (with its new `libcockatrice_card`
+link dependency), `servatrice`, and `cockatrice` all build with zero errors. Full
+`ctest` suite (17/17 test executables) passes.
 
 **Sandbox constraints that matter here:** 2 vCPUs, ~1.9 GiB RAM, **no swap**,
 Amazon Linux 2023. `/tmp` is **tmpfs** (RAM-backed, ~955 MiB cap) — writing large

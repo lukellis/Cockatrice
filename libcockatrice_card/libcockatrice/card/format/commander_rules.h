@@ -45,6 +45,17 @@ bool isWithinColorIdentity(const QSet<QChar> &cardIdentity, const QSet<QChar> &c
  */
 bool formatUsesColorIdentity(const QString &format);
 
+/**
+ * @brief Checks whether a server room's game-type label (e.g. "Commander", "Commander (1v1)")
+ * denotes a Commander-family game, for gating server-side gameplay behavior (command zone
+ * placement, tax/damage tracking, turn-structure automation) to Commander games only.
+ *
+ * This is deliberately looser than @c formatUsesColorIdentity: room game-type labels are
+ * free-text strings configured by server admins (@c Server_Room::getGameTypes()), not the
+ * fixed deck-format names checked there. Case-insensitive substring match on "commander".
+ */
+bool gameTypeLabelIsCommander(const QString &gameTypeLabel);
+
 } // namespace CommanderRules
 
 #endif // COCKATRICE_COMMANDER_RULES_H

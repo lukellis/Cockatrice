@@ -87,4 +87,9 @@ bool formatUsesColorIdentity(const QString &format)
     return commanderFamilyFormats.contains(format.toLower());
 }
 
+bool gameTypeLabelIsCommander(const QString &gameTypeLabel)
+{
+    return gameTypeLabel.contains(QStringLiteral("commander"), Qt::CaseInsensitive);
+}
+
 } // namespace CommanderRules

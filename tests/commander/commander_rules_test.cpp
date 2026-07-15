@@ -131,6 +131,20 @@ TEST(CommanderRulesTest, FormatUsesColorIdentityRejectsNonCommanderFormats)
     }
 }
 
+TEST(CommanderRulesTest, GameTypeLabelIsCommanderMatchesCommanderLabels)
+{
+    for (const QString &label : {"Commander", "commander", "COMMANDER", "Commander (1v1)", "Duel Commander"}) {
+        EXPECT_TRUE(CommanderRules::gameTypeLabelIsCommander(label)) << label.toStdString();
+    }
+}
+
+TEST(CommanderRulesTest, GameTypeLabelIsCommanderRejectsOtherLabels)
+{
+    for (const QString &label : {"Standard", "2 Player", "Draft", ""}) {
+        EXPECT_FALSE(CommanderRules::gameTypeLabelIsCommander(label)) << label.toStdString();
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv)

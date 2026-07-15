@@ -106,13 +106,16 @@ void Server_Player::setupZones()
 
     // ------------------------------------------------------------------
 
-    // Assign card ids and create deck from deck list. A card designated as the deck's
-    // commander (deck->getBannerCard()) starts in the command zone instead of the deck.
+    // Assign card ids and create deck from deck list. In Commander games, a card designated as
+    // the deck's commander (deck->getBannerCard()) starts in the command zone instead of the
+    // deck. Gated to Commander games specifically because bannerCard can also be set as a
+    // generic cosmetic "cover card" on non-Commander decks, which must stay in the deck.
+    const bool isCommander = game->isCommanderGame();
     const CardRef commanderRef = deck->getBannerCard();
-    auto insertCardsIntoZone = [this, &commanderRef, commandZone](auto cards, auto *zone) {
+    auto insertCardsIntoZone = [this, isCommander, &commanderRef, commandZone](auto cards, auto *zone) {
         for (auto card : cards) {
             Server_CardZone *targetZone =
-                (!commanderRef.isEmpty() && card->getName() == commanderRef.name) ? commandZone : zone;
+                (isCommander && !commanderRef.isEmpty() && card->getName() == commanderRef.name) ? commandZone : zone;
             for (int k = 0; k < card->getNumber(); ++k) {
                 targetZone->insertCard(new Server_Card(card->toCardRef(), nextCardId++, 0, 0, targetZone), -1, 0);
             }

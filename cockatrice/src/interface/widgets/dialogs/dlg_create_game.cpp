@@ -15,6 +15,7 @@
 #include <QRadioButton>
 #include <QSet>
 #include <QSpinBox>
+#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/protocol/pb/serverinfo_game.pb.h>
 #include <libcockatrice/protocol/pending_command.h>
 #include <libcockatrice/utility/string_limits.h>
@@ -109,7 +110,7 @@ void DlgCreateGame::sharedCtor()
         while (commanderDefaultsIterator.hasNext()) {
             commanderDefaultsIterator.next();
             QRadioButton *gameTypeRadioButton = commanderDefaultsIterator.value();
-            if (!gameTypeRadioButton->text().contains("Commander", Qt::CaseInsensitive)) {
+            if (!CommanderRules::gameTypeLabelIsCommander(gameTypeRadioButton->text())) {
                 continue;
             }
             connect(gameTypeRadioButton, &QRadioButton::toggled, this, [this](bool checked) {
