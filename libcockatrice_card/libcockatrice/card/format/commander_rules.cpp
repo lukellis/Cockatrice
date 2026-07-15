@@ -1,8 +1,7 @@
 #include "commander_rules.h"
 
-#include <libcockatrice/card/card_info.h>
-
 #include <QRegularExpression>
+#include <libcockatrice/card/card_info.h>
 
 namespace CommanderRules
 {
@@ -10,7 +9,7 @@ namespace CommanderRules
 bool canBeCommander(const CardInfo &card)
 {
     bool isLegendaryCreature = card.getCardType().contains("Legendary", Qt::CaseInsensitive) &&
-                                card.getCardType().contains("Creature", Qt::CaseInsensitive);
+                               card.getCardType().contains("Creature", Qt::CaseInsensitive);
     return isLegendaryCreature || card.getText().contains("can be your commander", Qt::CaseInsensitive);
 }
 
@@ -83,9 +82,8 @@ bool formatUsesColorIdentity(const QString &format)
 {
     // Matches the singleton, commander-style formats registered in
     // OracleImporter::createDefaultMagicFormats() (kSingletonCounts).
-    static const QSet<QString> commanderFamilyFormats = {"commander",     "duel",           "brawl",
-                                                          "standardbrawl", "oathbreaker",    "paupercommander",
-                                                          "predh"};
+    static const QSet<QString> commanderFamilyFormats = {
+        "commander", "duel", "brawl", "standardbrawl", "oathbreaker", "paupercommander", "predh"};
     return commanderFamilyFormats.contains(format.toLower());
 }
 

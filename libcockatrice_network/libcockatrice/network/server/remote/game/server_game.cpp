@@ -368,8 +368,8 @@ void Server_Game::doStartGameIfReady(bool forceStartGame)
             }
             for (Server_Card *commander : attackerCommandZone->getCards()) {
                 defenderPlayer->addCounter(new Server_Counter(defenderPlayer->newCounterId(),
-                                                               CommanderCounterNames::damage(commander->getName()),
-                                                               makeColor(200, 40, 40), 15, 0));
+                                                              CommanderCounterNames::damage(commander->getName()),
+                                                              makeColor(200, 40, 40), 15, 0));
             }
         }
     }

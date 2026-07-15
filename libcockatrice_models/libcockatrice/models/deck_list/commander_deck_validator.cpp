@@ -34,15 +34,15 @@ Result validate(const DeckListModel &model)
     const CardInfoPtr commanderInfo = commanderCard.getCardPtr();
     if (!commanderInfo) {
         result.isValid = false;
-        result.errors << QStringLiteral("Commander \"%1\" could not be found in the card database.")
-                             .arg(commanderRef.name);
+        result.errors
+            << QStringLiteral("Commander \"%1\" could not be found in the card database.").arg(commanderRef.name);
         return result;
     }
 
     if (!CommanderRules::canBeCommander(*commanderInfo)) {
         result.isValid = false;
         result.errors << QStringLiteral("\"%1\" is not a legal commander (must be a legendary creature, or a card "
-                                         "whose text says it can be your commander).")
+                                        "whose text says it can be your commander).")
                              .arg(commanderInfo->getName());
     }
 
@@ -58,7 +58,7 @@ Result validate(const DeckListModel &model)
     if (totalCards != 100) {
         result.isValid = false;
         result.errors << QStringLiteral("Commander decks must contain exactly 100 cards including the commander "
-                                         "(found %1).")
+                                        "(found %1).")
                              .arg(totalCards);
     }
 
@@ -75,15 +75,15 @@ Result validate(const DeckListModel &model)
         if (!card->getFormatLegality()) {
             result.isValid = false;
             result.errors << QStringLiteral("\"%1\" is not legal in this Commander deck (banned, or more than one "
-                                             "copy of a non-basic-land card).")
+                                            "copy of a non-basic-land card).")
                                  .arg(cardInfo->getName());
         }
 
         const QSet<QChar> cardIdentity = CommanderRules::colorIdentity(*cardInfo);
         if (!CommanderRules::isWithinColorIdentity(cardIdentity, commanderIdentity)) {
             result.isValid = false;
-            result.errors << QStringLiteral("\"%1\" is outside the commander's color identity.")
-                                 .arg(cardInfo->getName());
+            result.errors
+                << QStringLiteral("\"%1\" is outside the commander's color identity.").arg(cardInfo->getName());
         }
     }
 

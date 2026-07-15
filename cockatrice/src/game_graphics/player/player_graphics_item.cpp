@@ -216,8 +216,7 @@ void PlayerGraphicsItem::onCounterAdded(CounterState *state)
                                      tr("%1 has taken %2 damage from %3 and has lost the game (rule 704.5g).")
                                          .arg(player->getPlayerInfo()->getName())
                                          .arg(newValue)
-                                         .arg(CommanderCounterNames::commanderNameFromDamageCounter(
-                                             state->getName())));
+                                         .arg(CommanderCounterNames::commanderNameFromDamageCounter(state->getName())));
             }
         });
     }

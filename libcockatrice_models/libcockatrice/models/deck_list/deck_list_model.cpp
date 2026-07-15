@@ -775,9 +775,8 @@ static bool isCardNodeLegalForFormat(const QString &format,
 
     // Commander/Brawl/Oathbreaker-style formats restrict every card to the color identity of
     // the deck's designated commander (see CommanderDeckValidator for the full deck-level check).
-    if (hasCommanderIdentity &&
-        !CommanderRules::isWithinColorIdentity(CommanderRules::colorIdentity(exactCard.getInfo()),
-                                               commanderColorIdentity)) {
+    if (hasCommanderIdentity && !CommanderRules::isWithinColorIdentity(
+                                    CommanderRules::colorIdentity(exactCard.getInfo()), commanderColorIdentity)) {
         return false;
     }
 
