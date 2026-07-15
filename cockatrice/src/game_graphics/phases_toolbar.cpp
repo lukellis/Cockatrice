@@ -203,6 +203,7 @@ void PhasesToolbar::rearrangeButtons()
         i->setWidth(symbolSize);
     }
     nextTurnButton->setWidth(symbolSize);
+    passPriorityButton->setWidth(symbolSize);
 
     double y = marginSize;
     buttonList[0]->setPos(marginSize, y);
