@@ -29,6 +29,7 @@
 #include <libcockatrice/protocol/pb/command_move_card.pb.h>
 #include <libcockatrice/protocol/pb/command_mulligan.pb.h>
 #include <libcockatrice/protocol/pb/command_next_turn.pb.h>
+#include <libcockatrice/protocol/pb/command_pass_priority.pb.h>
 #include <libcockatrice/protocol/pb/command_ready_start.pb.h>
 #include <libcockatrice/protocol/pb/command_reveal_cards.pb.h>
 #include <libcockatrice/protocol/pb/command_reverse_turn.pb.h>
@@ -375,6 +376,23 @@ Response::ResponseCode Server_AbstractParticipant::cmdSetActivePhase(const Comma
     return Response::RespOk;
 }
 
+Response::ResponseCode Server_AbstractParticipant::cmdPassPriority(const Command_PassPriority & /*cmd*/,
+                                                                   ResponseContainer & /*rc*/,
+                                                                   GameEventStorage & /*ges*/)
+{
+    if (!game->getGameStarted()) {
+        return Response::RespGameNotStarted;
+    }
+
+    if (!judge) {
+        return Response::RespFunctionNotAllowed;
+    }
+
+    game->advancePriority(playerId);
+
+    return Response::RespOk;
+}
+
 Response::ResponseCode Server_AbstractParticipant::cmdDumpZone(const Command_DumpZone & /*cmd*/,
                                                                ResponseContainer & /*rc*/,
                                                                GameEventStorage & /*ges*/)
@@ -494,6 +512,9 @@ Server_AbstractParticipant::processGameCommand(const GameCommand &command, Respo
             break;
         case GameCommand::SET_ACTIVE_PHASE:
             return cmdSetActivePhase(command.GetExtension(Command_SetActivePhase::ext), rc, ges);
+            break;
+        case GameCommand::PASS_PRIORITY:
+            return cmdPassPriority(command.GetExtension(Command_PassPriority::ext), rc, ges);
             break;
         case GameCommand::DUMP_ZONE:
             return cmdDumpZone(command.GetExtension(Command_DumpZone::ext), rc, ges);

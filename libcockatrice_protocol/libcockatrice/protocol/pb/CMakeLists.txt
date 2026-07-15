@@ -32,6 +32,7 @@ set(PROTO_FILES
     command_move_card.proto
     command_mulligan.proto
     command_next_turn.proto
+    command_pass_priority.proto
     command_ready_start.proto
     command_replay_delete_match.proto
     command_replay_download.proto
@@ -90,6 +91,7 @@ set(PROTO_FILES
     event_move_card.proto
     event_notify_user.proto
     event_player_properties_changed.proto
+    event_priority_changed.proto
     event_remove_from_list.proto
     event_remove_messages.proto
     event_replay_added.proto

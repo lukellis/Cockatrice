@@ -57,6 +57,14 @@ enum class CommanderPhaseAutomation
     DrawForActivePlayer
 };
 
+/**
+ * @brief Number of phases in a turn, for wrapping phase 10 (End/Cleanup) back to phase 0
+ * (Untap) of the next turn. Coupled to cockatrice/src/game/phase.cpp: Phases::phaseTypesCount
+ * — see the caveat on CommanderPhaseAutomation above; same architectural gap (no shared
+ * server/client phase enum), same Commander-games-only gating to contain the assumption.
+ */
+constexpr int CommanderPhaseCount = 11;
+
 class Server_Game : public QObject
 {
     Q_OBJECT
@@ -77,6 +85,10 @@ private:
     QList<int> gameTypes;
     int activePlayer, activePhase;
     int turnNumber = 0; // incremented once per nextTurn() call; turn 1 is the first turn of the game.
+    // Commander-only priority tracking (see isCommanderGame()); unused/meaningless for other
+    // game types. priorityPlayerId is -1 when not applicable (e.g. game not started).
+    int priorityPlayerId = -1;
+    QSet<int> priorityPassedBy;
     bool onlyBuddies, onlyRegistered;
     bool spectatorsAllowed;
     bool spectatorsNeedPassword;
@@ -234,6 +246,40 @@ public:
      * Commander games never skip it.
      */
     static CommanderPhaseAutomation phaseAutomationFor(int phase, int turnNumber, int playerCount);
+
+    /**
+     * @brief Commander-only (see isCommanderGame()) priority tracking — see
+     * COMMANDER_IMPLEMENTATION_STATUS.md "Phase 5" for what this simplifies away from the full
+     * CR priority/stack rules. -1 if not applicable (e.g. not a Commander game, or the game
+     * hasn't started).
+     */
+    int getPriorityPlayerId() const
+    {
+        return priorityPlayerId;
+    }
+
+    /**
+     * @brief Called when @p passingPlayerId passes priority. Advances priority to the next
+     * player in turn order (see nextPriorityPlayer()) who hasn't yet passed since the last
+     * phase/turn change; if everyone eligible has now passed, advances to the next phase (or,
+     * wrapping past the last phase, the next turn) instead — Commander's simplified stand-in
+     * for "the stack is empty and everyone passes in succession" (rule 117.4), since this fork
+     * doesn't model the stack as resolvable objects (see Phase 5 notes).
+     */
+    void advancePriority(int passingPlayerId);
+
+    /**
+     * @brief Pure logic: the next player, in ascending-id turn order starting just after
+     * @p currentPlayerId (wrapping around @p playerOrder), who is in neither @p passedPlayers
+     * nor @p concededPlayers. Returns -1 if every eligible player has already passed. Kept
+     * separate from advancePriority() so it's unit-testable without a fully constructed,
+     * participant-registered game (mirrors phaseAutomationFor()'s rationale above).
+     */
+    static int nextPriorityPlayer(const QList<int> &playerOrder,
+                                  int currentPlayerId,
+                                  const QSet<int> &passedPlayers,
+                                  const QSet<int> &concededPlayers);
+
     int getSecondsElapsed() const
     {
         return secondsElapsed;

@@ -25,6 +25,7 @@
 #include <libcockatrice/protocol/pb/command_inc_counter.pb.h>
 #include <libcockatrice/protocol/pb/command_move_card.pb.h>
 #include <libcockatrice/protocol/pb/command_mulligan.pb.h>
+#include <libcockatrice/protocol/pb/command_pass_priority.pb.h>
 #include <libcockatrice/protocol/pb/command_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/command_set_counter.pb.h>
 #include <libcockatrice/protocol/pb/command_set_sideboard_lock.pb.h>
@@ -601,6 +602,35 @@ Response::ResponseCode Server_Player::cmdSetActivePhase(const Command_SetActiveP
     }
 
     game->setActivePhase(cmd.phase());
+
+    return Response::RespOk;
+}
+
+Response::ResponseCode Server_Player::cmdPassPriority(const Command_PassPriority & /*cmd*/,
+                                                      ResponseContainer & /*rc*/,
+                                                      GameEventStorage & /*ges*/)
+{
+    if (!game->getGameStarted()) {
+        return Response::RespGameNotStarted;
+    }
+
+    // Priority-passing only exists for Commander games (see Server_Game::isCommanderGame());
+    // other game types keep today's fully-manual phase/turn flow.
+    if (!game->isCommanderGame()) {
+        return Response::RespContextError;
+    }
+
+    if (!judge) {
+        if (conceded) {
+            return Response::RespContextError;
+        }
+
+        if (game->getPriorityPlayerId() != playerId) {
+            return Response::RespContextError;
+        }
+    }
+
+    game->advancePriority(playerId);
 
     return Response::RespOk;
 }

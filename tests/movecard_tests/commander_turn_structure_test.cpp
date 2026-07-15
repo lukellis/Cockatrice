@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 #include <libcockatrice/protocol/pb/card_attributes.pb.h>
+#include <libcockatrice/protocol/pb/command_pass_priority.pb.h>
 #include <libcockatrice/protocol/pb/serverinfo_user.pb.h>
 #include <libcockatrice/rng/rng_abstract.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -52,20 +53,73 @@ TEST(CommanderTurnStructureTest, OtherPhasesHaveNoAutomation)
     }
 }
 
+// ---- Server_Game::nextPriorityPlayer (pure decision logic) ----
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerAdvancesToNextInOrder)
+{
+    QList<int> order{1, 2, 3, 4};
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {}), 2);
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 2, {}, {}), 3);
+}
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerWrapsAroundTheTable)
+{
+    QList<int> order{1, 2, 3, 4};
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 4, {}, {}), 1);
+}
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerSkipsPassedPlayers)
+{
+    QList<int> order{1, 2, 3, 4};
+    // 2 already passed this round; 1 just passed too, so priority should skip to 3.
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {2}, {}), 3);
+}
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerSkipsConcededPlayers)
+{
+    QList<int> order{1, 2, 3, 4};
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {2}), 3);
+}
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerReturnsNegativeOneWhenEveryoneElseIsIneligible)
+{
+    QList<int> order{1, 2, 3, 4};
+    // Everyone but the passing player (1) has either passed or conceded.
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {3}, {2, 4}), -1);
+}
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerReturnsNegativeOneForSoloPlayer)
+{
+    QList<int> order{1};
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {}), -1);
+}
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerReturnsNegativeOneForEmptyOrder)
+{
+    EXPECT_EQ(Server_Game::nextPriorityPlayer({}, 1, {}, {}), -1);
+}
+
+TEST(CommanderTurnStructureTest, NextPriorityPlayerNeverReturnsThePassingPlayerItself)
+{
+    QList<int> order{1, 2, 3};
+    // 2 and 3 both conceded; only 1 (the one passing) remains "eligible" by the naive
+    // pass/concede check, but must never be returned as its own next priority holder.
+    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {2, 3}), -1);
+}
+
 // ---- Server_Game::isCommanderGame ----
 //
 // FakeServer/Server_Room/Server_Game are deliberately heap-allocated and intentionally never
 // freed here (rather than stack-allocated locals, as tests elsewhere in this repo use for a
 // single instance). Constructing+destructing multiple Server_Game instances in sequence within
-// one process was observed to segfault nondeterministically (reproducible outside a debugger,
-// not under one — consistent with a pre-existing lifecycle issue in Server_Game/Server_Room
-// teardown unrelated to this fork's changes). Leaking avoids exercising that destructor path;
-// the test process is short-lived, so this is a pragmatic tradeoff, not a fix for the
-// underlying fragility.
-Server_Game &makeGame(const QStringList &roomGameTypeLabels,
-                      const QList<int> &selectedGameTypes,
-                      int maxPlayers,
-                      int startingLife)
+// one process was observed to segfault deterministically (reproducible outside a debugger, not
+// under one). Root cause found: Server_Game::~Server_Game() calls deleteLater() on itself at
+// the very end of its own destructor (server_game.cpp) — undefined behavior (posting a deferred
+// self-deletion event for an object that's already being destructed), unrelated to this fork's
+// changes and out of scope to fix here. Leaking avoids exercising that destructor path; the
+// test process is short-lived, so this is a pragmatic tradeoff, not a fix for the underlying bug.
+Server_Game &
+makeGame(const QStringList &roomGameTypeLabels, const QList<int> &selectedGameTypes, int maxPlayers, int startingLife)
 {
     static ServerInfo_User user = [] {
         ServerInfo_User u;
@@ -77,6 +131,25 @@ Server_Game &makeGame(const QStringList &roomGameTypeLabels,
     auto *game = new Server_Game(user, 1, "", "", maxPlayers, selectedGameTypes, false, false, false, false, false,
                                  false, startingLife, false, room);
     return *game;
+}
+
+// ---- Server_Player::cmdPassPriority ----
+// Only the gating checks reachable without a started, participant-registered game are covered
+// here (see makeGame()'s comment above for why registering real participants isn't lightweight
+// in this test harness). Full pass -> advance flow is covered indirectly via nextPriorityPlayer()
+// above plus manual code review of advancePriority()'s wiring.
+
+TEST(CommanderTurnStructureTest, PassPriorityRejectedBeforeGameStarts)
+{
+    Server_Game &game = makeGame({"Commander"}, {0}, 4, 40);
+    ServerInfo_User user;
+    user.set_name("test-user");
+    Server_Player player(&game, 1, user, false, nullptr);
+
+    Command_PassPriority cmd;
+    ResponseContainer rc(0);
+    GameEventStorage ges;
+    EXPECT_EQ(player.cmdPassPriority(cmd, rc, ges), Response::RespGameNotStarted);
 }
 
 TEST(CommanderTurnStructureTest, IsCommanderGameTrueWhenSelectedGameTypeIsCommander)

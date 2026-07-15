@@ -26,7 +26,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 2: Commander Deck Validation | **Done** | `CommanderDeckValidator` (100-card count, singleton, color identity, legality), wired into both server-side game-start and a live client-side deck-editor status label. |
 | §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
-| §3 Phase 5: Priority & Stack System | Not started | Out of current scope. |
+| §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. "Everyone passes" advances the phase instead of resolving a stack object. See "Phase 5" section below. Server-side + tested; client UI not yet wired up. |
 | §3 Phase 6: Mana System | Not started | Out of current scope. |
 | §3 Phase 7: Card Ability System | Not started | Out of current scope. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
@@ -120,22 +120,93 @@ risk profile:
   requires a live `Server_AbstractUserInterface`, and there's no lighter-weight
   seam to inject a participant for testing. Compensated for by testing the
   decision logic and the reused mechanisms separately, both directly.
-- **Pre-existing test-infrastructure fragility discovered (not part of this
-  fork's diff, but worth knowing for future sessions):** constructing and
-  destructing multiple `Server_Game`/`Server_Room` instances as stack locals in
-  sequence within one test process **segfaults deterministically** (reproduced
-  3/3 plain runs) but **does not reproduce under gdb** (5/5 passes) — a classic
-  signature of a timing/memory-layout-dependent bug in `Server_Game`/`Server_Room`
-  teardown. Root cause not fully diagnosed (ruled out: `pingClock` QTimer, since
-  `FakeServer::getGameShouldPing()` defaults to false so it's never constructed).
-  Every other existing test using these classes (`reverse_card_move_test.cpp`)
-  only ever constructs **one** instance per process, so this had never been hit
-  before. Workaround used here: heap-allocate `FakeServer`/`Server_Room`/`Server_Game`
-  and deliberately never free them (the test process is short-lived) rather than
-  use stack locals, which avoids exercising the crashing teardown path. This is a
-  workaround, not a fix — if a future session needs many `Server_Game` instances
-  per test process, or needs to actually test destruction behavior, this will
-  need real investigation (try Valgrind/ASan; this sandbox only had gdb available).
+- **Pre-existing bug found (not part of this fork's diff, but worth knowing for
+  future sessions):** constructing and destructing multiple `Server_Game`/
+  `Server_Room` instances as stack locals in sequence within one test process
+  segfaulted deterministically (reproduced 3/3 plain runs, 0/5 under gdb — a
+  classic timing/memory-layout-dependent signature). **Root cause found:**
+  `Server_Game::~Server_Game()` (`server_game.cpp`) calls `deleteLater()` on
+  itself at the very end of its own destructor body — undefined behavior
+  (posting a deferred self-deletion event for an object that's already being
+  destructed). Every other existing test using these classes
+  (`reverse_card_move_test.cpp`) only ever constructs **one** instance per
+  process, so this had never been hit before. Out of scope to fix as part of
+  this Commander-focused diff (touches core game-lifecycle code with no
+  Commander-specific angle). Workaround used in tests: heap-allocate
+  `FakeServer`/`Server_Room`/`Server_Game` and deliberately never free them
+  (the test process is short-lived) rather than use stack locals, which avoids
+  exercising the buggy destructor path.
+
+## Phase 5: Priority Passing (simplified stand-in for the Stack System)
+
+Design doc §3 Phase 5 ("Priority & Stack System") calls for a real `Server_Stack`
+(LIFO resolution) and `Server_PriorityManager`, with new protocol messages for
+casting spells and resolving stack objects — a genuine card-rules engine
+(parsing and executing arbitrary card effects), which is squarely out of reach
+for this fork (no card-scripting engine exists here, and building one is its
+own multi-month project — see design doc §3 Phase 7's own 8–12 week estimate
+for "Card Ability System", a prerequisite for real stack resolution).
+
+**Researched before implementing:** looked at how existing open-source MTG
+rules engines structure this, specifically
+[Forge](https://github.com/Card-Forge/forge) and
+[XMage](https://github.com/magefree/mage) (both GPL-licensed, community-built,
+full rules-enforcing engines — see
+[cgomesu.com's comparison](https://cgomesu.com/blog/forge-xmage-mtg/)). Fetched
+and read XMage's `GameImpl.playPriority()` (`Mage/src/main/java/mage/game/GameImpl.java`)
+directly from `github.com/magefree/mage` for the canonical algorithm shape:
+round-robin priority passing starting from the active player; if a player acts,
+passed-flags reset and the round restarts; once everyone passes in succession,
+resolve the top stack object if the stack is non-empty (then reset and
+continue), otherwise end the priority round (advance to the next step/phase).
+This is the real CR 117.3b/117.4/405.5 priority algorithm, implemented in Java
+against a full card-effects engine neither of which exist in this C++/Qt fork.
+**Borrowed the algorithmic shape, not the code** (different language, and
+Cockatrice's architecture — server-authoritative state with fully-manual client
+actions — is fundamentally different from XMage's simulate-and-execute model).
+
+**What's implemented — deliberately simplified from the above:**
+- New protocol messages (first time this fork has touched `.proto` files —
+  every prior phase stayed protocol-compatible; this genuinely needs a new
+  command/event pair): `Command_PassPriority` (`GameCommand` ext 1035) and
+  `Event_PriorityChanged` (`GameEvent` ext 2023, `priority_player_id` field).
+  Both purely additive — no existing message changed.
+- `Server_Game` tracks `priorityPlayerId` and `priorityPassedBy`, Commander
+  games only (`isCommanderGame()`). Resets to the active player at the start
+  of every phase (in `setActivePhase()`, alongside the existing untap/draw
+  automation). `Server_Player::cmdPassPriority()` validates the caller
+  currently holds priority (or is a judge), then calls
+  `Server_Game::advancePriority()`.
+- `advancePriority()` finds the next non-passed, non-conceded player in turn
+  order via the pure, unit-tested `Server_Game::nextPriorityPlayer()`. If
+  everyone eligible has passed, **this is where the simplification from real
+  Magic happens**: rule 117.4 would resolve the top of the stack here; instead,
+  since this fork's `STACK` zone (already existed, per-player, purely a manual
+  visual aid with no resolvable objects — see the original architecture
+  research) has nothing this fork can execute, "everyone passed" simply
+  **advances to the next phase** (wrapping past the last phase into the next
+  turn via the existing `nextTurn()`). Players who want to represent casting/
+  resolving something via the Stack zone still do so manually, exactly as
+  before this feature existed — priority-passing doesn't block or require that.
+- **Priority is advisory, not enforcement**: holding or not holding priority
+  does **not** gate any other existing command (moving cards, tapping,
+  drawing, etc. all remain available to any player at any time, as today).
+  This mirrors the Assisted Mode philosophy used throughout this fork and
+  avoids a much bigger, riskier behavioral change (blocking actions based on
+  priority) that couldn't be verified without live multiplayer play-testing.
+- Tests: `Server_Game::nextPriorityPlayer()` pure logic (8 cases: advance,
+  wrap-around, skip-passed, skip-conceded, all-ineligible, solo player, empty
+  order, never-returns-self) plus a `cmdPassPriority` gating test
+  (game-not-started rejection — see the file for why deeper integration
+  testing isn't lightweight here, same limitation as Phase 4's tests).
+- **Not implemented:** client-side UI (a "Pass Priority" button, priority
+  indicator). The feature is protocol- and server-complete and tested, but not
+  yet exposed to players in the GUI — see design doc §12.3's "Priority
+  Indicator" mockup for what that would eventually look like. Deliberately
+  scoped out of this increment: new Qt widget/interaction work is harder to
+  verify without live play-testing than the server logic (which has real
+  automated test coverage), and the priority command is fully inert/unused by
+  existing clients until wired up, so leaving it server-only is safe.
 
 ## Implementation status
 

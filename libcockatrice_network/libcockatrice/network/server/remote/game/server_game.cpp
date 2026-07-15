@@ -50,6 +50,7 @@
 #include <libcockatrice/protocol/pb/event_kicked.pb.h>
 #include <libcockatrice/protocol/pb/event_leave.pb.h>
 #include <libcockatrice/protocol/pb/event_player_properties_changed.pb.h>
+#include <libcockatrice/protocol/pb/event_priority_changed.pb.h>
 #include <libcockatrice/protocol/pb/event_replay_added.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_player.pb.h>
@@ -742,7 +743,76 @@ void Server_Game::setActivePhase(int newPhase)
                 ges.sendToGame(this);
             }
         }
+
+        // Priority resets to the active player at the start of every phase (rule 117.3b/117.3c
+        // simplified — see advancePriority()/isCommanderGame() docs for what this doesn't model).
+        priorityPassedBy.clear();
+        priorityPlayerId = activePlayer;
+        Event_PriorityChanged priorityEvent;
+        priorityEvent.set_priority_player_id(priorityPlayerId);
+        sendGameEventContainer(prepareGameEvent(priorityEvent, -1));
     }
+}
+
+void Server_Game::advancePriority(int passingPlayerId)
+{
+    QMutexLocker locker(&gameMutex);
+
+    if (!isCommanderGame() || priorityPlayerId != passingPlayerId) {
+        return; // cmdPassPriority already validates this; defensive for other callers.
+    }
+
+    priorityPassedBy.insert(passingPlayerId);
+
+    auto players = getPlayers();
+    QSet<int> concededPlayers;
+    for (auto it = players.constBegin(); it != players.constEnd(); ++it) {
+        if (it.value()->getConceded()) {
+            concededPlayers.insert(it.key());
+        }
+    }
+
+    int next = nextPriorityPlayer(players.keys(), passingPlayerId, priorityPassedBy, concededPlayers);
+    if (next != -1) {
+        priorityPlayerId = next;
+        Event_PriorityChanged event;
+        event.set_priority_player_id(priorityPlayerId);
+        sendGameEventContainer(prepareGameEvent(event, -1));
+        return;
+    }
+
+    // Everyone eligible has passed in succession. Rule 117.4 would resolve the top stack object
+    // here; this fork's Stack zone is a manual visual aid with no resolvable objects (see Phase
+    // 5 notes), so instead this is simplified to: advance to the next phase, wrapping past the
+    // last phase into the next turn (which itself resets priority via setActivePhase() above).
+    int nextPhase = (activePhase + 1) % CommanderPhaseCount;
+    if (nextPhase == 0) {
+        nextTurn();
+    } else {
+        setActivePhase(nextPhase);
+    }
+}
+
+int Server_Game::nextPriorityPlayer(const QList<int> &playerOrder,
+                                    int currentPlayerId,
+                                    const QSet<int> &passedPlayers,
+                                    const QSet<int> &concededPlayers)
+{
+    const int n = playerOrder.size();
+    if (n == 0) {
+        return -1;
+    }
+
+    int startIndex = playerOrder.indexOf(currentPlayerId);
+    for (int step = 1; step <= n; ++step) {
+        int idx = (startIndex + step + n) % n;
+        int candidate = playerOrder.at(idx);
+        if (candidate == currentPlayerId || concededPlayers.contains(candidate) || passedPlayers.contains(candidate)) {
+            continue;
+        }
+        return candidate;
+    }
+    return -1;
 }
 
 bool Server_Game::isCommanderGame() const

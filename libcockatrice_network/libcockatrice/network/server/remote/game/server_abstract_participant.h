@@ -44,6 +44,7 @@ class Command_SetCounter;
 class Command_DelCounter;
 class Command_NextTurn;
 class Command_SetActivePhase;
+class Command_PassPriority;
 class Command_DumpZone;
 class Command_RevealCards;
 class Command_ReverseTurn;
@@ -164,6 +165,8 @@ public:
     cmdNextTurn(const Command_NextTurn &cmd, ResponseContainer &rc, GameEventStorage &ges);
     virtual Response::ResponseCode
     cmdSetActivePhase(const Command_SetActivePhase &cmd, ResponseContainer &rc, GameEventStorage &ges);
+    virtual Response::ResponseCode
+    cmdPassPriority(const Command_PassPriority &cmd, ResponseContainer &rc, GameEventStorage &ges);
     virtual Response::ResponseCode
     cmdDumpZone(const Command_DumpZone &cmd, ResponseContainer &rc, GameEventStorage &ges);
     virtual Response::ResponseCode

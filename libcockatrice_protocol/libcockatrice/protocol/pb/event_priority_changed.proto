@@ -1,0 +1,13 @@
+syntax = "proto2";
+import "game_event.proto";
+
+// Commander-only (see Server_Game::isCommanderGame): who currently holds priority within the
+// active phase's priority-passing round. Advisory/informational — Cockatrice does not gate
+// other commands on holding priority; see COMMANDER_IMPLEMENTATION_STATUS.md "Phase 5" for the
+// simplifications this priority-tracking system makes versus the full CR priority/stack rules.
+message Event_PriorityChanged {
+    extend GameEvent {
+        optional Event_PriorityChanged ext = 2023;
+    }
+    optional sint32 priority_player_id = 1 [default = -1];
+}
