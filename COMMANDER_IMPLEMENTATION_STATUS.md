@@ -26,7 +26,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 2: Commander Deck Validation | **Done** | `CommanderDeckValidator` (100-card count, singleton, color identity, legality), wired into both server-side game-start and a live client-side deck-editor status label. |
 | §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
-| §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. "Everyone passes" advances the phase instead of resolving a stack object. See "Phase 5" section below. Server-side + tested; client UI not yet wired up. |
+| §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | Not started | Out of current scope. |
 | §3 Phase 7: Card Ability System | Not started | Out of current scope. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
@@ -184,10 +184,15 @@ actions — is fundamentally different from XMage's simulate-and-execute model).
   since this fork's `STACK` zone (already existed, per-player, purely a manual
   visual aid with no resolvable objects — see the original architecture
   research) has nothing this fork can execute, "everyone passed" simply
-  **advances to the next phase** (wrapping past the last phase into the next
-  turn via the existing `nextTurn()`). Players who want to represent casting/
-  resolving something via the Stack zone still do so manually, exactly as
-  before this feature existed — priority-passing doesn't block or require that.
+  **stops** — priority becomes held by no one (`priority_player_id: -1`) until
+  the next priority-triggering event. **This replaced an earlier version that
+  auto-advanced the phase/turn here instead** — see "Correction: priority
+  model and round semantics" below for why that was wrong and what changed.
+  Players who want to represent casting/resolving something via the Stack
+  zone still do so manually, exactly as before this feature existed —
+  priority-passing doesn't block or require that (moving a card onto the
+  Stack zone *does* now start a fresh priority round at the mover, see below,
+  but doesn't require or block the move itself).
 - **Priority is advisory, not enforcement**: holding or not holding priority
   does **not** gate any other existing command (moving cards, tapping,
   drawing, etc. all remain available to any player at any time, as today).
@@ -199,14 +204,91 @@ actions — is fundamentally different from XMage's simulate-and-execute model).
   order, never-returns-self) plus a `cmdPassPriority` gating test
   (game-not-started rejection — see the file for why deeper integration
   testing isn't lightweight here, same limitation as Phase 4's tests).
-- **Not implemented:** client-side UI (a "Pass Priority" button, priority
-  indicator). The feature is protocol- and server-complete and tested, but not
-  yet exposed to players in the GUI — see design doc §12.3's "Priority
-  Indicator" mockup for what that would eventually look like. Deliberately
-  scoped out of this increment: new Qt widget/interaction work is harder to
-  verify without live play-testing than the server logic (which has real
-  automated test coverage), and the priority command is fully inert/unused by
-  existing clients until wired up, so leaving it server-only is safe.
+- **Client-side UI: done** (a later session). A "Pass Priority" button (gold
+  double-chevron icon, `cockatrice/resources/phases/pass_priority.svg`) in the
+  phase toolbar, gated on `GameMetaInfo::isCommanderGame()`, sends
+  `Command_PassPriority`; a `GameEventHandler::priorityChanged` signal wires
+  the previously-server-only `Event_PriorityChanged` into
+  `TabGame::setPriorityPlayer()`, pulsing the button (reusing `PhaseButton`'s
+  existing active-highlight animation) while the local player holds priority.
+  See "UX additions" below for the auto-pass toggle, cross-player priority
+  highlight, and log lines built on top of this.
+
+### Correction: priority model and round semantics
+
+After the client UI above shipped, live verification (screenshot + debug-log
+cross-referencing, per this repo's established practice) surfaced a real
+**infinite loop**: enabling the new auto-pass toggle (see below) in a solo
+test game caused `Command_PassPriority` to fire forever, stopped only by
+servatrice's own flood protection ("You are flooding the game"). Root cause:
+the original `advancePriority()` auto-advanced the phase whenever a round was
+exhausted, which *also* reset priority back to the active player — in a
+solo game (or last-player-standing), that's the same player who just passed,
+so auto-pass re-fired immediately, forever.
+
+The user's correction, now implemented: **a priority round is scoped to
+exactly one triggering event** (a phase/step change, or a spell cast/ability
+activation — modeled here as a card moving onto the Stack zone) **and starts
+at exactly one player** (the active player for a phase change, or whoever
+triggered it for a spell/ability). If that round is exhausted (everyone
+passes in succession with no new trigger), **priority simply stops** — no one
+holds it — rather than cascading into an automatic phase change. This
+restores the fork's core "manual physical simulator" principle (see
+`CLAUDE.md`'s design principles): phase advancement is always a deliberate
+player action.
+
+Implementation:
+- `Server_Game::broadcastPriorityChange(int playerId)` — shared helper
+  (clear who's passed, set the new holder, broadcast) — used by both
+  `setActivePhase()` (phase-change trigger) and the new
+  `Server_Game::resetPriorityTo(int playerId)`.
+- `Server_Player::onCardBeingMoved()` calls `resetPriorityTo(playerId)`
+  whenever a card moves onto the `STACK` zone from anywhere else (rules
+  601.2i/602.2h/117.3d simplified) — this is how a spell cast or ability
+  activation starts a fresh priority round at the caster, since this fork
+  represents both as a manual move to the Stack zone. Reordering cards
+  already on the stack doesn't retrigger it.
+- `advancePriority()`'s exhaustion branch now broadcasts
+  `priority_player_id: -1` and returns, instead of calling `nextTurn()` /
+  `setActivePhase()`.
+- An initial client-side band-aid (a "once per phase" auto-pass guard) was
+  tried and discarded once the server fix was understood — it would have
+  wrongly suppressed legitimate auto-pass after a *second* spell cast in the
+  same phase. The corrected server model needs no client-side guard at all:
+  once priority becomes "no one" (-1), it can never equal any real local
+  player id, so the auto-pass trigger condition naturally stops firing.
+- Verified live: manually passing priority now logs "Everyone has passed.
+  No one has priority." with no automatic phase change; enabling auto-pass
+  and advancing a phase sends exactly one `Command_PassPriority` and then
+  stays stable (checked via repeated `grep -c` against the debug log with a
+  pause in between) with no flood warning. The new spell/ability trigger
+  (`resetPriorityTo` via a Stack-zone move) reuses the same, already-verified
+  `broadcastPriorityChange()` path as the phase-change trigger, but wasn't
+  independently exercised through the live UI (moving a card onto the Stack
+  zone via synthetic input) in this session — worth a follow-up live check.
+
+### UX additions (built on the corrected model)
+
+- **Auto-pass toggle**: double-click the Pass Priority button (mirrors the
+  existing Untap/Draw double-click-for-alternate-action convention) to
+  auto-send `Command_PassPriority` whenever the local player holds priority.
+  Off by default. A small cyan dot badge (new `PriorityButton` subclass of
+  `PhaseButton` in `phases_toolbar.{h,cpp}`, following the same
+  subclass-for-one-visual pattern as `CommandZone`/`PileZone`) indicates when
+  it's on.
+- **Priority-holder highlight, visible to every player/spectator** — not just
+  locally. The toolbar pulse only ever showed *your own* client whether *you*
+  held priority; there was no way to see who else had it. New
+  `PlayerLogic::holdsPriorityChanged` signal, plumbed through
+  `PlayerGraphicsItem` to `PlayerTarget` (the avatar/name badge rendered on
+  the shared board), draws a 4px cyan border around the current holder's
+  badge — a different visual channel from the existing white active-turn
+  outline on `TableZone`, since priority and the active turn are tracked
+  independently.
+- **Priority-passing log lines**: new
+  `GameEventHandler::logPriorityChanged`/`logPriorityCleared` signals wired
+  to `MessageLogWidget`, logging both "`<player>` has priority." and
+  "Everyone has passed. No one has priority."
 
 ## Implementation status
 
