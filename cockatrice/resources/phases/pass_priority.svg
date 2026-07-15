@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 width="60px" height="60px" viewBox="0 0 60 60" enable-background="new 0 0 60 60" xml:space="preserve">
+<radialGradient id="SVGID_1_" cx="30" cy="30" r="30" gradientUnits="userSpaceOnUse">
+	<stop  offset="0" style="stop-color:#E6BE50"/>
+	<stop  offset="1" style="stop-color:#191919"/>
+</radialGradient>
+<path fill="url(#SVGID_1_)" d="M60,51.818C60,56.337,56.337,60,51.818,60H8.182C3.663,60,0,56.337,0,51.818V8.182
+	C0,3.663,3.663,0,8.182,0h43.637C56.337,0,60,3.663,60,8.182V51.818z"/>
+<!-- Two right-pointing chevrons: "pass priority" / skip-forward, matching the accent color used
+     for CommandZone and the Commander Tax counter, so the button reads visually as
+     Commander-specific rather than a core-game phase. -->
+<g>
+	<path fill="#FFFFFF" d="M14,15 L28,30 L14,45 L20,45 L34,30 L20,15 Z"/>
+	<path fill="#FFFFFF" d="M30,15 L44,30 L30,45 L36,45 L50,30 L36,15 Z"/>
+</g>
+</svg>

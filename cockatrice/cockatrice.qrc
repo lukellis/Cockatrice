@@ -355,6 +355,7 @@
         <file>resources/phases/main2.svg</file>
         <file>resources/phases/cleanup.svg</file>
         <file>resources/phases/nextturn.svg</file>
+        <file>resources/phases/pass_priority.svg</file>
 
         <file>resources/replay/start.svg</file>
         <file>resources/replay/fastforward.svg</file>

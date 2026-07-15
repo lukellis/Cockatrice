@@ -36,6 +36,7 @@ class Event_Ping;
 class Event_GameSay;
 class Event_Kicked;
 class Event_ReverseTurn;
+class Event_PriorityChanged;
 class AbstractGame;
 class PendingCommand;
 class PlayerLogic;
@@ -82,6 +83,7 @@ public:
     void eventSetActivePhase(const Event_SetActivePhase &event, int eventPlayerId, const GameEventContext &context);
     void eventPing(const Event_Ping &event, int eventPlayerId, const GameEventContext &context);
     void eventReverseTurn(const Event_ReverseTurn &event, int eventPlayerId, const GameEventContext & /*context*/);
+    void eventPriorityChanged(const Event_PriorityChanged &event, int eventPlayerId, const GameEventContext &context);
 
     void commandFinished(const Response &response);
 
@@ -132,6 +134,7 @@ signals:
     void logActivePhaseChanged(int activePhase);
     void logConcede(int playerId);
     void logUnconcede(int playerId);
+    void priorityChanged(int priorityPlayerId);
 };
 
 #endif // COCKATRICE_GAME_EVENT_HANDLER_H

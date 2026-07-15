@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <libcockatrice/protocol/pb/command_draw_cards.pb.h>
 #include <libcockatrice/protocol/pb/command_next_turn.pb.h>
+#include <libcockatrice/protocol/pb/command_pass_priority.pb.h>
 #include <libcockatrice/protocol/pb/command_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/command_set_card_attr.pb.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -108,7 +109,7 @@ void PhaseButton::triggerDoubleClickAction()
 }
 
 PhasesToolbar::PhasesToolbar(QGraphicsItem *parent)
-    : QGraphicsItem(parent), width(100), height(100), ySpacing(1), symbolSize(8)
+    : QGraphicsItem(parent), commanderGame(false), width(100), height(100), ySpacing(1), symbolSize(8)
 {
     auto *aUntapAll = new QAction(this);
     connect(aUntapAll, &QAction::triggered, this, &PhasesToolbar::actUntapAll);
@@ -137,6 +138,10 @@ PhasesToolbar::PhasesToolbar(QGraphicsItem *parent)
     nextTurnButton = new PhaseButton("nextturn", this, nullptr, false);
     connect(nextTurnButton, &PhaseButton::clicked, this, &PhasesToolbar::actNextTurn);
 
+    passPriorityButton = new PhaseButton("pass_priority", this);
+    passPriorityButton->setVisible(false);
+    connect(passPriorityButton, &PhaseButton::clicked, this, &PhasesToolbar::actPassPriority);
+
     rearrangeButtons();
 
     retranslateUi();
@@ -152,6 +157,7 @@ void PhasesToolbar::retranslateUi()
     for (int i = 0; i < buttonList.size(); ++i) {
         buttonList[i]->setToolTip(getLongPhaseName(i));
     }
+    passPriorityButton->setToolTip(tr("Pass priority"));
 }
 
 QString PhasesToolbar::getLongPhaseName(int phase) const
@@ -216,7 +222,12 @@ void PhasesToolbar::rearrangeButtons()
     buttonList[10]->setPos(marginSize, y += symbolSize);
     y += ySpacing;
     y += ySpacing;
-    nextTurnButton->setPos(marginSize, y + symbolSize);
+    nextTurnButton->setPos(marginSize, y += symbolSize);
+
+    if (commanderGame) {
+        y += ySpacing;
+        passPriorityButton->setPos(marginSize, y + symbolSize);
+    }
 }
 
 void PhasesToolbar::setHeight(double _height)
@@ -229,6 +240,26 @@ void PhasesToolbar::setHeight(double _height)
     width = symbolSize + 2 * marginSize;
 
     rearrangeButtons();
+}
+
+void PhasesToolbar::setCommanderGame(bool isCommanderGame)
+{
+    if (commanderGame == isCommanderGame) {
+        return;
+    }
+
+    commanderGame = isCommanderGame;
+    passPriorityButton->setVisible(commanderGame);
+    // One more button-height's worth of vertical space to reserve/release, matching how
+    // nextTurnButton is already accounted for in buttonCount despite not being in buttonList.
+    buttonCount += commanderGame ? 1 : -1;
+
+    setHeight(height);
+}
+
+void PhasesToolbar::setPriorityHolder(bool localPlayerHasPriority)
+{
+    passPriorityButton->setActive(localPlayerHasPriority);
 }
 
 void PhasesToolbar::setActivePhase(int phase)
@@ -283,4 +314,9 @@ void PhasesToolbar::actDrawCard()
     cmd.set_number(1);
 
     emit sendGameCommand(cmd, -1);
+}
+
+void PhasesToolbar::actPassPriority()
+{
+    emit sendGameCommand(Command_PassPriority(), -1);
 }

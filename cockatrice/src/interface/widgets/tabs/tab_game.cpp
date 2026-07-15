@@ -158,6 +158,7 @@ void TabGame::connectToGameEventHandler()
     connect(game->getGameEventHandler(), &GameEventHandler::emitUserEvent, this, &TabGame::emitUserEvent);
     connect(game->getGameEventHandler(), &GameEventHandler::gameStopped, this, &TabGame::stopGame);
     connect(game->getGameEventHandler(), &GameEventHandler::gameClosed, this, &TabGame::closeGame);
+    connect(game->getGameEventHandler(), &GameEventHandler::priorityChanged, this, &TabGame::setPriorityPlayer);
     connect(game->getGameEventHandler(), &GameEventHandler::localPlayerReadyStateChanged, this,
             &TabGame::processLocalPlayerReadyStateChanged);
     connect(game->getGameEventHandler(), &GameEventHandler::localPlayerSideboardLocked, this,
@@ -891,6 +892,11 @@ void TabGame::setActivePhase(int phase)
     phasesToolbar->setActivePhase(phase);
 }
 
+void TabGame::setPriorityPlayer(int priorityPlayerId)
+{
+    phasesToolbar->setPriorityHolder(priorityPlayerId == game->getPlayerManager()->getLocalPlayerId());
+}
+
 void TabGame::newCardAdded(AbstractCardItem *card)
 {
     connect(card, &AbstractCardItem::rightClicked, scene, &GameScene::onCardRightClicked);
@@ -1146,6 +1152,7 @@ void TabGame::actResetLayout()
 void TabGame::createPlayAreaWidget(bool bReplay)
 {
     phasesToolbar = new PhasesToolbar;
+    phasesToolbar->setCommanderGame(game->getGameMetaInfo()->isCommanderGame());
     if (!bReplay) {
         connect(phasesToolbar, &PhasesToolbar::sendGameCommand, game->getGameEventHandler(),
                 qOverload<const ::google::protobuf::Message &, int>(&GameEventHandler::sendGameCommand));

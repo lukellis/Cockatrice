@@ -116,6 +116,7 @@ private:
 
     PlayerLogic *setActivePlayer(int id);
     void setActivePhase(int phase);
+    void setPriorityPlayer(int priorityPlayerId);
     void createMenuItems();
     void createReplayMenuItems();
     void createViewMenuItems();

@@ -518,22 +518,28 @@ as needing a card-rules engine this fork doesn't have).
   — the same conclusion Forge/XMage's own scale of effort confirms (community
   projects, years of work). Not attempted at any level here; would need a
   real scoping/design conversation, not a unilateral implementation.
-- **Client-side UI for priority-passing.** Protocol and server logic are
-  complete, tested, and live-game-verified (see the Phase 5 verification note
-  above); no "Pass Priority" button or priority indicator exists in the GUI
-  yet — the existing "Pass" toolbar button still sends `Command_NextTurn`
-  only. Investigated but not implemented this session: the phase toolbar
-  (`cockatrice/src/game_graphics/phases_toolbar.{h,cpp}`) is a hand-painted
-  `QGraphicsItem` with `buttonCount`/layout math baked in as constants and
-  per-phase icon assets resolved by name (`PhasePixmapGenerator`) — adding a
-  13th button cleanly needs a new icon asset and layout-constant updates, and
-  there's no existing client-side "is this a Commander game" signal to gate
-  visibility on (unlike the server, which has `isCommanderGame()`; client-side
-  today only has the create-game dialog's *cosmetic* string check, which
-  doesn't persist into active-game state). Doable, but real work, not a
-  five-minute wire-up — left for a session with room to also visually
-  iterate on icon/layout, now that UI testing makes that practical.
 **Done since the above was written (this session, continued):**
+- **Client-side UI for priority-passing** — done. A new "Pass Priority"
+  `PhaseButton` (gold double-chevron icon, `cockatrice/resources/phases/pass_priority.svg`,
+  registered in `cockatrice.qrc`) was added to `PhasesToolbar`, positioned below
+  the existing next-turn button. Gated on `GameMetaInfo::isCommanderGame()` via
+  a new `PhasesToolbar::setCommanderGame(bool)` (called once from
+  `TabGame::createPlayAreaWidget()`, which adjusts `buttonCount`/layout to
+  reserve/release its vertical slot rather than always showing an empty gap in
+  non-Commander games). Clicking it sends the existing `Command_PassPriority`
+  (unchanged from Phase 5). A new `GameEventHandler::eventPriorityChanged()` /
+  `priorityChanged(int)` signal wires the previously-unconsumed
+  `Event_PriorityChanged` into `TabGame::setPriorityPlayer()`, which calls
+  `PhasesToolbar::setPriorityHolder(bool)` to pulse the button (reusing
+  `PhaseButton`'s existing active-phase highlight animation, no new visual
+  code needed) whenever the local player holds priority. Verified live: local
+  servatrice + screenshot showing the button rendered and its (220,220,220)
+  active-highlight margin present, plus the client debug log showing the full
+  round trip (`Command_PassPriority` out → `Event_PriorityChanged` in →
+  phase auto-advances once the lone player in a 1-player test game passes
+  priority to themselves, exhausting the round — confirming this exercises
+  the real `Server_Game::advancePriority()` logic from Phase 5, not just the
+  new UI in isolation).
 - **Client-side Commander-game detection** — `GameMetaInfo::isCommanderGame()`
   (`cockatrice/src/game/game_meta_info.h`), mirroring the server's own
   `isCommanderGame()`. Unblocks any future client-only Commander UI.
@@ -552,17 +558,21 @@ as needing a card-rules engine this fork doesn't have).
   error strings now use `tr()`; see "Files added/changed" above.
 
 **Reasonable next increments, roughly in order of size/risk:**
-1. Client-side UI for priority-passing (button + indicator) — makes Phase 5's
-   server work actually playable end-to-end. Still not started; see the
-   investigation notes above (phase toolbar is hand-painted with baked-in
-   layout constants, needs a new icon asset).
+1. ~~Client-side UI for priority-passing~~ — **done**, see above.
 2. Anything from Phase 9 (State-Based Actions) that fits the existing
    counter/warning pattern, similar to how lethal commander damage is already
    handled as an advisory warning rather than automatic loss.
-3. A broader CONTRIBUTING.md compliance pass across the rest of the fork's
-   diff (header guards, include ordering, brace style, `nullptr` usage,
-   Doxygen comment style) — the translation-guideline gap above was one
-   concrete instance found; not yet done as a systematic sweep.
+3. ~~A broader CONTRIBUTING.md compliance pass~~ — **done.** Audited the
+   fork's full diff vs upstream master (a dedicated agent pass, since
+   `format.sh` already covers everything clang-format enforces). Found and
+   fixed: 6 UpperCamelCase local constants renamed to the codebase's
+   ALL_CAPS convention (`CleanupPhase`/`MaxHandSize`/`CommandZoneAccent`/
+   `UntapPhase`/`DrawPhase`/`CommanderPhaseCount`), and 4 more untranslated
+   user-facing strings in `commander_deck_validator.cpp` (missed by the
+   earlier partial `tr()` fix, which only covered 3 of 7 error paths).
+   Header guards, `nullptr` usage, single-declaration-per-line, Doxygen
+   comment style, and memory-management guidance were all already clean.
+   Pure renames — full 17-test GTest suite still passes.
 4. Phase 6+ (mana/abilities/combat) — needs a card-rules engine and real
    design discussion before implementation starts; not a reasonable
    unilateral next step at any scope.

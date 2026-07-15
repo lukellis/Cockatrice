@@ -27,6 +27,7 @@
 #include <libcockatrice/protocol/pb/event_kicked.pb.h>
 #include <libcockatrice/protocol/pb/event_leave.pb.h>
 #include <libcockatrice/protocol/pb/event_player_properties_changed.pb.h>
+#include <libcockatrice/protocol/pb/event_priority_changed.pb.h>
 #include <libcockatrice/protocol/pb/event_reverse_turn.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_player.pb.h>
@@ -161,6 +162,9 @@ void GameEventHandler::processGameEventContainer(const GameEventContainer &cont,
                     break;
                 case GameEvent::REVERSE_TURN:
                     eventReverseTurn(event.GetExtension(Event_ReverseTurn::ext), playerId, context);
+                    break;
+                case GameEvent::PRIORITY_CHANGED:
+                    eventPriorityChanged(event.GetExtension(Event_PriorityChanged::ext), playerId, context);
                     break;
 
                 default: {
@@ -498,6 +502,13 @@ void GameEventHandler::eventReverseTurn(const Event_ReverseTurn &event,
     }
 
     emit logTurnReversed(player, event.reversed());
+}
+
+void GameEventHandler::eventPriorityChanged(const Event_PriorityChanged &event,
+                                            int /*eventPlayerId*/,
+                                            const GameEventContext & /*context*/)
+{
+    emit priorityChanged(event.priority_player_id());
 }
 
 void GameEventHandler::eventGameHostChanged(const Event_GameHostChanged & /*event*/,
