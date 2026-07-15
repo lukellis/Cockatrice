@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cockatrice_carddatabase version="4">
+    <formats>
+        <format formatName="commander">
+            <minDeckSize>100</minDeckSize>
+            <maxDeckSize>100</maxDeckSize>
+            <allowedCounts>
+                <count max="1">legal</count>
+                <count max="0">banned</count>
+            </allowedCounts>
+            <exceptions>
+                <exception>
+                    <maxCopies>unlimited</maxCopies>
+                    <cardCondition field="type" match="contains" value="Basic Land" />
+                </exception>
+            </exceptions>
+        </format>
+    </formats>
+    <cards>
+        <card>
+            <name>Test Commander</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>Legendary creature used as a commander in tests.</text>
+            <prop>
+                <colors>GW</colors>
+                <manacost>{2}{G}{W}</manacost>
+                <cmc>4</cmc>
+                <type>Legendary Creature — Human</type>
+                <maintype>Creature</maintype>
+                <pt>3/3</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Ally Card</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>An ordinary green creature within the test commander's color identity.</text>
+            <prop>
+                <colors>G</colors>
+                <manacost>{1}{G}</manacost>
+                <cmc>2</cmc>
+                <type>Creature — Bear</type>
+                <maintype>Creature</maintype>
+                <pt>2/2</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Off Color Card</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>A blue creature outside the test commander's GW color identity.</text>
+            <prop>
+                <colors>U</colors>
+                <manacost>{1}{U}</manacost>
+                <cmc>2</cmc>
+                <type>Creature — Bird</type>
+                <maintype>Creature</maintype>
+                <pt>1/3</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Banned Card</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>A green creature that is banned in the test commander format.</text>
+            <prop>
+                <colors>G</colors>
+                <manacost>{G}</manacost>
+                <cmc>1</cmc>
+                <type>Creature — Squirrel</type>
+                <maintype>Creature</maintype>
+                <pt>1/1</pt>
+                <format-commander>banned</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Test Plains</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>({T}: Add {W}.)</text>
+            <prop>
+                <type>Basic Land — Plains</type>
+                <maintype>Land</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Reminder Text Card</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>Flying (Reminder text mentioning {U} should not count.) Protection from black.</text>
+            <prop>
+                <colors></colors>
+                <manacost>{3}</manacost>
+                <cmc>3</cmc>
+                <type>Artifact Creature — Construct</type>
+                <maintype>Creature</maintype>
+                <pt>2/2</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Can Be Your Commander Card</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>Legendary sorcery. This card can be your commander.</text>
+            <prop>
+                <colors>B</colors>
+                <manacost>{1}{B}</manacost>
+                <cmc>2</cmc>
+                <type>Legendary Sorcery</type>
+                <maintype>Sorcery</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+    </cards>
+</cockatrice_carddatabase>

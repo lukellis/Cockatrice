@@ -67,7 +67,7 @@ anything from Phases 4–9, rather than partially implementing the harder phases
 | 5 | Command zone + commander tax (+2 per prior cast, rule 903.9) | done |
 | 6 | Commander damage tracking + 21-damage loss warning (rule 704.5g) | done |
 | 7 | Commander game defaults (40 life, 4-player multiplayer) | done |
-| 8 | Rebrand fork (README/attribution) + **build verification** | **in progress — see Build status below** |
+| 8 | Rebrand fork (README/attribution) + **build verification** | **done — see Build status below** |
 
 ### Files added/changed
 
@@ -144,7 +144,10 @@ likely root cause of the OOM kill that ended the prior session mid-build.
   `server_game.cpp`, the least "copy an existing pattern" / most novel code) now
   **built successfully with zero errors/warnings**, confirmed in the follow-up
   session after fixing the OOM cause (see below).
-- Full `cockatrice` client binary and `servatrice` server binary: **not yet attempted**.
+- `cockatrice` client binary (the heaviest target — full GUI, MOC-heavy) now
+  **built successfully with zero errors**, `-j1`, no OOM. Binary at
+  `build/cockatrice/cockatrice`. **Task 8 is complete: this fork is fully
+  compile-verified**, not just manually reviewed.
 - The Qt6 install directory under `/tmp/qt6install` did **not** survive the sandbox
   restart after the OOM (tmpfs) — re-fetched via aqtinstall to a disk-backed path instead.
 
@@ -180,8 +183,53 @@ not writable by this user. Work is pushed instead to a fork at
       pulseaudio-libs fontconfig freetype` first (Qt6's prebuilt `libQt6Multimedia`/
       `libQt6Gui` shared libs need these system runtime libs at link time; AL2023
       doesn't have them by default). Binary at `build/servatrice/servatrice`.
-- [ ] Build `cockatrice` (client), confirm clean
-- [ ] If full build proves infeasible in sandbox resource budget, honestly report
-      to the user which parts are compile-verified vs. only manually reviewed
-      against existing working patterns
+- [x] Build `cockatrice` (client), confirm clean — binary at `build/cockatrice/cockatrice`.
+
+**Task 8 is done.** All new/modified code is compile-verified end to end
+(libraries, server, and client), not just manually reviewed.
+
+## Testing
+
+The repo has a real GTest suite under `tests/` (CI runs it via
+`.ci/compile.sh --test` → `ctest`), which the original implementation work did
+**not** use — it only had a standalone non-Qt algorithm mirror
+(`/tmp/color_identity_algo_test.cpp`, not part of the shipped diff). Closing that
+gap:
+
+- `./format.sh --cmake --branch master` run and clean (see Lint below) — not
+  testing per se, but part of this repo's CI checks.
+- New test suite added at `tests/commander/` (registered in `tests/CMakeLists.txt`):
+  - `commander_rules_test.cpp` — pure algorithmic tests for `CommanderRules::*`
+    (color identity from colors/mana-cost/rules-text, reminder-text exclusion,
+    hybrid symbols, `canBeCommander`, `formatUsesColorIdentity`). No card database
+    needed; constructs `CardInfo` directly via `CardInfo::newInstance()`.
+  - `commander_deck_validator_test.cpp` — integration test exercising the real
+    `CommanderDeckValidator::validate()` + `DeckListModel` + `CardDatabaseManager`
+    pipeline (not mocked), using a dedicated fixture at `tests/commander/data/cards.xml`
+    with its own `<formats>` block (100-card, singleton, banned-list, basic-land
+    exception) — isolated from `tests/carddatabase/data/cards.xml` so it doesn't
+    perturb that fixture's hardcoded card/set counts. Covers: valid 100-card deck,
+    missing/illegal/unknown commander, text-granted commander eligibility, wrong
+    card count, color identity violations (both directions), banned cards, singleton
+    violations, and the basic-land exception.
+- Status of running these + the pre-existing suite via `-DTEST=1` + `ctest`: **pending**,
+  next step below.
+
+## Lint
+
+`./format.sh --cmake --branch master` was run and applied (clang-format +
+cmake-format) to all changed files — purely cosmetic line-wrap/whitespace, no
+semantic changes. AL2023's dnf-provided clang-format is v15, which doesn't support
+this repo's `.clang-format` `RemoveSemicolon` key (needs 16+); installed
+clang-format 22 and cmake-format via `pip3 install --user clang-format cmake-format`
+(lands in `~/.local/bin`, ahead of dnf's `/usr/bin/clang-format` on `PATH`) to match
+what CI's lint workflow actually checks for.
+
+**Note:** `format.sh`'s default `--branch` is `origin/master` (the real upstream
+remote). Since this fork's local `master` may not exactly match `origin/master`,
+running `format.sh` without `--branch master` can pick up unrelated pre-existing
+files that merely differ from upstream — happened once with root `CMakeLists.txt`
+(a pre-existing GCC16 workaround comment, reformatted and reverted, not part of
+this fork's diff). Always pass `--branch master` explicitly in this repo to scope
+to just this fork's actual changes.
 - [ ] Final summary to user: what's implemented, how to build/run, known limitations
