@@ -485,20 +485,47 @@ as needing a card-rules engine this fork doesn't have).
   projects, years of work). Not attempted at any level here; would need a
   real scoping/design conversation, not a unilateral implementation.
 - **Client-side UI for priority-passing.** Protocol and server logic are
-  complete and tested; no "Pass Priority" button or priority indicator exists
-  in the GUI yet. Scoped out because Qt widget/interaction changes are harder
-  to verify without live play-testing than server logic with automated tests,
-  and leaving the command unwired is safe (inert until a client sends it).
+  complete, tested, and live-game-verified (see the Phase 5 verification note
+  above); no "Pass Priority" button or priority indicator exists in the GUI
+  yet — the existing "Pass" toolbar button still sends `Command_NextTurn`
+  only. Investigated but not implemented this session: the phase toolbar
+  (`cockatrice/src/game_graphics/phases_toolbar.{h,cpp}`) is a hand-painted
+  `QGraphicsItem` with `buttonCount`/layout math baked in as constants and
+  per-phase icon assets resolved by name (`PhasePixmapGenerator`) — adding a
+  13th button cleanly needs a new icon asset and layout-constant updates, and
+  there's no existing client-side "is this a Commander game" signal to gate
+  visibility on (unlike the server, which has `isCommanderGame()`; client-side
+  today only has the create-game dialog's *cosmetic* string check, which
+  doesn't persist into active-game state). Doable, but real work, not a
+  five-minute wire-up — left for a session with room to also visually
+  iterate on icon/layout, now that UI testing makes that practical.
+- **Discard-to-hand-size at end step** — investigated, but it's a different
+  shape of feature than untap/draw: discarding involves a real *choice* (which
+  cards), so it can't be safely auto-executed the way untap/draw are (zero
+  decision points). The right version is an Assisted-Mode advisory warning
+  ("you have N cards, hand size is 7") at the Cleanup step (phase 10), not an
+  automatic discard. Client-side implementation sketch: hook
+  `GameEventHandler::eventSetActivePhase` (`cockatrice/src/game/game_event_handler.cpp`),
+  check `phase == 10`, confirm the active player is the local player, read
+  their hand zone's card count, and reuse the exact `QMessageBox::warning`
+  pattern already used for lethal commander damage
+  (`PlayerGraphicsItem::onCounterAdded()` in `player_graphics_item.cpp`) —
+  same "client-only, no protocol/server changes" shape as that feature. Also
+  needs the same client-side Commander-game-detection gap noted above.
 
 **Reasonable next increments, roughly in order of size/risk:**
-1. Client-side UI to actually use priority-passing (a button + indicator,
-   per design doc §12.3's mockup) — makes tonight's Phase 5 server work
-   actually playable.
-2. Discard-to-hand-size at the end step (remaining piece of design doc
-   Phase 4) — similar shape to the untap/draw automation already added.
-3. Anything from Phase 9 (State-Based Actions) that fits the existing
+1. Solve client-side Commander-game detection once (e.g. thread the selected
+   game type through to `PlayerLogic`/`GameEventHandler` at game start) — both
+   of the next two items depend on it, so it's worth doing centrally rather
+   than twice.
+2. Discard-to-hand-size advisory warning (see sketch above) — smaller and
+   safer than the priority-passing UI since it's a pure warning dialog, no new
+   toolbar/icon work.
+3. Client-side UI for priority-passing (button + indicator) — makes tonight's
+   Phase 5 server work actually playable end-to-end.
+4. Anything from Phase 9 (State-Based Actions) that fits the existing
    counter/warning pattern, similar to how lethal commander damage is already
    handled as an advisory warning rather than automatic loss.
-4. Phase 6+ (mana/abilities/combat) — needs a card-rules engine and real
+5. Phase 6+ (mana/abilities/combat) — needs a card-rules engine and real
    design discussion before implementation starts; not a reasonable
    unilateral next step at any scope.
