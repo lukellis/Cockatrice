@@ -153,7 +153,10 @@ not writable by this user. Work is pushed instead to a fork at
 **Remaining checklist for task #8:**
 - [x] Re-provision Qt6 (disk-backed path) + swap file
 - [x] Finish `libcockatrice_network` build, confirm clean
-- [ ] Build `servatrice` (server), confirm clean
+- [x] Build `servatrice` (server), confirm clean — required `sudo dnf install -y
+      pulseaudio-libs fontconfig freetype` first (Qt6's prebuilt `libQt6Multimedia`/
+      `libQt6Gui` shared libs need these system runtime libs at link time; AL2023
+      doesn't have them by default). Binary at `build/servatrice/servatrice`.
 - [ ] Build `cockatrice` (client), confirm clean
 - [ ] If full build proves infeasible in sandbox resource budget, honestly report
       to the user which parts are compile-verified vs. only manually reviewed
