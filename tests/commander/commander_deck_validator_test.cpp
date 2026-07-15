@@ -166,6 +166,25 @@ TEST_F(CommanderDeckValidatorTest, UnlimitedBasicLandsAreExemptFromSingletonRule
     EXPECT_FALSE(errorsContain(result.errors, "is not legal in this Commander deck"));
 }
 
+TEST_F(CommanderDeckValidatorTest, CommanderAlsoPresentInMainDeckIsNotDoubleCounted)
+{
+    // Matches how the real deck editor works: the Banner Card picker is populated from cards
+    // already added to the main zone, so a player adds their commander like any other card
+    // (addCopies here), then designates it via setBannerCard — both referring to the same card.
+    // Regression test for a bug caught via manual UI testing: validate() was unconditionally
+    // adding +1 "for the commander" on top of the main-zone sum, double-counting it whenever the
+    // commander was also present there (as it always is via this deck editor flow), which made a
+    // true 100-card deck (built via the real UI) get flagged as 101 cards.
+    auto deckList = makeDeckList("Test Commander");
+    DeckListModel model(nullptr, deckList);
+    addCopies(model, "Test Commander", 1); // the commander, added like any other card
+    addCopies(model, "Test Plains", 99);
+
+    auto result = CommanderDeckValidator::validate(model);
+    EXPECT_TRUE(result.isValid) << result.errors.join("; ").toStdString();
+    EXPECT_FALSE(errorsContain(result.errors, "exactly 100 cards"));
+}
+
 } // namespace
 
 int main(int argc, char **argv)

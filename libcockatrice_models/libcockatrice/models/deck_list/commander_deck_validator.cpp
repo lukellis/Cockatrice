@@ -51,9 +51,21 @@ Result validate(const DeckListModel &model)
     const QList<const DecklistCardNode *> mainDeckCards = model.getCardNodesForZone(DECK_ZONE_MAIN);
 
     // ---- Deck size: 100 cards total, including the commander ----
-    int totalCards = 1; // the commander itself
+    // The deck editor's Banner Card picker is populated from cards already in the main zone (a
+    // player adds their commander like any other card, then designates it), so the commander is
+    // normally already counted by the main-zone sum below. Only add it separately when it isn't
+    // present there — e.g. a banner card set via an API/import path that doesn't also add a main
+    // deck entry for it.
+    bool commanderIsInMainDeck = false;
+    int totalCards = 0;
     for (const DecklistCardNode *card : mainDeckCards) {
         totalCards += card->getNumber();
+        if (card->getName() == commanderRef.name) {
+            commanderIsInMainDeck = true;
+        }
+    }
+    if (!commanderIsInMainDeck) {
+        totalCards += 1; // the commander itself, tracked outside the main zone
     }
     if (totalCards != 100) {
         result.isValid = false;
