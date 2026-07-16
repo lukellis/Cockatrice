@@ -28,7 +28,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Scoped, not implemented** | Cost validation/auto-tap needs Phase 7 (out of reach). A narrow, in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) was scoped and documented; see "Phase 6" section below. Awaiting a decision on whether to build it. |
-| §3 Phase 7: Card Ability System | **Increment 1 done, Increment 2 planned** | Evergreen keyword recognition + display (Increment 1), read-only, no execution — done. Increment 2 (simple fixed-color mana abilities, one-click tap-and-add) is scoped and planned in [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md) but not yet implemented. Increments 3–4 (triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done** | Evergreen keyword recognition + display (Increment 1) and simple fixed-color mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Increments 3–4 (triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -345,7 +345,7 @@ whether the narrow "auto-empty at phase end" slice above is worth building,
 same as Phase 5 was researched and documented before implementation was
 authorized.
 
-## Phase 7: Card Ability System — Increment 1 only (keyword recognition)
+## Phase 7: Card Ability System — Increments 1–2 (keyword recognition, mana abilities)
 
 Design doc §3 Phase 7 (8–12 week estimate, four increments) is the prerequisite for
 real stack resolution, mana cost validation, and combat — a genuine card-rules engine
@@ -411,25 +411,82 @@ editor and in-game — this widget is shared by `CardInfoFrameWidget`, used in b
 **Status: Increment 1 implemented, tested, and live-verified.** Increments 3–4 remain
 out of scope pending a real design discussion, per the same guardrail as Phases 6 and 8.
 
-### Increment 2: Mana ability recognition + one-click activation — planned
+### Increment 2: Mana ability recognition + one-click activation — implemented
 
-Authorized by the user after Increment 1 shipped ("we should build it"), but not yet
-implemented — the scoping conversation and full implementation plan are written up in
-their own doc, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md),
-specifically so a fresh session can execute it directly without re-deriving the
-scope boundary. Short version: recognize a card's simplest fixed-color `{T}: Add {X}.`
-mana abilities and offer a one-click context-menu action that taps the permanent and
-increments the matching counter — the same two commands (`Command_SetCardAttr`,
-`Command_IncCounter`) any manual player action already sends, just bundled behind one
-click. Deliberately excludes anything needing a player choice (Command Tower-style "any
-color" rocks), additional/alternative costs, or conditional restrictions — see the plan
-doc for the full boundary and why each exclusion is there. This is the first place in
-this fork where a specific card's parsed text drives a game-state mutation rather than a
-structural rule (game type, phase, zone), which is why the plan doc spends real space on
-containing that risk before any code gets written.
+Authorized by the user after Increment 1 shipped ("we should build it"). Implemented
+following the plan doc, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md),
+with one deliberate deviation from its dispatch-wiring suggestion, noted below.
 
-**Status: planned, not implemented.** Next session should start from the plan doc's
-checklist.
+**What's implemented**: `ManaAbilities::parse(const CardInfo&)` (new
+`libcockatrice_card/libcockatrice/card/ability/mana_abilities.{h,cpp}`, same location
+convention as `CardKeywords`) recognizes a card's simplest fixed-color `{T}: Add
+{X}{X}...{X}.` mana abilities — every `{X}` must be the same single mana symbol
+(`{W}{U}{B}{R}{G}{C}`), repeated symbols are fine (Sol Ring's `{T}: Add {C}{C}.` → one
+`ManaAbility{"C", 2}`), and a card can have more than one qualifying line. Any line with
+a player choice ("Add one mana of any color"), an additional/alternative cost, or
+trailing conditional text fails the exact-line match and is skipped, never guessed at —
+same conservative philosophy as `CardKeywords::parse()`. In the client, `CardMenu`
+(`cockatrice/src/game_graphics/player/menu/card_menu.cpp`) calls this parser when
+building a table-zone card's context menu and — only if the card is currently untapped —
+adds one "Tap: Add {X}..." action per qualifying line, icon-colored to match the mana
+symbol's actual counter color (read live from `PlayerLogic::getCounters()`, not a
+hardcoded duplicate palette). Clicking the action calls a new
+`PlayerActions::actActivateManaAbility(const CardItem *card, const QString &manaSymbol,
+int amount)`, which batches a `Command_SetCardAttr` (tap) and a `Command_IncCounter`
+(the matching w/u/b/r/g/x counter, incremented by `amount`) into the same command list
+every other manual action in this fork already uses.
+
+- **Deliberate deviation from the plan doc**: the plan suggested adding a new
+  `CardMenuActionType` enum value and routing through the existing
+  `PlayerActions::cardMenuAction(QList<CardItem*>, CardMenuActionType)` dispatcher (the
+  same one `cmTap`/`cmClone`/etc. use). Reading that dispatcher's actual behavior showed
+  why that doesn't fit here: every action reachable through it operates on
+  `gameScene->selectedCards()` — the *current multi-selection* at click time, which can
+  differ from the specific card that was right-clicked (right-clicking a card doesn't
+  change the existing selection in this codebase). That's fine for generic actions like
+  tap (applying "tap" to an unrelated multi-selection is still meaningful), but wrong
+  here: the mana symbol/amount is parsed from one specific card's text, so applying it to
+  a different selected card would tap the wrong permanent and add the wrong color/amount
+  of mana. Instead, this follows the codebase's other existing precedent for
+  actions needing per-instance data beyond a bare type tag —
+  `actAddCardCounter(QList<CardItem*>, int counterId)` — and takes the specific `card`
+  the menu was built for directly, bypassing `cardMenuAction()`/`CardMenuActionType`
+  entirely. No enum value was added.
+- **Counter naming quirk, reused correctly**: colorless mana's counter is named `"x"`,
+  not `"c"` (`Server_Player::setupZones()`) — both the client-side icon-color lookup and
+  the server-command counter-id lookup replicate this mapping (small, independent copies
+  in `card_menu.cpp` and `player_actions.cpp`, same "second copy is fine" convention as
+  `withoutReminderText()`'s three existing copies).
+- **Testing**: new `tests/card_ability/mana_abilities_test.cpp` (9 cases, GTest, no card
+  database needed): single fixed-color line, repeated-symbol line (Sol Ring), reminder
+  text stripped (a parenthesized basic-land ability line correctly produces nothing),
+  mixed-symbol choice line not matched, additional-cost line not matched, conditional
+  line not matched, two qualifying lines both returned, no qualifying lines returns
+  empty, case-insensitive tokens matched. All 9/9 pass, and the full `ctest` suite
+  (19 executables, up from 18) passes with zero regressions.
+- **Verified live**, not just compiled: local `servatrice` + Xvfb + the real client, a
+  real 1-player Commander game. Confirmed via screenshot and debug-log cross-reference:
+  - Sol Ring (real printed text `{T}: Add {C}{C}.`, already in
+    `.uitest/sample_cards.xml`) shows a new "Tap: Add {C}{C}" context-menu action while
+    untapped, in the expected position (right after "Turn Over", before "Clone").
+  - Clicking it sends one batched command,
+    `Command_SetCardAttr { zone: "table" card_id: 2 attribute: AttrTapped attr_value:
+    "1" }` + `Command_IncCounter { counter_id: 6 delta: 2 }`, and the server responds
+    with `Event_SetCounter { counter_id: 6 value: 2 }` (counter 6 = "x"/colorless,
+    confirmed against the game's own counter list) + the matching
+    `Event_SetCardAttr` — exact wire-level confirmation the tap and the +2 colorless
+    landed together, not just that the card visually rotated.
+  - Right-clicking the now-tapped Sol Ring again correctly no longer shows the action.
+  - Right-clicking Baleful Strix (untapped, real printed text `Flying, deathtouch` — no
+    mana ability) correctly shows no such action, confirming the parser doesn't
+    false-positive on an unrelated keyword-only card.
+- **Deliberately excluded**: same boundary as the plan doc — player-choice mana
+  abilities (Command Tower and similar), additional/alternative-cost abilities,
+  conditional/restricted abilities, non-`{T}` mana effects, and any auto-payment during
+  casting (that's Phase 6, still undecided). Increments 3–4 (triggered abilities,
+  community ability data) remain out of scope pending a real design discussion.
+
+**Status: implemented, tested, and live-verified.**
 
 ## Phase 9: State-Based Actions (advisory warnings)
 
@@ -783,14 +840,15 @@ partially done in simplified form (real priority-passing, no stack
 resolution — see "Phase 5" section above), Phase 6 (Mana System) scoped but
 not implemented (auto-empty-pool slice documented, awaiting a build/no-build
 decision — see "Phase 6" section above), Phase 7 (Card Ability System)
-Increment 1 only (evergreen keyword recognition/display — see "Phase 7"
-section above), Phase 9 (State-Based Actions) partially done
-(life/empty-library/poison advisory warnings — see "Phase 9" section above).
-Everything compile- and test-verified: `servatrice` + `cockatrice` build
-clean, 18 test executables pass via `ctest`, and both the Phase 9 warnings
-and the Phase 7 keyword display were additionally confirmed live (screenshot
-+ debug log, or screenshot against real card data) against a real running
-client, not just compiled. All pushed to `fork/commander-rules`.
+Increments 1–2 (evergreen keyword recognition/display, and simple fixed-color
+mana ability recognition + one-click tap-and-add — see "Phase 7" section
+above), Phase 9 (State-Based Actions) partially done (life/empty-library/poison
+advisory warnings — see "Phase 9" section above). Everything compile- and
+test-verified: `servatrice` + `cockatrice` build clean, 19 test executables
+pass via `ctest`, and the Phase 9 warnings, the Phase 7 keyword display, and
+the Phase 7 mana-ability action were all additionally confirmed live
+(screenshot + debug log, or screenshot against real card data) against a real
+running client, not just compiled. All pushed to `fork/commander-rules`.
 
 Work initially stopped before Phase 5 pending explicit user sign-off, since it
 was the first phase needing actual `.proto` changes (breaking the

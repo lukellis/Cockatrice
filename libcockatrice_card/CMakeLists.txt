@@ -49,6 +49,8 @@ add_library(
   libcockatrice/card/format/commander_rules.h
   libcockatrice/card/ability/card_keywords.cpp
   libcockatrice/card/ability/card_keywords.h
+  libcockatrice/card/ability/mana_abilities.cpp
+  libcockatrice/card/ability/mana_abilities.h
 )
 
 target_include_directories(

@@ -1,6 +1,16 @@
 # Phase 7 Increment 2: Mana Ability Recognition + One-Click Activation
 
-**Status: planned, not yet implemented.** This is this fork's own actionable
+**Status: implemented, tested, and live-verified.** See
+`COMMANDER_IMPLEMENTATION_STATUS.md`'s "Phase 7" section, "Increment 2"
+subsection, for the full write-up of what shipped, including one deliberate
+deviation from this plan's dispatch-wiring suggestion (a dedicated
+`PlayerActions::actActivateManaAbility()` method was used instead of routing
+through `cardMenuAction()`/`CardMenuActionType`, since that dispatcher
+operates on the current multi-selection rather than the specific right-clicked
+card the parsed mana ability belongs to). The rest of this document is kept
+as-is below for historical/planning reference.
+
+This is this fork's own actionable
 implementation plan (unlike `mtg-commander-rules-engine.md`, which is a mirrored
 external reference doc) — written so a fresh session can execute it directly
 from this file plus `COMMANDER_IMPLEMENTATION_STATUS.md`, without needing to
@@ -199,16 +209,17 @@ implementation deviated from this plan.
 
 ## Checklist for the implementing session
 
-- [ ] Read `COMMANDER_IMPLEMENTATION_STATUS.md`'s Phase 7 section (context)
-- [ ] Confirm sandbox build state (Qt6/swap/build dir) per `CLAUDE.md`
-- [ ] Write `mana_abilities.{h,cpp}` + register in `libcockatrice_card/CMakeLists.txt`
-- [ ] Write `mana_abilities_test.cpp` + register in `tests/card_ability/CMakeLists.txt`
-- [ ] Build + run the new test target in isolation, confirm green
-- [ ] Investigate `card_menu_action_type.h` / `PlayerActions::cardMenuAction()`
+- [x] Read `COMMANDER_IMPLEMENTATION_STATUS.md`'s Phase 7 section (context)
+- [x] Confirm sandbox build state (Qt6/swap/build dir) per `CLAUDE.md`
+- [x] Write `mana_abilities.{h,cpp}` + register in `libcockatrice_card/CMakeLists.txt`
+- [x] Write `mana_abilities_test.cpp` + register in `tests/card_ability/CMakeLists.txt`
+- [x] Build + run the new test target in isolation, confirm green
+- [x] Investigate `card_menu_action_type.h` / `PlayerActions::cardMenuAction()`
       dispatch shape (don't assume — read it) before adding the new case
-- [ ] Wire the new context-menu action in `card_menu.cpp` + `player_actions.cpp`
-- [ ] Build `cockatrice`, confirm clean
-- [ ] Run full `ctest` suite, confirm no regressions
-- [ ] `./format.sh --cmake --branch master`
-- [ ] Live-verify via Xvfb + servatrice + screenshot + debug-log cross-check
-- [ ] Update `COMMANDER_IMPLEMENTATION_STATUS.md`, commit, push to `fork/commander-rules`
+      (found it doesn't fit — see the deviation note at the top of this doc)
+- [x] Wire the new context-menu action in `card_menu.cpp` + `player_actions.cpp`
+- [x] Build `cockatrice`, confirm clean
+- [x] Run full `ctest` suite, confirm no regressions
+- [x] `./format.sh --cmake --branch master`
+- [x] Live-verify via Xvfb + servatrice + screenshot + debug-log cross-check
+- [x] Update `COMMANDER_IMPLEMENTATION_STATUS.md`, commit, push to `fork/commander-rules`

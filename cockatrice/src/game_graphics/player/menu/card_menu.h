@@ -44,6 +44,7 @@ public:
     QAction *aReduceLifeByPower;
 
     QList<QAction *> aAddCounter, aSetCounter, aRemoveCounter;
+    QList<QAction *> aActivateManaAbility;
 
 private:
     PlayerGraphicsItem *player;
@@ -56,6 +57,7 @@ private:
     void initContextualPlayersMenu(QMenu *menu, QAction *allPlayersAction);
     void setShortcutsActive();
     void addRelatedCardView();
+    void addManaAbilityActions();
 };
 
 #endif // COCKATRICE_CARD_MENU_H

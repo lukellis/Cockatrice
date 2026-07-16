@@ -7,6 +7,7 @@
 #include "../../game_graphics/zones/table_zone.h"
 #include "../../interface/widgets/tabs/tab_game.h"
 #include "../../interface/widgets/utility/get_text_with_max.h"
+#include "../board/counter_state.h"
 #include "../zones/view_zone_logic.h"
 
 #include <libcockatrice/card/database/card_database_manager.h>
@@ -1618,6 +1619,47 @@ void PlayerActions::actIncrementAllCardCounters(QList<CardItem *> cardsToUpdate)
     if (!commandList.isEmpty()) {
         sendGameCommand(prepareGameCommand(commandList));
     }
+}
+
+// Maps a mana symbol letter ("W"/"U"/"B"/"R"/"G"/"C") to the matching mana-pool counter's name, per
+// Server_Player::setupZones()'s naming (colorless mana is named "x" there, not "c" -- everything
+// else is just the lowercased symbol letter).
+static QString manaCounterNameForSymbol(const QString &manaSymbol)
+{
+    if (manaSymbol == QLatin1String("C")) {
+        return QStringLiteral("x");
+    }
+    return manaSymbol.toLower();
+}
+
+void PlayerActions::actActivateManaAbility(const CardItem *card, const QString &manaSymbol, int amount)
+{
+    if (!card || !card->getZone()) {
+        return;
+    }
+
+    QList<const ::google::protobuf::Message *> commandList;
+
+    auto *tapCmd = new Command_SetCardAttr;
+    tapCmd->set_zone(card->getZone()->getName().toStdString());
+    tapCmd->set_card_id(card->getId());
+    tapCmd->set_attribute(AttrTapped);
+    tapCmd->set_attr_value("1");
+    commandList.append(tapCmd);
+
+    const QString counterName = manaCounterNameForSymbol(manaSymbol);
+    const QMap<int, CounterState *> counters = player->getCounters();
+    for (auto it = counters.constBegin(); it != counters.constEnd(); ++it) {
+        if (it.value()->getName() == counterName) {
+            auto *counterCmd = new Command_IncCounter;
+            counterCmd->set_counter_id(it.key());
+            counterCmd->set_delta(amount);
+            commandList.append(counterCmd);
+            break;
+        }
+    }
+
+    sendGameCommand(prepareGameCommand(commandList));
 }
 
 /**
