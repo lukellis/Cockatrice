@@ -27,7 +27,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
-| §3 Phase 6: Mana System | Not started | Out of current scope. |
+| §3 Phase 6: Mana System | **Scoped, not implemented** | Cost validation/auto-tap needs Phase 7 (out of reach). A narrow, in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) was scoped and documented; see "Phase 6" section below. Awaiting a decision on whether to build it. |
 | §3 Phase 7: Card Ability System | Not started | Out of current scope. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
@@ -289,6 +289,61 @@ Implementation:
   `GameEventHandler::logPriorityChanged`/`logPriorityCleared` signals wired
   to `MessageLogWidget`, logging both "`<player>` has priority." and
   "Everyone has passed. No one has priority."
+
+## Phase 6: Mana System — scoped, not yet implemented
+
+Design doc §3 Phase 6 (4–5 week estimate) specs a `ManaPool`/`ManaCost` pair that
+parses a card's printed cost and validates/auto-pays it (`canPay()`, `pay()`,
+auto-tap UI). That's a hard no at this fork's scope: cost validation needs a
+parsed mana cost per card, which needs Phase 7's card-ability engine (the
+design doc's own 8–12 week estimate) as a prerequisite — the same reason real
+stack resolution (Phase 5) and combat (Phase 8) are out of reach.
+
+**What's already there, and was easy to miss**: Cockatrice's existing
+`Server_Player::setupZones()` already creates per-player `w`/`u`/`b`/`r`/`g`/`x`
+counters (ids 1–6, colored, manually incremented via left/right-click or a
+"Set counter..." dialog) for **every** game, not just Commander — this is
+already vanilla Cockatrice's answer to "mana pool" under its manual-simulator
+model, just unlabeled and with no phase-boundary behavior. No new counters,
+UI, or protocol are needed to have *a* mana pool; it's been sitting there the
+whole time.
+
+**The one gap that actually fits this fork's scope and pattern**: rule 500.4
+— a mana pool empties at the end of every step and phase. Today nothing does
+that; W/U/B/R/G/C counters silently persist turn to turn, which is wrong but
+harmless (Cockatrice already tolerates far larger manual-bookkeeping gaps by
+design). Automating just the emptying — not the payment/validation side — is
+mechanically identical to Phase 4's auto-untap/auto-draw and Phase 9's SBA
+counters: reuse `Server_Game::setActivePhase()` (already fires on every
+phase/step transition, confirmed granular to the real 11 steps/phases in
+`cockatrice/src/game/phase.cpp`, not just top-level phases) and
+`Server_Counter::setCount(0)` (the exact primitive `cmdSetCounter()` already
+uses), looped over **every** player's mana counters, not just the active
+player's (rule 500.4 empties everyone's pool, unlike untap/draw which are
+active-player-only). Gate on `isCommanderGame()`, same as every other
+automation in this fork.
+
+**Estimated size/risk**: small — one new loop in an already-existing,
+already-tested hook, no new protocol messages, no new client UI, no card
+data. Comparable to Phase 4's automation work, not the design doc's 4–5 week
+Phase 6 estimate (which is almost entirely the cost-validation/auto-tap part
+this scope explicitly excludes). Main risk is player confusion if pool-empty
+fires somewhere real players don't expect it to (e.g. mana that under real
+rules would persist through a "spell can add mana this step" exception,
+which this simplified version can't detect) — same category of
+already-accepted simplification as Phase 4's phase automation.
+
+**Deliberately excluded from this scope, and why**: cost parsing, `canPay`
+validation, auto-tap suggestions, mana-ability activation from context
+menus — all need Phase 7's card-ability engine to know what a card costs or
+does, which doesn't exist here and isn't a reasonable unilateral addition
+(explicit user sign-off required before any of Phases 6–8 gets a real
+implementation pass, per `CLAUDE.md`'s design principles).
+
+**Status: scoped only, not implemented.** Written up for a decision on
+whether the narrow "auto-empty at phase end" slice above is worth building,
+same as Phase 5 was researched and documented before implementation was
+authorized.
 
 ## Phase 9: State-Based Actions (advisory warnings)
 
