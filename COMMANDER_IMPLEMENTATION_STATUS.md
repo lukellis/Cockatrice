@@ -28,7 +28,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Scoped, not implemented** | Cost validation/auto-tap needs Phase 7 (out of reach). A narrow, in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) was scoped and documented; see "Phase 6" section below. Awaiting a decision on whether to build it. |
-| §3 Phase 7: Card Ability System | **Increment 1 only** | Evergreen keyword recognition + display (design doc's "Increment 1: Keywords"), read-only, no execution. Increments 2–4 (mana abilities, triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increment 1 done, Increment 2 planned** | Evergreen keyword recognition + display (Increment 1), read-only, no execution — done. Increment 2 (simple fixed-color mana abilities, one-click tap-and-add) is scoped and planned in [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md) but not yet implemented. Increments 3–4 (triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -408,8 +408,28 @@ editor and in-game — this widget is shared by `CardInfoFrameWidget`, used in b
   triggered-ability parsing/queueing, community ability-data file) all need real
   execution semantics this fork doesn't have infrastructure for. Not attempted.
 
-**Status: Increment 1 implemented, tested, and live-verified.** Increments 2–4 remain
+**Status: Increment 1 implemented, tested, and live-verified.** Increments 3–4 remain
 out of scope pending a real design discussion, per the same guardrail as Phases 6 and 8.
+
+### Increment 2: Mana ability recognition + one-click activation — planned
+
+Authorized by the user after Increment 1 shipped ("we should build it"), but not yet
+implemented — the scoping conversation and full implementation plan are written up in
+their own doc, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md),
+specifically so a fresh session can execute it directly without re-deriving the
+scope boundary. Short version: recognize a card's simplest fixed-color `{T}: Add {X}.`
+mana abilities and offer a one-click context-menu action that taps the permanent and
+increments the matching counter — the same two commands (`Command_SetCardAttr`,
+`Command_IncCounter`) any manual player action already sends, just bundled behind one
+click. Deliberately excludes anything needing a player choice (Command Tower-style "any
+color" rocks), additional/alternative costs, or conditional restrictions — see the plan
+doc for the full boundary and why each exclusion is there. This is the first place in
+this fork where a specific card's parsed text drives a game-state mutation rather than a
+structural rule (game type, phase, zone), which is why the plan doc spends real space on
+containing that risk before any code gets written.
+
+**Status: planned, not implemented.** Next session should start from the plan doc's
+checklist.
 
 ## Phase 9: State-Based Actions (advisory warnings)
 
