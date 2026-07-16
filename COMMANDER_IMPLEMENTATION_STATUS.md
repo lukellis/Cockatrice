@@ -638,6 +638,33 @@ as needing a card-rules engine this fork doesn't have).
   live servatrice + screenshot + client debug log, not just compilation.
 - **CONTRIBUTING.md translation-guideline gap** — `commander_deck_validator.cpp`'s
   error strings now use `tr()`; see "Files added/changed" above.
+- **Casting the commander from the command zone, live-confirmed end to end** —
+  the user directly questioned whether this even worked, after an earlier
+  session turn had reported being unable to verify it (a UI-automation
+  coordinate problem, not a real bug). Set up a genuine 2-player game across
+  two client instances plus a simpler solo fallback and confirmed via the
+  client debug log: dragging the commander out sends `Command_MoveCard` with
+  `start_zone: "command"`, and the `Commander Tax` counter increments 0→1 in
+  the same event. Commander Tax already started at 0 in code
+  (`Server_Counter(..., 0)` in `Server_Player::setupZones()`) — no fix
+  needed. Also confirmed live that moving *any* card (not just the
+  commander) onto the Stack zone correctly starts a fresh priority round at
+  the mover (see "Correction: priority model" above) — the maroon
+  battlefield-adjacent strip is genuinely the Stack zone, drag-and-drop
+  works fine via this sandbox's synthetic input once coordinates are right.
+- **Commander portrait/untapped display, reordered above library/graveyard**
+  — two follow-up display changes requested alongside the above.
+  `CommandZone` now resets its item transform to identity (overriding
+  `PileZone`'s persistent 90° rotation) and has a fully custom `paint()`
+  that draws the card image, count badge, border, and "CMD" label with no
+  rotation compensation, so the commander renders right-side-up/readable
+  instead of sideways like the other compact piles. `player_graphics_item.cpp`
+  now creates `CommandZone` first in the pile stack (ahead of
+  deck/graveyard/exile) with a taller reserved step (full card height, since
+  it's no longer rotated to the narrower compact-pile footprint). Verified
+  live via screenshot (upright text, correct stacking order, no overlap) and
+  by re-running the drag-to-cast test from the new position (move + tax
+  increment both still fire correctly).
 
 **Reasonable next increments, roughly in order of size/risk:**
 1. ~~Client-side UI for priority-passing~~ — **done**, see above.
