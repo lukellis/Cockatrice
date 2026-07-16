@@ -7,6 +7,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTextEdit>
+#include <libcockatrice/card/ability/card_keywords.h>
 #include <libcockatrice/card/game_specific_terms.h>
 #include <libcockatrice/card/relation/card_relation.h>
 
@@ -79,6 +80,16 @@ void CardInfoTextWidget::setCard(const ExactCard &exactCard)
         QString keyText = Mtg::getNicePropertyName(key).toHtmlEscaped() + ":";
         text +=
             QString("<tr><td>%1</td><td></td><td>%2</td></tr>").arg(keyText, card->getProperty(key).toHtmlEscaped());
+    }
+
+    // Best-effort recognition of printed evergreen keywords (Flying, Trample, ...) -- display
+    // only, not a rules engine; see CardKeywords::parse() and
+    // COMMANDER_IMPLEMENTATION_STATUS.md's Phase 7 notes for what this deliberately doesn't do.
+    QStringList keywords = QStringList(CardKeywords::parse(*card).values());
+    if (!keywords.isEmpty()) {
+        keywords.sort(Qt::CaseInsensitive);
+        text += QString("<tr><td>%1</td><td width=\"5\"></td><td>%2</td></tr>")
+                    .arg(tr("Keywords:"), keywords.join(", ").toHtmlEscaped());
     }
 
     auto relatedCards = card->getAllRelatedCards();

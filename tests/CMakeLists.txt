@@ -82,6 +82,7 @@ target_link_libraries(
   server_counter_test libcockatrice_network Threads::Threads ${GTEST_BOTH_LIBRARIES} ${TEST_QT_MODULES}
 )
 
+add_subdirectory(card_ability)
 add_subdirectory(card_zone_algorithms)
 add_subdirectory(carddatabase)
 add_subdirectory(commander)

@@ -28,7 +28,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Scoped, not implemented** | Cost validation/auto-tap needs Phase 7 (out of reach). A narrow, in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) was scoped and documented; see "Phase 6" section below. Awaiting a decision on whether to build it. |
-| §3 Phase 7: Card Ability System | Not started | Out of current scope. |
+| §3 Phase 7: Card Ability System | **Increment 1 only** | Evergreen keyword recognition + display (design doc's "Increment 1: Keywords"), read-only, no execution. Increments 2–4 (mana abilities, triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -344,6 +344,72 @@ implementation pass, per `CLAUDE.md`'s design principles).
 whether the narrow "auto-empty at phase end" slice above is worth building,
 same as Phase 5 was researched and documented before implementation was
 authorized.
+
+## Phase 7: Card Ability System — Increment 1 only (keyword recognition)
+
+Design doc §3 Phase 7 (8–12 week estimate, four increments) is the prerequisite for
+real stack resolution, mana cost validation, and combat — a genuine card-rules engine
+(parse rules text, execute effects, targeting). That stays explicitly out of reach here,
+same conclusion as every other phase-6-through-8 note in this doc. After Phase 6 was
+scoped down to a documented decision point rather than implemented, the user directed
+moving to "prerequisite" Phase 7 work specifically — this increment is that: the
+**smallest, self-contained, read-only slice**, deliberately chosen to not cross into
+ability execution.
+
+**What's implemented**: `CardKeywords::parse(const CardInfo&)` (new
+`libcockatrice_card/libcockatrice/card/ability/card_keywords.{h,cpp}`, deliberately *not*
+under `format/` alongside `CommanderRules` — this is general card-ability infrastructure,
+not Commander-specific, so it's kept in its own clearly-separated location) recognizes a
+card's printed evergreen keyword abilities (Deathtouch, Defender, Double strike, First
+strike, Flash, Flying, Haste, Hexproof, Indestructible, Lifelink, Menace, Reach, Trample,
+Vigilance — the classic costless evergreen set; keywords with attached costs/variable text
+like "Ward {2}" are excluded, since a plain string match isn't meaningful for those) from
+rules text, and `cockatrice/src/interface/widgets/cards/card_info_text_widget.cpp` displays
+them as a "Keywords:" row in the existing card-info properties table (both in the deck
+editor and in-game — this widget is shared by `CardInfoFrameWidget`, used in both places).
+
+- **Parsing approach, and why it's conservative**: reuses the same
+  regex-over-rules-text pattern already proven for `CommanderRules::colorIdentity()`
+  (reminder text in parentheses stripped first, same convention). Rather than a naive
+  substring search for keyword names (which would false-positive on abilities that merely
+  *mention* a keyword — e.g. "Destroy target creature with flying" doesn't itself have
+  flying), each line of rules text is only treated as a keyword line if it reduces
+  entirely to a comma/"and"-separated list of recognized keywords with nothing else on
+  it. This correctly excludes granted/conditional abilities ("Whenever this creature
+  attacks, it gains flying until end of turn") while still catching real printed keyword
+  lines like "Flying, vigilance, deathtouch, lifelink" (Atraxa, Praetors' Voice's actual
+  printed text, used as the live-verification case below).
+- **Explicitly display-only**: nothing reads `CardKeywords::parse()`'s output to gate,
+  automate, or enforce anything — no combat logic, no ability activation, no rules
+  effect. It exists purely so a player can see which evergreen keywords a card has
+  without reading the full rules text. This keeps it firmly on the "advisory" side of
+  this fork's Assisted-Mode philosophy, same category as the SBA warnings in Phase 9.
+- **Known heuristic limits, stated plainly**: this is pattern-matching on text
+  formatting conventions, not real natural-language understanding — a card whose keyword
+  line has unusual phrasing, or a future card that breaks the "keyword lines are pure
+  comma lists" convention, could be missed (false negative) or misread. Given the
+  display-only, non-blocking use, that's an acceptable trade-off consistent with how the
+  rest of this fork treats its other regex-based text parsing (color identity has the
+  same class of edge cases, documented in its own code comments).
+- **Testing**: new `tests/card_ability/card_keywords_test.cpp` (12 cases, GTest, no
+  card database needed — constructs `CardInfo` directly like `commander_rules_test.cpp`):
+  single keyword, trailing period, comma-separated list, "and"-separated list,
+  case-insensitivity/canonicalization, multiple keyword lines, reminder-text stripping,
+  the two false-positive-avoidance cases above (granted keyword, mentioned keyword),
+  empty text, a keyword line alongside an unrelated ability line, and the keyword-list
+  constant itself. All 12/12 pass.
+- **Verified live**, not just compiled: local `cockatrice` client, deck editor, added
+  Atraxa Praetors' Voice (whose real printed text is "Flying, vigilance, deathtouch,
+  lifelink"), confirmed via screenshot that the card-info panel's Description tab shows
+  a new "Keywords:" row reading "Deathtouch, Flying, Lifelink, Vigilance" (alphabetically
+  sorted, canonical capitalization) — correctly parsed from the real card data, not a
+  synthetic test fixture.
+- **Deliberately excluded**: Increments 2–4 (mana-ability parsing/auto-activation,
+  triggered-ability parsing/queueing, community ability-data file) all need real
+  execution semantics this fork doesn't have infrastructure for. Not attempted.
+
+**Status: Increment 1 implemented, tested, and live-verified.** Increments 2–4 remain
+out of scope pending a real design discussion, per the same guardrail as Phases 6 and 8.
 
 ## Phase 9: State-Based Actions (advisory warnings)
 
@@ -694,13 +760,17 @@ tests, with zero discrepancies found beyond the one bug already fixed above.
 As of this writing: design doc §3 Phases 2–3 done, Phase 4 (turn structure)
 partially done (auto-untap/auto-draw), Phase 5 (Priority & Stack System)
 partially done in simplified form (real priority-passing, no stack
-resolution — see "Phase 5" section above), Phase 9 (State-Based Actions)
-partially done (life/empty-library/poison advisory warnings — see "Phase 9"
-section above). Everything compile- and test-verified: `servatrice` +
-`cockatrice` build clean, 17 test executables pass via `ctest`, and the
-Phase 9 warnings were additionally confirmed live (screenshot + debug log)
-against a real solo Commander game, not just compiled. All pushed to
-`fork/commander-rules`.
+resolution — see "Phase 5" section above), Phase 6 (Mana System) scoped but
+not implemented (auto-empty-pool slice documented, awaiting a build/no-build
+decision — see "Phase 6" section above), Phase 7 (Card Ability System)
+Increment 1 only (evergreen keyword recognition/display — see "Phase 7"
+section above), Phase 9 (State-Based Actions) partially done
+(life/empty-library/poison advisory warnings — see "Phase 9" section above).
+Everything compile- and test-verified: `servatrice` + `cockatrice` build
+clean, 18 test executables pass via `ctest`, and both the Phase 9 warnings
+and the Phase 7 keyword display were additionally confirmed live (screenshot
++ debug log, or screenshot against real card data) against a real running
+client, not just compiled. All pushed to `fork/commander-rules`.
 
 Work initially stopped before Phase 5 pending explicit user sign-off, since it
 was the first phase needing actual `.proto` changes (breaking the
@@ -803,6 +873,11 @@ as needing a card-rules engine this fork doesn't have).
    Header guards, `nullptr` usage, single-declaration-per-line, Doxygen
    comment style, and memory-management guidance were all already clean.
    Pure renames — full 17-test GTest suite still passes.
-4. Phase 6+ (mana/abilities/combat) — needs a card-rules engine and real
-   design discussion before implementation starts; not a reasonable
-   unilateral next step at any scope.
+4. Phase 6 (mana system) — **scoped, not implemented.** See "Phase 6" section
+   above for the narrow in-scope slice identified (auto-empty mana pools at
+   phase end); awaiting a decision on whether to build it.
+5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
+   see "Phase 7" section above. Increments 2–4 (mana abilities, triggered
+   abilities, community ability data) and Phase 8 (combat) still need a real
+   card-rules engine and real design discussion before implementation
+   starts; not a reasonable unilateral next step at any scope.
