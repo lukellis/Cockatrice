@@ -31,6 +31,18 @@ PlayerGraphicsItem::PlayerGraphicsItem(PlayerLogic *_player) : player(_player)
     connect(player, &PlayerLogic::counterAdded, this, &PlayerGraphicsItem::onCounterAdded);
     connect(player, &PlayerLogic::counterRemoved, this, &PlayerGraphicsItem::onCounterRemoved);
 
+    connect(player->getPlayerEventHandler(), &PlayerEventHandler::logDrawCards, this,
+            [this](PlayerLogic *p, int number, bool deckIsEmpty) {
+                // Assisted-mode warning for the empty-library draw-loss SBA (rule 104.3b): number
+                // == 0 && deckIsEmpty means the draw was attempted but nothing was left to draw.
+                if (number == 0 && deckIsEmpty && p->getGame()->getGameMetaInfo()->isCommanderGame()) {
+                    QMessageBox::warning(
+                        nullptr, tr("Empty library"),
+                        tr("%1 attempted to draw from an empty library and has lost the game (rule 104.3b).")
+                            .arg(p->getPlayerInfo()->getName()));
+                }
+            });
+
     playerMenu = new PlayerMenu(this);
 
     connect(playerMenu, &PlayerMenu::shortcutsActivated, this, [this]() {
@@ -213,6 +225,35 @@ void PlayerGraphicsItem::onCounterAdded(CounterState *state)
 
     if (playerMenu->getShortcutsActive()) {
         widget->setShortcutsActive();
+    }
+
+    if (state->getName() == "life" && player->getGame()->getGameMetaInfo()->isCommanderGame()) {
+        // Assisted-mode warning for the life-total loss SBA (rule 104.3a). Only fires on the
+        // crossing, same dedup approach as the commander-damage warning below.
+        connect(state, &CounterState::valueChanged, this, [this](int oldValue, int newValue) {
+            if (oldValue > 0 && newValue <= 0) {
+                QMessageBox::warning(nullptr, tr("Life total"),
+                                     tr("%1's life total has reached %2 and they have lost the game "
+                                        "(rule 104.3a).")
+                                         .arg(player->getPlayerInfo()->getName())
+                                         .arg(newValue));
+            }
+        });
+    }
+
+    if (state->getName() == CommanderCounterNames::poisonCounterName()) {
+        // Assisted-mode warning for the poison-counter loss SBA (rule 104.3c). Only ever created
+        // for Commander games server-side (see Server_Player::setupZones()), so no client-side
+        // isCommanderGame() gate is needed here -- mirrors the damage-counter check below.
+        connect(state, &CounterState::valueChanged, this, [this](int oldValue, int newValue) {
+            if (oldValue < CommanderCounterNames::LETHAL_POISON_COUNTERS &&
+                newValue >= CommanderCounterNames::LETHAL_POISON_COUNTERS) {
+                QMessageBox::warning(nullptr, tr("Poison counters"),
+                                     tr("%1 has %2 poison counters and has lost the game (rule 104.3c).")
+                                         .arg(player->getPlayerInfo()->getName())
+                                         .arg(newValue));
+            }
+        });
     }
 
     if (CommanderCounterNames::isDamageCounter(state->getName())) {

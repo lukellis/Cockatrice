@@ -49,6 +49,18 @@ inline QString commanderNameFromDamageCounter(const QString &counterName)
 // Combat damage from a single commander required to lose the game (rule 704.5g).
 constexpr int LETHAL_COMMANDER_DAMAGE = 21;
 
+// Poison counters: a general MTG rule (104.3c), not Commander-specific, but auto-created here
+// only for Commander games to match this fork's scope (same as tax/damage counters) -- players
+// in other formats can still track poison manually via the existing generic counter UI.
+inline const QString &poisonCounterName()
+{
+    static const QString name = QStringLiteral("poison");
+    return name;
+}
+
+// Poison counters required to lose the game (rule 104.3c).
+constexpr int LETHAL_POISON_COUNTERS = 10;
+
 } // namespace CommanderCounterNames
 
 #endif // COMMANDER_COUNTER_NAMES_H

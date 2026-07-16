@@ -104,6 +104,11 @@ void Server_Player::setupZones()
     addCounter(new Server_Counter(5, "g", makeColor(150, 255, 150), 20, 0));
     addCounter(new Server_Counter(6, "x", makeColor(255, 255, 255), 20, 0));
     addCounter(new Server_Counter(7, "storm", makeColor(255, 150, 30), 20, 0));
+    if (game->isCommanderGame()) {
+        // Poison counters: a player loses the game upon reaching 10 (rule 104.3c). See
+        // CommanderCounterNames::poisonCounterName() for why this is gated to Commander games.
+        addCounter(new Server_Counter(8, CommanderCounterNames::poisonCounterName(), makeColor(80, 200, 80), 20, 0));
+    }
 
     // ------------------------------------------------------------------
 

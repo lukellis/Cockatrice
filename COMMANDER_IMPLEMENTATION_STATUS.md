@@ -30,7 +30,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 6: Mana System | Not started | Out of current scope. |
 | §3 Phase 7: Card Ability System | Not started | Out of current scope. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
-| §3 Phase 9: State-Based Actions | Not started | Only the "21 commander damage" SBA is covered, as an advisory warning rather than automatic loss. |
+| §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
 
 This fork's scope corresponds almost exactly to the design doc's own **§8
@@ -289,6 +289,65 @@ Implementation:
   `GameEventHandler::logPriorityChanged`/`logPriorityCleared` signals wired
   to `MessageLogWidget`, logging both "`<player>` has priority." and
   "Everyone has passed. No one has priority."
+
+## Phase 9: State-Based Actions (advisory warnings)
+
+Design doc §3 Phase 9 calls for full state-based-action checking. Real Magic re-checks
+SBAs continuously (rule 704.3) and would need to interrupt/replace this fork's manual,
+non-blocking model to do that properly — out of scope for the same reason turn
+structure/priority enforcement is only ever advisory here (see CLAUDE.md's design
+principles). What's implemented instead follows the exact pattern already established
+for lethal commander damage (§3 Phase 3): a client-side `QMessageBox::warning` fired the
+moment a counter/zone crosses its lethal threshold, informational only — it does not end
+the game, remove the player, or block further actions. Three more of the most common
+real-game loss conditions are covered this way:
+
+- **Life ≤ 0** (rule 104.3a) — `PlayerGraphicsItem::onCounterAdded()` connects to the
+  existing `life` `CounterState::valueChanged` signal (Commander games only, via
+  `isCommanderGame()`) and fires on the `> 0 → ≤ 0` crossing. No server changes needed —
+  `life` already exists as a counter for every game.
+- **Drawing from an empty library** (rule 104.3b) — hooks the existing
+  `PlayerEventHandler::logDrawCards(PlayerLogic*, int number, bool deckIsEmpty)` signal
+  (already emitted for the message log at every draw, `deckIsEmpty` computed from
+  `_deck->getCards().size() == 0` after the draw resolves) rather than adding any new
+  signal or server logic. Fires when a draw was attempted (`number == 0`) and the library
+  was already empty. Commander games only.
+- **≥10 poison counters** (rule 104.3c) — needed one small server-side addition, since
+  poison (unlike life) isn't among Cockatrice's default per-player counters:
+  `Server_Player::setupZones()` now creates an 8th counter, `poison` (green, starting at
+  0), gated on `game->isCommanderGame()` — same gating and same manually-incremented
+  pattern as the existing tax/damage counters. New constants added to
+  `commander_counter_names.h`: `poisonCounterName()` and `LETHAL_POISON_COUNTERS = 10`.
+  Client-side warning wired the same way as the life-total one, watching for the
+  `< 10 → ≥ 10` crossing. No dedicated icon exists in the default theme for a counter
+  named `poison` (`cockatrice/resources/counters/` only has `w`/`u`/`b`/`r`/`g`/`storm`/
+  `general`), so it renders via the existing `general.svg` fallback already used by other
+  unthemed counters (`x`, `storm`) — cosmetic only, not a functional gap.
+- All three follow the same dedup approach as the pre-existing commander-damage warning:
+  the check is on the *crossing* (`oldValue`/`newValue` compared against the threshold),
+  not "is currently past it", so re-opening a game state or receiving a redundant
+  `CounterState` update doesn't re-fire the dialog.
+- **Verified live**, not just compiled: local servatrice + a solo Commander game with a
+  1-card deck (the commander only, so the library starts empty in the same session).
+  Confirmed via screenshot for all three, in order: setting `life` to 0 via the counter's
+  "Set counter..." dialog produced "testuser's life total has reached 0 and they have
+  lost the game (rule 104.3a)."; setting the new `poison` counter (found via its
+  "Set counter..." dialog title, since it has no distinct icon — see above) to 10
+  produced "testuser has 10 poison counters and has lost the game (rule 104.3c).";
+  clicking the Draw phase button with an already-empty library (the 1-card deck's only
+  card, the commander, starts in the command zone) produced "testuser attempted to draw
+  from an empty library and has lost the game (rule 104.3b)." No crashes, no spurious
+  re-fires, and both the client debug log and servatrice log were clean of anything
+  related to the new code (the only log noise present — a benign zero-byte parse at
+  initial connect, one `RespContextError` from an unrelated duplicate UI click, and
+  expected `type=none`-config "driver not loaded" database lines — all pre-existed this
+  change and were cross-checked as unrelated).
+- **Deliberately not done**: no other SBAs from rule 704 (e.g. the legend rule, 0-toughness
+  creatures, auras attached illegally) — those require either card-state modeling this
+  fork doesn't have (legend rule needs to know which permanents share a name) or a
+  continuous-checking loop that doesn't fit the manual-simulator model. This phase only
+  picked the SBAs that were pure counter/zone-threshold checks fitting the exact pattern
+  already proven for commander damage.
 
 ## Implementation status
 
@@ -580,9 +639,13 @@ tests, with zero discrepancies found beyond the one bug already fixed above.
 As of this writing: design doc §3 Phases 2–3 done, Phase 4 (turn structure)
 partially done (auto-untap/auto-draw), Phase 5 (Priority & Stack System)
 partially done in simplified form (real priority-passing, no stack
-resolution — see "Phase 5" section above). Everything compile- and
-test-verified: `servatrice` + `cockatrice` build clean, 17 test executables /
-78+ individual test cases pass. All pushed to `fork/commander-rules`.
+resolution — see "Phase 5" section above), Phase 9 (State-Based Actions)
+partially done (life/empty-library/poison advisory warnings — see "Phase 9"
+section above). Everything compile- and test-verified: `servatrice` +
+`cockatrice` build clean, 17 test executables pass via `ctest`, and the
+Phase 9 warnings were additionally confirmed live (screenshot + debug log)
+against a real solo Commander game, not just compiled. All pushed to
+`fork/commander-rules`.
 
 Work initially stopped before Phase 5 pending explicit user sign-off, since it
 was the first phase needing actual `.proto` changes (breaking the
@@ -668,9 +731,12 @@ as needing a card-rules engine this fork doesn't have).
 
 **Reasonable next increments, roughly in order of size/risk:**
 1. ~~Client-side UI for priority-passing~~ — **done**, see above.
-2. Anything from Phase 9 (State-Based Actions) that fits the existing
-   counter/warning pattern, similar to how lethal commander damage is already
-   handled as an advisory warning rather than automatic loss.
+2. ~~Anything from Phase 9 (State-Based Actions) that fits the existing
+   counter/warning pattern~~ — **done** (life ≤ 0, empty-library draw, ≥10
+   poison, all advisory warnings). See "Phase 9" section above. Remaining
+   Phase 9 SBAs (legend rule, 0-toughness, illegal auras) need card-state
+   modeling this fork doesn't have — not a reasonable next increment at this
+   scope.
 3. ~~A broader CONTRIBUTING.md compliance pass~~ — **done.** Audited the
    fork's full diff vs upstream master (a dedicated agent pass, since
    `format.sh` already covers everything clang-format enforces). Found and
