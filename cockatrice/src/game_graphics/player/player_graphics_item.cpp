@@ -93,11 +93,21 @@ void PlayerGraphicsItem::onPlayerActiveChanged(bool _active)
 
 void PlayerGraphicsItem::initializeZones()
 {
-    deckZoneGraphicsItem = new PileZone(player->getDeckZone(), this);
     auto base = QPointF(counterAreaWidth + (CardDimensions::HEIGHT_F - CardDimensions::WIDTH_F + 15) / 2.0,
                         10 + playerTarget->boundingRect().height() + 5 -
                             (CardDimensions::HEIGHT_F - CardDimensions::WIDTH_F) / 2.0);
-    deckZoneGraphicsItem->setPos(base);
+
+    // The command zone leads the pile stack (ahead of library/graveyard/exile), since it's the
+    // Commander-specific zone a player most needs to find at a glance, and — unlike the other
+    // piles below, which PileZone rotates 90° to stack compactly — CommandZone renders the
+    // commander portrait/untapped (see CommandZone), so it reserves a full card-height's worth
+    // of vertical space rather than the narrower rotated-pile step used by the rest.
+    commandZoneGraphicsItem = new CommandZone(player->getCommandZone(), this);
+    commandZoneGraphicsItem->setPos(base);
+    qreal commandZoneStep = CardDimensions::HEIGHT_F + 5;
+
+    deckZoneGraphicsItem = new PileZone(player->getDeckZone(), this);
+    deckZoneGraphicsItem->setPos(base + QPointF(0, commandZoneStep));
 
     qreal h = deckZoneGraphicsItem->boundingRect().width() + 5;
 
@@ -105,21 +115,14 @@ void PlayerGraphicsItem::initializeZones()
     player->getSideboardZone()->setGraphicsVisibility(false);
 
     auto *handCounter = new HandCounter(playerArea);
-    handCounter->setPos(base + QPointF(0, h + 10));
+    handCounter->setPos(base + QPointF(0, commandZoneStep + h + 10));
     qreal h2 = handCounter->boundingRect().height();
 
     graveyardZoneGraphicsItem = new PileZone(player->getGraveZone(), this);
-    graveyardZoneGraphicsItem->setPos(base + QPointF(0, h + h2 + 10));
+    graveyardZoneGraphicsItem->setPos(base + QPointF(0, commandZoneStep + h + h2 + 10));
 
     rfgZoneGraphicsItem = new PileZone(player->getRfgZone(), this);
-    rfgZoneGraphicsItem->setPos(base + QPointF(0, 2 * h + h2 + 10));
-
-    // Same position in the pile stack as before, but with distinct visual treatment (colored
-    // border + "CMD" label, see CommandZone::paint()) so a player can spot their commander among
-    // the otherwise visually-identical piles (deck/graveyard/exile) without having to remember
-    // pile order — matching how physical Commander play sets the commander card visibly apart.
-    commandZoneGraphicsItem = new CommandZone(player->getCommandZone(), this);
-    commandZoneGraphicsItem->setPos(base + QPointF(0, 3 * h + h2 + 10));
+    rfgZoneGraphicsItem->setPos(base + QPointF(0, commandZoneStep + 2 * h + h2 + 10));
 
     tableZoneGraphicsItem = new TableZone(player->getTableZone(), mirrored, this);
     connect(tableZoneGraphicsItem, &TableZone::sizeChanged, this, &PlayerGraphicsItem::updateBoundingRect);
