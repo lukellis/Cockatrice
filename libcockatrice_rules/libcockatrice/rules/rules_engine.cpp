@@ -70,22 +70,33 @@ RulesEngine::passPriority(int playerId, const QList<int> &playerOrder, const QSe
     int next = nextPriorityPlayer(playerOrder, playerId, passedBy, concededPlayers);
     if (next != -1) {
         holder = next;
-        return {true, holder};
+        return {true, holder, std::nullopt};
     }
 
-    // Everyone eligible has passed in succession -- the round is exhausted. Priority simply stops
-    // (rule 117.4 would resolve the top stack object here; this fork's Stack zone has no resolvable
-    // objects). No one holds priority again until the next triggering event (a phase change, or a
-    // spell/ability going on the stack). Deliberately does NOT auto-advance the phase/turn.
+    // Everyone eligible has passed in succession -- the round is exhausted. If something is
+    // pending, rule 117.4's stack resolution: pop the top (most recently activated) ability and
+    // hand it back to the caller to apply and re-open a fresh round. Otherwise priority simply
+    // stops (holder becomes -1) until the next triggering event (a phase change, or a
+    // spell/ability going on the stack). Deliberately does NOT auto-advance the phase/turn itself
+    // either way.
     passedBy.clear();
     holder = -1;
-    return {true, holder};
+    if (!pendingAbilities.isEmpty()) {
+        PendingAbility resolved = pendingAbilities.takeLast();
+        return {true, holder, resolved};
+    }
+    return {true, holder, std::nullopt};
 }
 
 void RulesEngine::clearPriority()
 {
     passedBy.clear();
     holder = -1;
+}
+
+void RulesEngine::pushPendingAbility(const PendingAbility &ability)
+{
+    pendingAbilities.append(ability);
 }
 
 } // namespace Rules

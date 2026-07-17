@@ -39,7 +39,8 @@ message GameCommand {
         JUDGE = 1033;
         REVERSE_TURN = 1034;
         PASS_PRIORITY = 1035;
-        ACTIVATE_TARGETED_EFFECT = 1036;
+        // ACTIVATE_TARGETED_EFFECT = 1036; // obsolete -- retired for ACTIVATE_ABILITY, never reused
+        ACTIVATE_ABILITY = 1037;
     }
     extensions 100 to max;
 }

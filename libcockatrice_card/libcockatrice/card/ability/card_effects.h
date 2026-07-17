@@ -40,7 +40,7 @@ enum class TargetKind
 // per-player Server_Counter (which has a real name, e.g. "life") -- there is no pre-existing
 // "damage" counter to reuse the way Stage 1 reused "life", so this fork invents one, the same way
 // Phase 9 invented a new named "poison" per-player counter. Shared by client display code and the
-// server-side cmdActivateTargetedEffect handler so both agree on the id.
+// server-side applyPendingAbility() resolution handler (Phase 7 Stage 3) so both agree on the id.
 constexpr int DAMAGE_CARD_COUNTER_ID = 0;
 
 struct CardEffect

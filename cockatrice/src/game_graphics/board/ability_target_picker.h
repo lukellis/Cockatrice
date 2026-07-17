@@ -17,9 +17,11 @@ class QKeyEvent;
  * topmost-candidate loop, same setBeingPointedAt() hover highlight, same drawn arrow visual via
  * the shared ArrowItem base -- but decoupled from Command_CreateArrow: on a successful pick, this
  * emits a resolved AbilityTarget instead of sending any command itself, leaving the caller
- * (PlayerActions) to build and batch the real Command_SetCardAttr + Command_ActivateTargetedEffect
- * pair. Unlike ArrowDragItem (which begins mid-drag, with a mouse button already held from the
- * gesture that spawned it), this is constructed from a context-menu action with no button
+ * (PlayerActions) to build and batch the real Command_SetCardAttr + Command_ActivateAbility pair
+ * (Phase 7 Stage 3: this no longer resolves on the spot, it pushes onto the server's
+ * pending-ability stack instead). Unlike ArrowDragItem (which begins mid-drag, with a mouse
+ * button already held from the gesture that spawned it), this is constructed from a context-menu
+ * action with no button
  * currently held -- so the first fresh click's press+release cycle is what resolves or cancels
  * the pick, rather than a drag's release alone.
  *

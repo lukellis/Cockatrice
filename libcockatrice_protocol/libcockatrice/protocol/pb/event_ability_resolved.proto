@@ -1,0 +1,19 @@
+syntax = "proto2";
+import "game_event.proto";
+
+// Phase 7 Stage 3: broadcasts a pop+resolve off the pending-ability stack (Rules::RulesEngine),
+// fired immediately before the underlying Event_SetCounter/Event_DrawCards/Event_SetCardCounter
+// events that actually apply the effect. See COMMANDER_IMPLEMENTATION_STATUS.md. Same fields as
+// Event_AbilityActivated, identifying which pending ability just resolved.
+message Event_AbilityResolved {
+    extend GameEvent {
+        optional Event_AbilityResolved ext = 2025;
+    }
+
+    optional sint32 controller_player_id = 1;
+    optional sint32 effect_kind = 2;
+    optional sint32 amount = 3;
+    optional sint32 target_player_id = 4 [default = -1];
+    optional string target_zone = 5;
+    optional sint32 target_card_id = 6 [default = -1];
+}

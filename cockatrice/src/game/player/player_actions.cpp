@@ -16,7 +16,7 @@
 #include <libcockatrice/card/ability/mana_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
-#include <libcockatrice/protocol/pb/command_activate_targeted_effect.pb.h>
+#include <libcockatrice/protocol/pb/command_activate_ability.pb.h>
 #include <libcockatrice/protocol/pb/command_attach_card.pb.h>
 #include <libcockatrice/protocol/pb/command_change_zone_properties.pb.h>
 #include <libcockatrice/protocol/pb/command_create_token.pb.h>
@@ -1750,31 +1750,21 @@ void PlayerActions::actApplyTap(QList<CardItem *> cardList, QMap<const CardItem 
         // options.size() > 1 with no entry in chosenManaOptions means the choice dialog was
         // skipped somehow -- don't guess, just tap without adding mana.
 
-        // Stage 1 of a real card-ability execution engine: a recognized non-mana "{T}: <effect>."
-        // ability batches its matching, already-existing command alongside the tap toggle above --
-        // see nonManaActivatedAbilityForCard()'s doc comment. Independent of the mana handling
-        // above (different, mutually-exclusive regex whitelists on the same rules text), so both
-        // can fire for a card that happens to have one line of each kind.
+        // Phase 7 Stage 3: a recognized non-mana "{T}: <effect>." ability no longer resolves on
+        // the spot -- it batches a Command_ActivateAbility alongside the tap toggle above, which
+        // pushes it onto the server's pending-ability stack instead (see
+        // COMMANDER_IMPLEMENTATION_STATUS.md's Phase 7 Stage 3 section). Independent of the mana
+        // handling above (different, mutually-exclusive regex whitelists on the same rules text),
+        // so both can fire for a card that happens to have one line of each kind.
         if (const std::optional<CardEffect> effect = nonManaActivatedAbilityForCard(card)) {
             switch (effect->kind) {
-                case EffectKind::DrawCards: {
-                    auto *drawCmd = new Command_DrawCards;
-                    drawCmd->set_number(effect->amount);
-                    commandList.append(drawCmd);
-                    break;
-                }
+                case EffectKind::DrawCards:
                 case EffectKind::GainLife:
                 case EffectKind::LoseLife: {
-                    const int delta = effect->kind == EffectKind::GainLife ? effect->amount : -effect->amount;
-                    for (auto it = counters.constBegin(); it != counters.constEnd(); ++it) {
-                        if (it.value()->getName() == QStringLiteral("life")) {
-                            auto *lifeCmd = new Command_IncCounter;
-                            lifeCmd->set_counter_id(it.key());
-                            lifeCmd->set_delta(delta);
-                            commandList.append(lifeCmd);
-                            break;
-                        }
-                    }
+                    auto *abilityCmd = new Command_ActivateAbility;
+                    abilityCmd->set_effect_kind(static_cast<int>(effect->kind));
+                    abilityCmd->set_amount(effect->amount);
+                    commandList.append(abilityCmd);
                     break;
                 }
                 case EffectKind::DealDamage:
@@ -1817,7 +1807,8 @@ void PlayerActions::actApplyTapWithTarget(CardItem *card, CardEffect effect, Abi
     tapCmd->set_attr_value("1");
     commandList.append(tapCmd);
 
-    auto *effectCmd = new Command_ActivateTargetedEffect;
+    auto *effectCmd = new Command_ActivateAbility;
+    effectCmd->set_effect_kind(static_cast<int>(effect.kind));
     effectCmd->set_amount(effect.amount);
     effectCmd->set_target_player_id(target.targetPlayerId);
     if (!target.isPlayer) {

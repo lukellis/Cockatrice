@@ -36,10 +36,12 @@
 #include <QRegularExpression>
 #include <QTimer>
 #include <google/protobuf/descriptor.h>
+#include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/deck_list/deck_list.h>
 #include <libcockatrice/protocol/pb/card_attributes.pb.h>
 #include <libcockatrice/protocol/pb/context_connection_state_changed.pb.h>
 #include <libcockatrice/protocol/pb/context_ping_changed.pb.h>
+#include <libcockatrice/protocol/pb/event_ability_resolved.pb.h>
 #include <libcockatrice/protocol/pb/event_delete_arrow.pb.h>
 #include <libcockatrice/protocol/pb/event_game_closed.pb.h>
 #include <libcockatrice/protocol/pb/event_game_host_changed.pb.h>
@@ -53,6 +55,8 @@
 #include <libcockatrice/protocol/pb/event_replay_added.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_player.pb.h>
+#include <libcockatrice/protocol/pb/event_set_card_counter.pb.h>
+#include <libcockatrice/protocol/pb/event_set_counter.pb.h>
 #include <libcockatrice/protocol/pb/game_replay.pb.h>
 #include <libcockatrice/rules/commander_counter_names.h>
 #include <libcockatrice/utility/color.h>
@@ -771,6 +775,91 @@ void Server_Game::broadcastPriorityChange(int playerId)
     sendGameEventContainer(prepareGameEvent(event, -1));
 }
 
+void Server_Game::pushPendingAbility(const Rules::PendingAbility &ability)
+{
+    QMutexLocker locker(&gameMutex);
+    rulesEngine.pushPendingAbility(ability);
+    broadcastPriorityChange(ability.controllerId);
+}
+
+void Server_Game::applyPendingAbility(const Rules::PendingAbility &ability, GameEventStorage &ges)
+{
+    // Reuses the exact mechanisms Stages 1/2 already proved -- nothing here is new logic, just
+    // moved from what used to run instantly at activation time to running here, at resolution time.
+    auto *controller = dynamic_cast<Server_Player *>(getPlayer(ability.controllerId));
+    if (!controller) {
+        return;
+    }
+
+    switch (ability.effect.kind) {
+        case EffectKind::DrawCards:
+            controller->drawCards(ges, ability.effect.amount);
+            break;
+        case EffectKind::GainLife:
+        case EffectKind::LoseLife: {
+            const int delta =
+                ability.effect.kind == EffectKind::GainLife ? ability.effect.amount : -ability.effect.amount;
+            const QMap<int, Server_Counter *> &counters = controller->getCounters();
+            for (auto it = counters.constBegin(); it != counters.constEnd(); ++it) {
+                if (it.value()->getName() == QStringLiteral("life")) {
+                    if (it.value()->incrementCount(delta)) {
+                        Event_SetCounter event;
+                        event.set_counter_id(it.value()->getId());
+                        event.set_value(it.value()->getCount());
+                        ges.enqueueGameEvent(event, controller->getPlayerId());
+                    }
+                    break;
+                }
+            }
+            break;
+        }
+        case EffectKind::DealDamage: {
+            auto *targetPlayer = dynamic_cast<Server_Player *>(getPlayer(ability.targetPlayerId));
+            if (!targetPlayer) {
+                break;
+            }
+            if (ability.targetZone.isEmpty()) {
+                // Player-target path: decrement the target's own "life" counter. Reuses the
+                // already-wired Phase 9 life <= 0 advisory warning on the target's own client (a
+                // cause-agnostic CounterState::valueChanged hook) for free -- no new SBA code
+                // needed here, same as Stage 2's original immediate-resolution version.
+                const QMap<int, Server_Counter *> &targetCounters = targetPlayer->getCounters();
+                for (auto it = targetCounters.constBegin(); it != targetCounters.constEnd(); ++it) {
+                    if (it.value()->getName() == QStringLiteral("life")) {
+                        if (it.value()->incrementCount(-ability.effect.amount)) {
+                            Event_SetCounter event;
+                            event.set_counter_id(it.value()->getId());
+                            event.set_value(it.value()->getCount());
+                            ges.enqueueGameEvent(event, targetPlayer->getPlayerId());
+                        }
+                        break;
+                    }
+                }
+            } else {
+                // Card-target path: mark damage via the fork's conventional DAMAGE_CARD_COUNTER_ID
+                // (see card_effects.h). Purely advisory, same as every other SBA in this fork.
+                Server_CardZone *zone = targetPlayer->getZones().value(ability.targetZone);
+                if (!zone || !zone->hasCoords()) {
+                    break;
+                }
+                Server_Card *card = zone->getCard(ability.targetCardId);
+                if (!card) {
+                    break;
+                }
+                Event_SetCardCounter event;
+                event.set_zone_name(zone->getName().toStdString());
+                event.set_card_id(card->getId());
+                if (card->incrementCounter(DAMAGE_CARD_COUNTER_ID, ability.effect.amount, &event)) {
+                    ges.enqueueGameEvent(event, targetPlayer->getPlayerId());
+                }
+            }
+            break;
+        }
+        case EffectKind::AddCounterToSelf:
+            break; // not wired -- no parser produces this kind yet (matches Stage 1)
+    }
+}
+
 void Server_Game::advancePriority(int passingPlayerId)
 {
     QMutexLocker locker(&gameMutex);
@@ -783,10 +872,11 @@ void Server_Game::advancePriority(int passingPlayerId)
         }
     }
 
-    // The engine advances to the next eligible player, or stops the round (holder -1) if everyone
-    // has passed in succession — it deliberately does NOT auto-advance the phase/turn (see the
-    // engine's passPriority() docs for the full rationale, incl. the solo auto-pass infinite-loop
-    // this design avoids). The server just broadcasts whatever the engine decided.
+    // The engine advances to the next eligible player, or -- if everyone has passed in
+    // succession -- either resolves the top pending ability (rule 117.4 simplified) or stops the
+    // round (holder -1) if nothing is pending. It deliberately does NOT auto-advance the
+    // phase/turn itself (see the engine's passPriority() docs for the full rationale, incl. the
+    // solo auto-pass infinite-loop this design avoids).
     Rules::PriorityPassResult result = rulesEngine.passPriority(passingPlayerId, players.keys(), concededPlayers);
     if (!result.changed) {
         return; // passingPlayerId didn't hold priority; cmdPassPriority already validates this.
@@ -795,6 +885,29 @@ void Server_Game::advancePriority(int passingPlayerId)
     Event_PriorityChanged event;
     event.set_priority_player_id(result.holder);
     sendGameEventContainer(prepareGameEvent(event, -1));
+
+    if (result.resolvedAbility) {
+        const Rules::PendingAbility &resolved = *result.resolvedAbility;
+
+        Event_AbilityResolved resolvedEvent;
+        resolvedEvent.set_controller_player_id(resolved.controllerId);
+        resolvedEvent.set_effect_kind(static_cast<int>(resolved.effect.kind));
+        resolvedEvent.set_amount(resolved.effect.amount);
+        resolvedEvent.set_target_player_id(resolved.targetPlayerId);
+        if (!resolved.targetZone.isEmpty()) {
+            resolvedEvent.set_target_zone(resolved.targetZone.toStdString());
+            resolvedEvent.set_target_card_id(resolved.targetCardId);
+        }
+        sendGameEventContainer(prepareGameEvent(resolvedEvent, -1));
+
+        GameEventStorage ges;
+        applyPendingAbility(resolved, ges);
+        ges.sendToGame(this);
+
+        // Rule 117.3b simplified: after a resolution, the active player gets priority again --
+        // reopening a fresh round the exact same way a new phase/step already does.
+        broadcastPriorityChange(activePlayer);
+    }
 }
 
 qint64 Server_Game::generateArrowId()

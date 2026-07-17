@@ -45,7 +45,7 @@ class Command_DelCounter;
 class Command_NextTurn;
 class Command_SetActivePhase;
 class Command_PassPriority;
-class Command_ActivateTargetedEffect;
+class Command_ActivateAbility;
 class Command_DumpZone;
 class Command_RevealCards;
 class Command_ReverseTurn;
@@ -169,7 +169,7 @@ public:
     virtual Response::ResponseCode
     cmdPassPriority(const Command_PassPriority &cmd, ResponseContainer &rc, GameEventStorage &ges);
     virtual Response::ResponseCode
-    cmdActivateTargetedEffect(const Command_ActivateTargetedEffect &cmd, ResponseContainer &rc, GameEventStorage &ges);
+    cmdActivateAbility(const Command_ActivateAbility &cmd, ResponseContainer &rc, GameEventStorage &ges);
     virtual Response::ResponseCode
     cmdDumpZone(const Command_DumpZone &cmd, ResponseContainer &rc, GameEventStorage &ges);
     virtual Response::ResponseCode

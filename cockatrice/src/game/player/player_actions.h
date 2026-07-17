@@ -58,7 +58,7 @@ struct ManaTapChoice
 // produced by AbilityTargetPicker's board-click targeting interaction. card_id is only unique
 // within one player's zone, never globally, so a card target is always addressed by the explicit
 // (targetPlayerId, targetZone, targetCardId) triple, never targetCardId alone -- same convention
-// Command_ActivateTargetedEffect carries over the wire.
+// Command_ActivateAbility carries over the wire.
 struct AbilityTarget
 {
     bool isPlayer = true;

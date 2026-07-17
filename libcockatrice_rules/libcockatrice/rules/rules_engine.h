@@ -3,7 +3,10 @@
 
 #include <QList>
 #include <QSet>
+#include <QString>
 #include <QStringList>
+#include <libcockatrice/card/ability/card_effects.h>
+#include <optional>
 
 namespace Rules
 {
@@ -25,13 +28,32 @@ enum class PhaseAutomation
 };
 
 /**
- * @brief Result of RulesEngine::passPriority(): whether the pass changed anything, and the resulting
- * priority holder (-1 == no one).
+ * @brief A single activated ability (Phase 7 Stages 1/2's ActivatedAbilities IR) that's been
+ * activated but not yet resolved -- pushed onto RulesEngine's pending-ability stack when the
+ * activating client sends Command_ActivateAbility. Deliberately named distinctly from
+ * ZoneNames::STACK's per-player visual pile (see COMMANDER_IMPLEMENTATION_STATUS.md's Phase 7
+ * Stage 3 section): this is new, separate, engine-level state, not a card sitting in any zone.
+ */
+struct PendingAbility
+{
+    int controllerId = -1;
+    CardEffect effect;       // reuses EffectKind + amount from Stages 1/2
+    int targetPlayerId = -1; // meaningful only if effect.target == TargetKind::AnyTarget
+    QString targetZone;      // empty unless the target is a permanent, not a player
+    int targetCardId = -1;
+};
+
+/**
+ * @brief Result of RulesEngine::passPriority(): whether the pass changed anything, the resulting
+ * priority holder (-1 == no one), and -- if a priority round was exhausted with a non-empty
+ * pending-ability stack -- the ability that was popped and needs to be resolved (rule 117.4
+ * simplified; see passPriority()'s doc comment).
  */
 struct PriorityPassResult
 {
     bool changed; ///< false if the pass was a no-op (the passing player didn't hold priority)
     int holder;   ///< the resulting priority holder after the pass; -1 means no one holds it
+    std::optional<PendingAbility> resolvedAbility; ///< set only when exhaustion popped something
 };
 
 /**
@@ -97,10 +119,13 @@ public:
 
     /**
      * @brief Records that @p playerId passes priority and advances to the next eligible player in
-     * turn order. If everyone eligible has now passed in succession, the round is exhausted and
-     * priority stops (holder becomes -1) rather than auto-advancing the phase -- this fork is a
-     * manual "physical simulator" (see CLAUDE.md), so phase changes are always a deliberate player
-     * action. @p playerOrder / @p concededPlayers describe the current table.
+     * turn order. If everyone eligible has now passed in succession, the round is exhausted: if the
+     * pending-ability stack is non-empty, the top (most recently activated) ability is popped and
+     * returned via the result's resolvedAbility for the caller to apply and re-open a fresh round
+     * (rule 117.4 simplified -- see pushPendingAbility()); otherwise priority simply stops (holder
+     * becomes -1) rather than auto-advancing the phase -- this fork is a manual "physical simulator"
+     * (see CLAUDE.md), so phase changes are always a deliberate player action. @p playerOrder /
+     * @p concededPlayers describe the current table.
      *
      * Returns {changed:false, holder:current} unchanged if @p playerId isn't the current holder
      * (defensive; the server also validates before calling).
@@ -110,9 +135,27 @@ public:
     /** @brief Clears priority to "no one" (holder = -1, empty passed-set). */
     void clearPriority();
 
+    // ---- Pending-ability stack (Phase 7 Stage 3) ----
+
+    /**
+     * @brief Pushes @p ability onto the top of the pending-ability stack (LIFO -- the most recently
+     * activated ability resolves first, matching rule 608.1/117.4 and naturally handling a chain of
+     * responses one at a time). Does not itself start a priority round; the caller (Server_Game) is
+     * expected to also call startPriorityRound(ability.controllerId), mirroring how a card moving
+     * onto the (unrelated, purely visual) Stack zone already triggers a fresh round today.
+     */
+    void pushPendingAbility(const PendingAbility &ability);
+
+    /** @brief True if any activated ability is awaiting resolution. */
+    bool hasPendingAbilities() const
+    {
+        return !pendingAbilities.isEmpty();
+    }
+
 private:
     int holder = -1;
     QSet<int> passedBy;
+    QList<PendingAbility> pendingAbilities;
 };
 
 } // namespace Rules

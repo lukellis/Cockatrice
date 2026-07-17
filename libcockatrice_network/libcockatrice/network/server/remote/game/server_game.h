@@ -92,6 +92,11 @@ private:
     // priority holder, and broadcasts it. Caller must hold gameMutex (recursive, so callers that
     // already hold it — e.g. resetPriorityTo() — are safe).
     void broadcastPriorityChange(int playerId);
+    // Phase 7 Stage 3: applies a resolved pending ability's effect by reusing the exact mechanisms
+    // Stages 1/2 already proved (Server_Player::drawCards(), the "life" Server_Counter
+    // lookup-by-name, Server_Card::incrementCounter(DAMAGE_CARD_COUNTER_ID, ...)). Called from
+    // advancePriority() when a priority round exhausts with something pending.
+    void applyPendingAbility(const Rules::PendingAbility &ability, GameEventStorage &ges);
 signals:
     void sigStartGameIfReady(bool override);
     void gameInfoChanged(ServerInfo_Game gameInfo);
@@ -226,10 +231,12 @@ public:
 
     /**
      * @brief Called when @p passingPlayerId passes priority. Delegates to
-     * Rules::RulesEngine::passPriority() (advance to the next eligible player in turn order, or
-     * stop the round if everyone has passed) and broadcasts the result. Deliberately does NOT
-     * auto-advance the phase/turn: this is a manual "physical simulator" fork (see CLAUDE.md), so
-     * phase changes are always a deliberate player action, never a side effect of priority passing.
+     * Rules::RulesEngine::passPriority() (advance to the next eligible player in turn order; if
+     * everyone has passed, resolve the top pending ability if one exists (Phase 7 Stage 3,
+     * applyPendingAbility()) and re-open a round at the active player, or otherwise just stop the
+     * round) and broadcasts the result. Deliberately does NOT auto-advance the phase/turn: this is
+     * a manual "physical simulator" fork (see CLAUDE.md), so phase changes are always a deliberate
+     * player action, never a side effect of priority passing.
      */
     void advancePriority(int passingPlayerId);
 
@@ -240,6 +247,14 @@ public:
      * ability activation — starts a round at whoever moved it, rule 117.3d simplified).
      */
     void resetPriorityTo(int playerId);
+
+    /**
+     * @brief Phase 7 Stage 3: pushes @p ability onto the pending-ability stack and starts a fresh
+     * priority round at its controller — mirrors resetPriorityTo()'s trigger semantics for a card
+     * moving onto the (separate, purely visual) Stack zone. The effect itself is only applied once
+     * a priority round exhausts with this still pending (see advancePriority()/applyPendingAbility()).
+     */
+    void pushPendingAbility(const Rules::PendingAbility &ability);
 
     int getSecondsElapsed() const
     {

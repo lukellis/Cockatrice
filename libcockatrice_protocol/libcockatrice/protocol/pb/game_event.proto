@@ -35,6 +35,8 @@ message GameEvent {
         REVERSE_TURN = 2021;
         GAME_LOG_NOTICE = 2022;
         PRIORITY_CHANGED = 2023;
+        ABILITY_ACTIVATED = 2024;
+        ABILITY_RESOLVED = 2025;
     }
     optional sint32 player_id = 1 [default = -1];
     extensions 100 to max;

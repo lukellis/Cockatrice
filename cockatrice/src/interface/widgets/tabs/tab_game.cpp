@@ -212,6 +212,10 @@ void TabGame::connectMessageLogToGameEventHandler()
             &MessageLogWidget::logPriorityChanged);
     connect(game->getGameEventHandler(), &GameEventHandler::logPriorityCleared, messageLog,
             &MessageLogWidget::logPriorityCleared);
+    connect(game->getGameEventHandler(), &GameEventHandler::logAbilityActivated, messageLog,
+            &MessageLogWidget::logAbilityActivated);
+    connect(game->getGameEventHandler(), &GameEventHandler::logAbilityResolved, messageLog,
+            &MessageLogWidget::logAbilityResolved);
 
     connect(game->getGameEventHandler(), &GameEventHandler::logConcede, messageLog, &MessageLogWidget::logConcede);
     connect(game->getGameEventHandler(), &GameEventHandler::logUnconcede, messageLog, &MessageLogWidget::logUnconcede);

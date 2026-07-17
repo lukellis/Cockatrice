@@ -581,6 +581,16 @@ void MessageLogWidget::logPriorityCleared()
     appendHtmlServerMessage(tr("Everyone has passed. No one has priority."));
 }
 
+void MessageLogWidget::logAbilityActivated(PlayerLogic *player)
+{
+    appendHtmlServerMessage(tr("%1 activates an ability.").arg(sanitizeHtml(player->getPlayerInfo()->getName())));
+}
+
+void MessageLogWidget::logAbilityResolved(PlayerLogic *player)
+{
+    appendHtmlServerMessage(tr("%1's ability resolves.").arg(sanitizeHtml(player->getPlayerInfo()->getName())));
+}
+
 void MessageLogWidget::logReverseTurn(PlayerLogic *player, bool reversed)
 {
     appendHtmlServerMessage(tr("%1 reversed turn order, now it's %2.")

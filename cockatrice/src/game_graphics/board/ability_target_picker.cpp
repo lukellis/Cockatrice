@@ -22,8 +22,8 @@ AbilityTargetPicker::AbilityTargetPicker(PlayerLogic *owner, ArrowTarget *startI
                                                             .isLocalCreator = true,
                                                             .id = -1,
                                                             .color = TARGETING_ARROW_COLOR}),
-               startItem,
-               nullptr)
+                startItem,
+                nullptr)
 {
     setFlag(QGraphicsItem::ItemIsFocusable);
     setFocus();

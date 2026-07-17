@@ -34,7 +34,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Narrow slice done (2026-07-16)** | Cost validation/auto-tap needs Phase 7 (out of reach) — still not implemented. The one in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) is implemented, tested, and live-verified; see "Phase 6" section below. |
-| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–2 done (2026-07-17)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities) and Stage 2 (targeting — board-click picker, players and permanents, a new `Command_ActivateTargetedEffect`) both implemented, tested, and live-verified. Stages 3–6 (a real stack, real mana payment, triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–3 done (2026-07-17)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), and Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`) all implemented, tested, and live-verified. Stages 4–6 (real mana payment, triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -928,6 +928,146 @@ fork, and the first command capable of mutating another player's game state outs
 scoped for implementation — each needs its own explicit go-ahead, per this fork's standing
 rule for Phases 6–8.**
 
+### Stage 3 — A real resolvable stack (2026-07-17)
+
+Authorized by the user via a dedicated plan-mode design pass (same treatment Stages 1–2 got),
+after being asked to pick the next increment from a short list. Closes the gap the Phase 5
+section above documented as an explicit simplification: `RulesEngine::passPriority()`'s
+exhaustion branch used to just stop ("this fork's Stack zone has no resolvable objects"). Now
+it doesn't — activating a Stage 1/2 ability defers its effect until a priority round actually
+exhausts with it still pending, instead of applying instantly on tap. This is the roadmap's
+flagged "biggest behavioral change of any stage," since priority now determines *when* game
+state changes, not just who's allowed to act.
+
+**Key design decisions**, researched and reviewed before writing any code:
+- **A new, engine-level `Rules::PendingAbility` stack — not the existing visual per-player
+  `stack` zone.** The manual `StackZone`/`StackZoneLogic` pile (drag a card there to represent
+  a spell) is completely untouched; it has no server-side resolution semantics today and adding
+  any wouldn't help, since real spells (instants/sorceries) still have no parser in this fork.
+  The new pending-ability list lives purely inside `Rules::RulesEngine`, invisible except via
+  two new log lines. Naming it `PendingAbility` (not `StackObject`) deliberately avoids
+  implying any connection to `ZoneNames::STACK`.
+- **`Command_ActivateTargetedEffect` (Stage 2, ext 1036) is retired, not kept alongside** —
+  replaced by one unified `Command_ActivateAbility` (ext 1037) covering all four `EffectKind`
+  values (previously `DrawCards`/`GainLife`/`LoseLife` resolved instantly via bare
+  `Command_DrawCards`/`Command_IncCounter`, inconsistent with `DealDamage`'s already-deferred
+  shape from Stage 2). 1036 is permanently retired, never reused.
+- **Mana abilities are correctly untouched, not just out of scope** — real rule 605.3 says mana
+  abilities don't use the stack and resolve immediately; `ManaAbilities`/the multi-select
+  tap-for-mana path (Phase 7 Increment 2) is a separate code path this stage doesn't touch.
+- **No fizzle/validity re-check at resolution** (e.g. is the target still there) — matches
+  Stages 1–2's existing no-state-based-validity-check philosophy. A known, stated limitation.
+- **Activating an ability stays ungated on holding priority** — consistent with this fork's
+  whole Assisted-Mode philosophy (Phase 5: "holding or not holding priority does not gate any
+  other existing command"). Only *resolution timing* becomes priority-driven, not activation.
+- **The server resolves autonomously, no round-trip back to any client** — a simplification
+  found during design: the original Stage-3 roadmap note worried resolution would need to be
+  client-driven (servatrice has no card database), but Stage 2's
+  `Command_ActivateTargetedEffect` already proved the activating client fully resolves
+  `(kind, amount, target)` into primitives *at activation time* — the server has always had
+  everything it needs to execute the effect itself when popped off the stack.
+
+**What's implemented**:
+- **Protocol**: `Command_ActivateAbility` (ext 1037, replacing 1036) carries `effect_kind`
+  (`EffectKind`'s declaration order: 0=DrawCards, 1=GainLife, 2=LoseLife, 3=DealDamage),
+  `amount`, and the same `target_player_id`/`target_zone`/`target_card_id` triple Stage 2
+  established. Two new events: `Event_AbilityActivated` (ext 2024, broadcasts a push so every
+  client — not just the activator's — can log it) and `Event_AbilityResolved` (ext 2025,
+  fired immediately before the real `Event_SetCounter`/`Event_DrawCards`/`Event_SetCardCounter`
+  that actually applies the effect).
+- **`Rules::RulesEngine`** (`rules_engine.{h,cpp}`) gains a `PendingAbility` struct
+  (`controllerId`, `effect` — reusing `CardEffect`/`EffectKind` directly from `card_effects.h`,
+  already a public link dependency of `libcockatrice_rules` — plus `targetPlayerId`/
+  `targetZone`/`targetCardId`), a private `QList<PendingAbility> pendingAbilities`,
+  `pushPendingAbility()`/`hasPendingAbilities()`, and `PriorityPassResult` gains
+  `std::optional<PendingAbility> resolvedAbility`. `passPriority()`'s exhaustion branch now
+  pops the **last**-pushed entry (LIFO — rule 608.1/117.4, the most recently activated ability
+  resolves first) instead of unconditionally stopping; with an empty stack, behavior is
+  byte-for-byte unchanged.
+- **`Server_Game`** gains `pushPendingAbility()` (appends + `broadcastPriorityChange()`,
+  mirroring the existing move-to-Stack-zone trigger) and `applyPendingAbility()` (dispatches on
+  `EffectKind`, reusing the *exact* mechanisms already proven: `Server_Player::drawCards()`, the
+  `"life"`-counter-by-name lookup, `Server_Card::incrementCounter(DAMAGE_CARD_COUNTER_ID, ...)`
+  — moved verbatim from the retired `cmdActivateTargetedEffect`, not reimplemented).
+  `advancePriority()`: when `passPriority()` returns a `resolvedAbility`, broadcasts
+  `Event_AbilityResolved`, calls `applyPendingAbility()`, then `broadcastPriorityChange(activePlayer)`
+  to reopen a fresh round (rule 117.3b simplified — same reopening `setActivePhase()` already
+  does at a new phase/step).
+- **`Server_Player::cmdActivateAbility`** replaces `cmdActivateTargetedEffect`: builds a
+  `Rules::PendingAbility` from the command, enqueues `Event_AbilityActivated`, and calls
+  `game->pushPendingAbility()` — no immediate effect application at all.
+- **Client**: `PlayerActions::actApplyTap()`'s effect switch and `actApplyTapWithTarget()` both
+  now build `Command_ActivateAbility` instead of the retired immediate-resolution commands;
+  `AbilityTargetPicker`'s targeting interaction (mouse grab/hover/resolve/cancel) is completely
+  unchanged, only the command built at the end changed. Two new log lines
+  (`GameEventHandler::eventAbilityActivated`/`eventAbilityResolved` →
+  `MessageLogWidget::logAbilityActivated`/`logAbilityResolved`), following the exact
+  `logPriorityChanged`/`logPriorityCleared` pattern — plain text, no new UI widget or
+  stack-contents panel.
+- **Testing**: `tests/rules/rules_engine_test.cpp` gained 5 cases (push/has-pending, exhaustion
+  with no pending is unchanged, single-ability resolve, two-ability LIFO resolve across two
+  exhaustions) — **27/27 pass**. `tests/movecard_tests/commander_turn_structure_test.cpp`'s
+  `ActivateTargetedEffectRejectedBeforeGameStarts` became `ActivateAbilityRejectedBeforeGameStarts`
+  (same gating-only limitation as every other test in that file — `Server_Game::getPlayers()`/
+  `getPlayer()` both read the `participants` map, populated only by `addPlayer()`, which needs a
+  live `Server_AbstractUserInterface`; a deeper push→exhaust→resolve unit test was attempted and
+  found not reachable from this lightweight harness for the same reason). Full suite:
+  **21/21 executables pass**, zero regressions. `format.sh --cmake --branch master` run and
+  applied (cosmetic reformatting only); rebuilt and retested clean after.
+- **Build environment note**: this session's sandbox had no system Qt6/cmake/g++ and no
+  passwordless `sudo` (unlike the AL2023 sandbox this file's other build notes describe) but did
+  have working Docker without `sudo`. Built and tested entirely inside a `debian:trixie`
+  container (`docker run -d --name cockatrice-build -v <repo>:/repo -w /repo debian:trixie sleep
+  infinity`, then `apt-get install` the full toolchain — Debian trixie ships native
+  `qt6-base-dev`/`qt6-websockets-dev`/`qt6-multimedia-dev`/`qt6-svg-dev` packages, no `aqtinstall`
+  needed) — worth knowing for a future session that finds itself in a similarly bare environment.
+- **Verified live**, not just compiled: local servatrice + Xvfb + real client inside the same
+  container (Xvfb needed a taller virtual screen, `1280x1400` not `1280x800` — the phase
+  toolbar's ~13 buttons, including the new-to-this-session discovery of exactly where the Pass
+  Priority button sits, don't fit vertically in a maximized 800px-tall window once mana-pool/
+  poison/tax counters are all present), a real solo Commander game with three throwaway test
+  cards ("Test Draw Rock", "Test Life Rock", "Test Bolt Rock" — added to
+  `.uitest/sample_cards.xml` for the session and removed afterward, same precedent as Stages
+  1–2) plus Baleful Strix as a damage target. Confirmed via debug-log cross-reference:
+  - Tapping each of the three test cards sent `Command_SetCardAttr` (tap) +
+    `Command_ActivateAbility` in one batch; the server responded with only
+    `Event_AbilityActivated` + the tap event — **critically, no `Event_DrawCards`/
+    `Event_SetCounter`/`Event_SetCardCounter` at this point**, proving the effect really is
+    deferred, not applied on activation.
+  - Targeting Baleful Strix with Test Bolt Rock still worked exactly as Stage 2 built it
+    (board-click drag), now sending `Command_ActivateAbility { effect_kind: 3 amount: 3
+    target_player_id: 0 target_zone: "table" target_card_id: 1 }` instead of the retired
+    `Command_ActivateTargetedEffect`.
+  - With all three abilities pending (pushed in order Draw → Life → Bolt), three separate
+    `Command_PassPriority` calls resolved them in exact LIFO order — Bolt (last pushed) first
+    (`Event_AbilityResolved{effect_kind:3}` → `Event_SetCardCounter{card_id:1 counter_id:0
+    counter_value:3}`, a "3" damage badge appearing on Baleful Strix), then Life
+    (`Event_AbilityResolved{effect_kind:1}` → `Event_SetCounter{value:42}`, life 40→42 visible
+    on the avatar), then Draw (`Event_AbilityResolved{effect_kind:0}` →
+    `Event_DrawCards{number:0}`, gracefully handling the by-then-empty library exactly like
+    Stage 1's original verification) — confirming the engine really does resolve most-recently-
+    activated-first, not push order.
+  - Each resolution's `Event_PriorityChanged{priority_player_id:0}` correctly reopened a fresh
+    round at the sole player immediately after resolving, before the next resolution; a fourth
+    pass with the stack genuinely empty produced only `Event_PriorityChanged{priority_player_id:
+    -1}` and stopped — byte-for-byte the same as the pre-Stage-3 behavior, confirming the
+    regression-safe empty-stack path.
+  - The Phase 9 empty-library SBA warning (rule 104.3b) fired correctly off the *deferred*
+    Draw resolution ("testuser attempted to draw from an empty library and has lost the game"),
+    re-confirming the cause-agnostic `CounterState`/log hooks need zero new code to cover a new
+    effect-application source, the same finding Stage 2 made for the life ≤ 0 warning.
+  - New log lines confirmed rendering correctly: "testuser activates an ability." at each
+    activation, "Everyone has passed. No one has priority." followed by "testuser's ability
+    resolves." at each resolution.
+- **Deliberately excluded**: fizzle/validity re-checks at resolution; a visible stack-contents
+  UI beyond log lines; unifying with the manual visual `stack` zone; multi-select targeted-ability
+  activation (still deferred from Stage 2); real spell casting from hand (still no card-effect
+  parser for instants/sorceries — only Stages 1–2's narrow activated-ability whitelist
+  participates in the new stack). Stages 4–6 (real mana cost payment, triggered abilities,
+  combat) remain their own future sign-offs.
+
+**Status: Stage 3 implemented, tested, and live-verified.**
+
 ## Phase 9: State-Based Actions (advisory warnings)
 
 Design doc §3 Phase 9 calls for full state-based-action checking. Real Magic re-checks
@@ -1398,14 +1538,17 @@ as needing a card-rules engine this fork doesn't have).
 5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
    see "Phase 7" section above. Increment 2 (mana abilities) also **done**.
 6. ~~Phase 7's real card-ability *execution* engine~~ — **staged roadmap
-   scoped, Stages 1–2 done (2026-07-16/17).** See "Phase 7 'real card-ability
+   scoped, Stages 1–3 done (2026-07-16/17).** See "Phase 7 'real card-ability
    execution engine'" section above for the full Stage 1–6 roadmap, Stage 1's
    implementation (narrow self-targeted activated abilities, zero protocol
-   changes), and Stage 2's implementation (board-click targeting, players and
-   permanents, a new `Command_ActivateTargetedEffect`). Stages 3–6 (a real
-   stack, real mana payment, triggered abilities, combat) remain scoped but
-   not implemented — each needs its own explicit sign-off before
-   implementation starts, not a blanket green light.
+   changes), Stage 2's implementation (board-click targeting, players and
+   permanents, a new `Command_ActivateTargetedEffect`), and Stage 3's
+   implementation (a real resolvable pending-ability stack — activating an
+   ability now defers its effect until priority exhausts, resolving in LIFO
+   order, via a unified `Command_ActivateAbility` that retires Stage 2's
+   `Command_ActivateTargetedEffect`). Stages 4–6 (real mana payment, triggered
+   abilities, combat) remain scoped but not implemented — each needs its own
+   explicit sign-off before implementation starts, not a blanket green light.
 
 ## Design & Implementation Review — 2026-07-16
 

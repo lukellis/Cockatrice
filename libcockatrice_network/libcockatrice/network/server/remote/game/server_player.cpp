@@ -16,7 +16,7 @@
 #include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/deck_list/deck_list.h>
 #include <libcockatrice/deck_list/tree/deck_list_card_node.h>
-#include <libcockatrice/protocol/pb/command_activate_targeted_effect.pb.h>
+#include <libcockatrice/protocol/pb/command_activate_ability.pb.h>
 #include <libcockatrice/protocol/pb/command_attach_card.pb.h>
 #include <libcockatrice/protocol/pb/command_change_zone_properties.pb.h>
 #include <libcockatrice/protocol/pb/command_concede.pb.h>
@@ -36,6 +36,7 @@
 #include <libcockatrice/protocol/pb/context_deck_select.pb.h>
 #include <libcockatrice/protocol/pb/context_mulligan.pb.h>
 #include <libcockatrice/protocol/pb/context_set_sideboard_lock.pb.h>
+#include <libcockatrice/protocol/pb/event_ability_activated.pb.h>
 #include <libcockatrice/protocol/pb/event_create_counter.pb.h>
 #include <libcockatrice/protocol/pb/event_del_counter.pb.h>
 #include <libcockatrice/protocol/pb/event_draw_cards.pb.h>
@@ -660,20 +661,19 @@ Response::ResponseCode Server_Player::cmdPassPriority(const Command_PassPriority
     return Response::RespOk;
 }
 
-// Phase 7 Stage 2 (targeting) of the card-ability execution engine. Unlike every other
-// counter/attribute command in this file, the target here is not implicitly "this player's own
-// state" -- it's whatever the activating client's board-click targeting interaction resolved,
-// which may be another player entirely. card_id is only unique within one player's zone (never
-// globally), so the target is always addressed by the explicit (target_player_id, target_zone,
-// target_card_id) triple carried on the command, resolved via game->getPlayer(), the same way
-// cmdMoveCard/cmdCreateArrow already resolve cross-player targets. No write-permission gate is
-// applied here (unlike cmdMoveCard's zone-write-permission check) -- a spell/ability legitimately
-// affecting an opponent's life total or marked damage is intended MTG behavior, not a "reach into
-// someone else's stuff" edge case that needs gating, the same leniency cmdCreateArrow already
-// has for pointing an arrow at anyone's public-zone card.
-Response::ResponseCode Server_Player::cmdActivateTargetedEffect(const Command_ActivateTargetedEffect &cmd,
-                                                                ResponseContainer & /*rc*/,
-                                                                GameEventStorage &ges)
+// Phase 7 Stage 3 (real resolvable stack) of the card-ability execution engine. Unlike Stage 2's
+// Command_ActivateTargetedEffect (retired -- this replaces it), this does not apply the effect on
+// the spot: it pushes a fully-resolved (kind, amount, [target]) triple onto the pending-ability
+// stack (Rules::RulesEngine, via Server_Game::pushPendingAbility) and starts a fresh priority
+// round at the activator. The effect only actually applies once a priority round exhausts with
+// this still on top (Server_Game::advancePriority -> applyPendingAbility). Covers all four
+// EffectKind values, not just targeted ones -- Stage 1's DrawCards/GainLife/LoseLife used to
+// resolve instantly via bare Command_DrawCards/Command_IncCounter; they now defer the same way
+// DealDamage does, for one coherent activation path. Target addressing (for DealDamage) follows
+// the same (target_player_id, target_zone, target_card_id) convention Stage 2 established, since
+// card_id is only unique within one player's zone, never globally.
+Response::ResponseCode
+Server_Player::cmdActivateAbility(const Command_ActivateAbility &cmd, ResponseContainer & /*rc*/, GameEventStorage &ges)
 {
     if (!game->getGameStarted()) {
         return Response::RespGameNotStarted;
@@ -682,54 +682,45 @@ Response::ResponseCode Server_Player::cmdActivateTargetedEffect(const Command_Ac
         return Response::RespContextError;
     }
 
-    auto *targetPlayer = dynamic_cast<Server_Player *>(game->getPlayer(cmd.target_player_id()));
-    if (!targetPlayer) {
-        return Response::RespNameNotFound;
-    }
+    const auto kind = static_cast<EffectKind>(cmd.effect_kind());
 
-    if (!cmd.has_target_zone()) {
-        // Player-target path: decrement the target's own "life" counter, the same named counter
-        // Stage 1's self-targeted GainLife/LoseLife effects already use, just now looked up on
-        // targetPlayer instead of the sender. This reuses the already-wired Phase 9 life <= 0
-        // advisory warning on the target's own client (a cause-agnostic CounterState::valueChanged
-        // hook) for free -- no new SBA code needed here.
-        const QMap<int, Server_Counter *> &targetCounters = targetPlayer->getCounters();
-        for (auto it = targetCounters.constBegin(); it != targetCounters.constEnd(); ++it) {
-            if (it.value()->getName() == QStringLiteral("life")) {
-                if (it.value()->incrementCount(-cmd.amount())) {
-                    Event_SetCounter event;
-                    event.set_counter_id(it.value()->getId());
-                    event.set_value(it.value()->getCount());
-                    ges.enqueueGameEvent(event, targetPlayer->getPlayerId());
-                }
-                break;
-            }
+    Rules::PendingAbility pending;
+    pending.controllerId = playerId;
+    pending.effect.kind = kind;
+    pending.effect.amount = cmd.amount();
+
+    if (kind == EffectKind::DealDamage) {
+        pending.effect.target = TargetKind::AnyTarget;
+
+        auto *targetPlayer = dynamic_cast<Server_Player *>(game->getPlayer(cmd.target_player_id()));
+        if (!targetPlayer) {
+            return Response::RespNameNotFound;
         }
-        return Response::RespOk;
+        pending.targetPlayerId = cmd.target_player_id();
+        if (cmd.has_target_zone()) {
+            pending.targetZone = nameFromStdString(cmd.target_zone());
+            pending.targetCardId = cmd.target_card_id();
+        }
     }
 
-    // Card-target path: mark damage on the targeted permanent via the fork's conventional
-    // DAMAGE_CARD_COUNTER_ID (see card_effects.h -- Server_Card's counters have no name field at
-    // all, unlike per-player Server_Counter, so this is an invented convention, same category as
-    // Phase 9's new "poison" per-player counter). Purely advisory -- this engine doesn't track
-    // toughness as a number anywhere, so there is no automatic destroy/lethal-damage check here,
-    // consistent with every other SBA in this fork being advisory-only.
-    Server_CardZone *zone = targetPlayer->getZones().value(nameFromStdString(cmd.target_zone()));
-    if (!zone || !zone->hasCoords()) {
-        return Response::RespContextError;
+    // Broadcast the push so every client (not just the activator's) can render a log line for it
+    // -- no write-permission gate is applied here, same leniency the retired
+    // cmdActivateTargetedEffect had (a spell/ability legitimately affecting an opponent's state is
+    // intended MTG behavior, not a "reach into someone else's stuff" edge case needing gating).
+    Event_AbilityActivated event;
+    event.set_controller_player_id(playerId);
+    event.set_effect_kind(cmd.effect_kind());
+    event.set_amount(cmd.amount());
+    if (kind == EffectKind::DealDamage) {
+        event.set_target_player_id(pending.targetPlayerId);
+        if (!pending.targetZone.isEmpty()) {
+            event.set_target_zone(pending.targetZone.toStdString());
+            event.set_target_card_id(pending.targetCardId);
+        }
     }
+    ges.enqueueGameEvent(event, playerId);
 
-    Server_Card *card = zone->getCard(cmd.target_card_id());
-    if (!card) {
-        return Response::RespNameNotFound;
-    }
-
-    Event_SetCardCounter event;
-    event.set_zone_name(zone->getName().toStdString());
-    event.set_card_id(card->getId());
-    if (card->incrementCounter(DAMAGE_CARD_COUNTER_ID, cmd.amount(), &event)) {
-        ges.enqueueGameEvent(event, targetPlayer->getPlayerId());
-    }
+    game->pushPendingAbility(pending);
 
     return Response::RespOk;
 }

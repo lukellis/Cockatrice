@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+using Rules::PendingAbility;
 using Rules::PhaseAutomation;
 using Rules::PriorityPassResult;
 using Rules::RulesEngine;
@@ -193,6 +194,100 @@ TEST(RulesEngineTest, ClearPriorityResetsToNoOne)
     engine.startPriorityRound(2);
     engine.clearPriority();
     EXPECT_EQ(engine.priorityHolder(), -1);
+}
+
+// ---- Phase 7 Stage 3: pending-ability stack ----
+
+TEST(RulesEngineTest, HasPendingAbilitiesStartsFalse)
+{
+    RulesEngine engine;
+    EXPECT_FALSE(engine.hasPendingAbilities());
+}
+
+TEST(RulesEngineTest, PushPendingAbilityMakesHasPendingAbilitiesTrue)
+{
+    RulesEngine engine;
+    PendingAbility ability;
+    ability.controllerId = 1;
+    ability.effect.kind = EffectKind::DrawCards;
+    ability.effect.amount = 1;
+    engine.pushPendingAbility(ability);
+    EXPECT_TRUE(engine.hasPendingAbilities());
+}
+
+TEST(RulesEngineTest, ExhaustingARoundWithNoPendingAbilitiesBehavesAsBefore)
+{
+    // Pure regression check: the untouched (no pending abilities) path must be byte-for-byte
+    // identical to before this stage -- holder -1, no resolved ability.
+    RulesEngine engine;
+    QList<int> order{1, 2};
+    engine.startPriorityRound(1);
+
+    engine.passPriority(1, order, {});                        // 1 passes -> 2
+    PriorityPassResult r = engine.passPriority(2, order, {}); // 2 passes -> exhausted
+    EXPECT_TRUE(r.changed);
+    EXPECT_EQ(r.holder, -1);
+    EXPECT_FALSE(r.resolvedAbility.has_value());
+}
+
+TEST(RulesEngineTest, ExhaustingARoundWithOnePendingAbilityResolvesIt)
+{
+    RulesEngine engine;
+    QList<int> order{1, 2};
+    engine.startPriorityRound(1);
+
+    PendingAbility ability;
+    ability.controllerId = 1;
+    ability.effect.kind = EffectKind::GainLife;
+    ability.effect.amount = 3;
+    engine.pushPendingAbility(ability);
+
+    engine.passPriority(1, order, {});                        // 1 passes -> 2
+    PriorityPassResult r = engine.passPriority(2, order, {}); // 2 passes -> exhausted, resolves
+    EXPECT_TRUE(r.changed);
+    ASSERT_TRUE(r.resolvedAbility.has_value());
+    EXPECT_EQ(r.resolvedAbility->controllerId, 1);
+    EXPECT_EQ(r.resolvedAbility->effect.kind, EffectKind::GainLife);
+    EXPECT_EQ(r.resolvedAbility->effect.amount, 3);
+    EXPECT_FALSE(engine.hasPendingAbilities());
+}
+
+TEST(RulesEngineTest, ExhaustingTwiceResolvesInLifoOrder)
+{
+    // Rule 608.1/117.4: the most recently activated ability resolves first. Two abilities pushed
+    // before either resolves must come back out in reverse (B, then A) across two separate
+    // exhaustions, not the order they were pushed.
+    RulesEngine engine;
+    QList<int> order{1, 2};
+    engine.startPriorityRound(1);
+
+    PendingAbility abilityA;
+    abilityA.controllerId = 1;
+    abilityA.effect.kind = EffectKind::DrawCards;
+    abilityA.effect.amount = 1;
+    engine.pushPendingAbility(abilityA);
+
+    PendingAbility abilityB;
+    abilityB.controllerId = 2;
+    abilityB.effect.kind = EffectKind::LoseLife;
+    abilityB.effect.amount = 2;
+    engine.pushPendingAbility(abilityB);
+
+    // First exhaustion resolves B (most recently pushed).
+    engine.startPriorityRound(1);
+    engine.passPriority(1, order, {});
+    PriorityPassResult firstResolve = engine.passPriority(2, order, {});
+    ASSERT_TRUE(firstResolve.resolvedAbility.has_value());
+    EXPECT_EQ(firstResolve.resolvedAbility->effect.kind, EffectKind::LoseLife);
+    EXPECT_TRUE(engine.hasPendingAbilities()); // A is still pending
+
+    // Second exhaustion resolves A.
+    engine.startPriorityRound(1);
+    engine.passPriority(1, order, {});
+    PriorityPassResult secondResolve = engine.passPriority(2, order, {});
+    ASSERT_TRUE(secondResolve.resolvedAbility.has_value());
+    EXPECT_EQ(secondResolve.resolvedAbility->effect.kind, EffectKind::DrawCards);
+    EXPECT_FALSE(engine.hasPendingAbilities());
 }
 
 } // namespace

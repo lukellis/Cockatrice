@@ -94,6 +94,18 @@ public slots:
      * spell/ability, rather than auto-advancing the phase.
      */
     void logPriorityCleared();
+    /**
+     * @brief Phase 7 Stage 3: logged when @p player activates an ability that's been pushed onto
+     * the server's pending-ability stack (Event_AbilityActivated) -- the effect itself hasn't
+     * applied yet, see logAbilityResolved().
+     */
+    void logAbilityActivated(PlayerLogic *player);
+    /**
+     * @brief Phase 7 Stage 3: logged when @p player's previously-activated ability actually
+     * resolves (Event_AbilityResolved), immediately followed by whichever Event_SetCounter/
+     * Event_DrawCards/Event_SetCardCounter events apply its effect.
+     */
+    void logAbilityResolved(PlayerLogic *player);
     void logReverseTurn(PlayerLogic *player, bool reversed);
     void logRollDie(PlayerLogic *player, int sides, const QList<uint> &rolls);
     void logSay(PlayerLogic *player, QString message);

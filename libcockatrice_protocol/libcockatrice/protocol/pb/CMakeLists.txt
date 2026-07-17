@@ -6,7 +6,7 @@ set(PROTO_FILES
     admin_commands.proto
     card_attributes.proto
     color.proto
-    command_activate_targeted_effect.proto
+    command_activate_ability.proto
     command_attach_card.proto
     command_change_zone_properties.proto
     command_concede.proto
@@ -62,6 +62,8 @@ set(PROTO_FILES
     context_ready_start.proto
     context_set_sideboard_lock.proto
     context_undo_draw.proto
+    event_ability_activated.proto
+    event_ability_resolved.proto
     event_add_to_list.proto
     event_attach_card.proto
     event_change_zone_properties.proto

@@ -1,0 +1,19 @@
+syntax = "proto2";
+import "game_event.proto";
+
+// Phase 7 Stage 3: broadcasts a push onto the pending-ability stack (Rules::RulesEngine), so every
+// client -- not just the activator's -- can render a log line for it. See
+// COMMANDER_IMPLEMENTATION_STATUS.md. Carries the same fields as Command_ActivateAbility, plus who
+// controls it.
+message Event_AbilityActivated {
+    extend GameEvent {
+        optional Event_AbilityActivated ext = 2024;
+    }
+
+    optional sint32 controller_player_id = 1;
+    optional sint32 effect_kind = 2;
+    optional sint32 amount = 3;
+    optional sint32 target_player_id = 4 [default = -1];
+    optional string target_zone = 5;
+    optional sint32 target_card_id = 6 [default = -1];
+}

@@ -1,0 +1,23 @@
+syntax = "proto2";
+import "game_commands.proto";
+
+// Phase 7 Stage 3 (real resolvable stack) of the card-ability execution engine -- see
+// COMMANDER_IMPLEMENTATION_STATUS.md. Replaces Stage 2's Command_ActivateTargetedEffect (ext 1036,
+// retired): rather than resolving on the spot, this pushes a fully-resolved (kind, amount,
+// [target]) triple onto the server's pending-ability stack (Rules::RulesEngine) and starts a fresh
+// priority round at the activator -- the effect only actually applies once a priority round
+// exhausts with this still on top. Covers all four EffectKind values (not just targeted ones),
+// unlike the command it replaces.
+message Command_ActivateAbility {
+    extend GameCommand {
+        optional Command_ActivateAbility ext = 1037;
+    }
+
+    // EffectKind's declaration order in card_effects.h: 0=DrawCards, 1=GainLife, 2=LoseLife,
+    // 3=DealDamage. Only DealDamage uses the target fields below.
+    optional sint32 effect_kind = 1;
+    optional sint32 amount = 2;
+    optional sint32 target_player_id = 3 [default = -1]; // unused for non-targeted kinds
+    optional string target_zone = 4;      // absent => target is target_player_id themselves
+    optional sint32 target_card_id = 5 [default = -1]; // present only if target_zone is present
+}

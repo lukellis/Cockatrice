@@ -19,6 +19,8 @@
 #include <libcockatrice/protocol/pb/command_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/context_connection_state_changed.pb.h>
 #include <libcockatrice/protocol/pb/context_deck_select.pb.h>
+#include <libcockatrice/protocol/pb/event_ability_activated.pb.h>
+#include <libcockatrice/protocol/pb/event_ability_resolved.pb.h>
 #include <libcockatrice/protocol/pb/event_game_closed.pb.h>
 #include <libcockatrice/protocol/pb/event_game_host_changed.pb.h>
 #include <libcockatrice/protocol/pb/event_game_say.pb.h>
@@ -165,6 +167,12 @@ void GameEventHandler::processGameEventContainer(const GameEventContainer &cont,
                     break;
                 case GameEvent::PRIORITY_CHANGED:
                     eventPriorityChanged(event.GetExtension(Event_PriorityChanged::ext), playerId, context);
+                    break;
+                case GameEvent::ABILITY_ACTIVATED:
+                    eventAbilityActivated(event.GetExtension(Event_AbilityActivated::ext), playerId, context);
+                    break;
+                case GameEvent::ABILITY_RESOLVED:
+                    eventAbilityResolved(event.GetExtension(Event_AbilityResolved::ext), playerId, context);
                     break;
 
                 default: {
@@ -515,6 +523,28 @@ void GameEventHandler::eventPriorityChanged(const Event_PriorityChanged &event,
         emit logPriorityChanged(player);
     } else {
         emit logPriorityCleared();
+    }
+}
+
+// Phase 7 Stage 3: the controller identified on the event, not the outer GameEvent wrapper's own
+// player_id (which is -1 for these broadcast-to-everyone events, same as Event_PriorityChanged).
+void GameEventHandler::eventAbilityActivated(const Event_AbilityActivated &event,
+                                             int /*eventPlayerId*/,
+                                             const GameEventContext & /*context*/)
+{
+    PlayerLogic *player = game->getPlayerManager()->getPlayers().value(event.controller_player_id(), nullptr);
+    if (player) {
+        emit logAbilityActivated(player);
+    }
+}
+
+void GameEventHandler::eventAbilityResolved(const Event_AbilityResolved &event,
+                                            int /*eventPlayerId*/,
+                                            const GameEventContext & /*context*/)
+{
+    PlayerLogic *player = game->getPlayerManager()->getPlayers().value(event.controller_player_id(), nullptr);
+    if (player) {
+        emit logAbilityResolved(player);
     }
 }
 
