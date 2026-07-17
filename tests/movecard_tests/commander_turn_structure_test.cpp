@@ -16,99 +16,14 @@
 
 RNG_Abstract *rng = nullptr; // this needs to be defined due to other functions in server
 
+// The pure rules logic (phase automation, priority-round state machine) lives in
+// libcockatrice_rules and is tested without any server dependency in tests/rules/rules_engine_test.
+// This file covers only the server-side integration: the reused untap/draw mechanisms that
+// Server_Game::setActivePhase() drives, and cmdPassPriority's gating.
+
 namespace
 {
 
-// ---- Server_Game::phaseAutomationFor (pure decision logic) ----
-
-TEST(CommanderTurnStructureTest, UntapPhaseAlwaysUntaps)
-{
-    EXPECT_EQ(Server_Game::phaseAutomationFor(0, 1, 2), CommanderPhaseAutomation::UntapActivePlayer);
-    EXPECT_EQ(Server_Game::phaseAutomationFor(0, 5, 4), CommanderPhaseAutomation::UntapActivePlayer);
-}
-
-TEST(CommanderTurnStructureTest, TwoPlayerGameSkipsFirstDrawStep)
-{
-    EXPECT_EQ(Server_Game::phaseAutomationFor(2, 1, 2), CommanderPhaseAutomation::None);
-}
-
-TEST(CommanderTurnStructureTest, TwoPlayerGameDrawsNormallyAfterFirstTurn)
-{
-    EXPECT_EQ(Server_Game::phaseAutomationFor(2, 2, 2), CommanderPhaseAutomation::DrawForActivePlayer);
-    EXPECT_EQ(Server_Game::phaseAutomationFor(2, 3, 2), CommanderPhaseAutomation::DrawForActivePlayer);
-}
-
-TEST(CommanderTurnStructureTest, MultiplayerGameNeverSkipsFirstDrawStep)
-{
-    // Rule 103.8c: only strict two-player games skip the first draw step. Free-for-all
-    // Commander (this fork's default) always draws, even on turn 1.
-    EXPECT_EQ(Server_Game::phaseAutomationFor(2, 1, 3), CommanderPhaseAutomation::DrawForActivePlayer);
-    EXPECT_EQ(Server_Game::phaseAutomationFor(2, 1, 4), CommanderPhaseAutomation::DrawForActivePlayer);
-}
-
-TEST(CommanderTurnStructureTest, OtherPhasesHaveNoAutomation)
-{
-    for (int phase : {1, 3, 4, 5, 6, 7, 8, 9, 10}) {
-        EXPECT_EQ(Server_Game::phaseAutomationFor(phase, 1, 4), CommanderPhaseAutomation::None) << phase;
-    }
-}
-
-// ---- Server_Game::nextPriorityPlayer (pure decision logic) ----
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerAdvancesToNextInOrder)
-{
-    QList<int> order{1, 2, 3, 4};
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {}), 2);
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 2, {}, {}), 3);
-}
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerWrapsAroundTheTable)
-{
-    QList<int> order{1, 2, 3, 4};
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 4, {}, {}), 1);
-}
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerSkipsPassedPlayers)
-{
-    QList<int> order{1, 2, 3, 4};
-    // 2 already passed this round; 1 just passed too, so priority should skip to 3.
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {2}, {}), 3);
-}
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerSkipsConcededPlayers)
-{
-    QList<int> order{1, 2, 3, 4};
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {2}), 3);
-}
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerReturnsNegativeOneWhenEveryoneElseIsIneligible)
-{
-    QList<int> order{1, 2, 3, 4};
-    // Everyone but the passing player (1) has either passed or conceded.
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {3}, {2, 4}), -1);
-}
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerReturnsNegativeOneForSoloPlayer)
-{
-    QList<int> order{1};
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {}), -1);
-}
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerReturnsNegativeOneForEmptyOrder)
-{
-    EXPECT_EQ(Server_Game::nextPriorityPlayer({}, 1, {}, {}), -1);
-}
-
-TEST(CommanderTurnStructureTest, NextPriorityPlayerNeverReturnsThePassingPlayerItself)
-{
-    QList<int> order{1, 2, 3};
-    // 2 and 3 both conceded; only 1 (the one passing) remains "eligible" by the naive
-    // pass/concede check, but must never be returned as its own next priority holder.
-    EXPECT_EQ(Server_Game::nextPriorityPlayer(order, 1, {}, {2, 3}), -1);
-}
-
-// ---- Server_Game::isCommanderGame ----
-//
 // FakeServer/Server_Room/Server_Game are deliberately heap-allocated and intentionally never
 // freed here (rather than stack-allocated locals, as tests elsewhere in this repo use for a
 // single instance). Constructing+destructing multiple Server_Game instances in sequence within
@@ -118,8 +33,7 @@ TEST(CommanderTurnStructureTest, NextPriorityPlayerNeverReturnsThePassingPlayerI
 // self-deletion event for an object that's already being destructed), unrelated to this fork's
 // changes and out of scope to fix here. Leaking avoids exercising that destructor path; the
 // test process is short-lived, so this is a pragmatic tradeoff, not a fix for the underlying bug.
-Server_Game &
-makeGame(const QStringList &roomGameTypeLabels, const QList<int> &selectedGameTypes, int maxPlayers, int startingLife)
+Server_Game &makeGame(int maxPlayers, int startingLife)
 {
     static ServerInfo_User user = [] {
         ServerInfo_User u;
@@ -127,21 +41,21 @@ makeGame(const QStringList &roomGameTypeLabels, const QList<int> &selectedGameTy
         return u;
     }();
     auto *server = new FakeServer();
-    auto *room = new Server_Room(0, 0, "", "", "", "", false, "", roomGameTypeLabels, server);
-    auto *game = new Server_Game(user, 1, "", "", maxPlayers, selectedGameTypes, false, false, false, false, false,
-                                 false, startingLife, false, room);
+    auto *room = new Server_Room(0, 0, "", "", "", "", false, "", {"Commander"}, server);
+    auto *game = new Server_Game(user, 1, "", "", maxPlayers, {0}, false, false, false, false, false, false,
+                                 startingLife, false, room);
     return *game;
 }
 
 // ---- Server_Player::cmdPassPriority ----
 // Only the gating checks reachable without a started, participant-registered game are covered
 // here (see makeGame()'s comment above for why registering real participants isn't lightweight
-// in this test harness). Full pass -> advance flow is covered indirectly via nextPriorityPlayer()
-// above plus manual code review of advancePriority()'s wiring.
+// in this test harness). Full pass -> advance flow is covered by the RulesEngine state-machine
+// tests in tests/rules/ plus manual review of advancePriority()'s wiring.
 
 TEST(CommanderTurnStructureTest, PassPriorityRejectedBeforeGameStarts)
 {
-    Server_Game &game = makeGame({"Commander"}, {0}, 4, 40);
+    Server_Game &game = makeGame(4, 40);
     ServerInfo_User user;
     user.set_name("test-user");
     Server_Player player(&game, 1, user, false, nullptr);
@@ -152,38 +66,6 @@ TEST(CommanderTurnStructureTest, PassPriorityRejectedBeforeGameStarts)
     EXPECT_EQ(player.cmdPassPriority(cmd, rc, ges), Response::RespGameNotStarted);
 }
 
-TEST(CommanderTurnStructureTest, IsCommanderGameTrueWhenSelectedGameTypeIsCommander)
-{
-    Server_Game &game = makeGame({"Standard", "Commander"}, {1}, 4, 40);
-    EXPECT_TRUE(game.isCommanderGame());
-}
-
-TEST(CommanderTurnStructureTest, IsCommanderGameFalseWhenSelectedGameTypeIsNotCommander)
-{
-    Server_Game &game = makeGame({"Standard", "Commander"}, {0}, 2, 20);
-    EXPECT_FALSE(game.isCommanderGame());
-}
-
-TEST(CommanderTurnStructureTest, IsCommanderGameFalseWhenNoGameTypesSelected)
-{
-    Server_Game &game = makeGame({"Standard", "Commander"}, {}, 2, 20);
-    EXPECT_FALSE(game.isCommanderGame());
-}
-
-TEST(CommanderTurnStructureTest, IsCommanderGameIgnoresOutOfRangeGameTypeIndexWithoutCrashing)
-{
-    // A stale/out-of-range game type index (e.g. room config changed after the game was
-    // created) must not crash isCommanderGame() or be misread as a match.
-    Server_Game &game = makeGame({"Standard"}, {5}, 2, 20);
-    EXPECT_FALSE(game.isCommanderGame());
-}
-
-TEST(CommanderTurnStructureTest, IsCommanderGameMatchesSubstringLabel)
-{
-    Server_Game &game = makeGame({"Commander (1v1)"}, {0}, 2, 20);
-    EXPECT_TRUE(game.isCommanderGame());
-}
-
 // ---- Underlying mechanisms reused by the automatic untap/draw (setCardAttrHelper, drawCards) ----
 // These exercise the exact calls Server_Game::setActivePhase() makes, against a manually
 // constructed player+zones (matching the style of reverse_card_move_test.cpp), since there's
@@ -192,7 +74,7 @@ TEST(CommanderTurnStructureTest, IsCommanderGameMatchesSubstringLabel)
 
 TEST(CommanderTurnStructureTest, UntapAllUntapsEverythingExceptDoesntUntapCards)
 {
-    Server_Game &game = makeGame({"Commander"}, {0}, 1, 40);
+    Server_Game &game = makeGame(1, 40);
     ServerInfo_User user;
     user.set_name("test-user");
     Server_AbstractPlayer player(&game, 1, user, false, nullptr);
@@ -218,7 +100,7 @@ TEST(CommanderTurnStructureTest, UntapAllUntapsEverythingExceptDoesntUntapCards)
 
 TEST(CommanderTurnStructureTest, DrawCardsMovesTopOfDeckToHand)
 {
-    Server_Game &game = makeGame({"Commander"}, {0}, 1, 40);
+    Server_Game &game = makeGame(1, 40);
     ServerInfo_User user;
     user.set_name("test-user");
     Server_Player player(&game, 1, user, false, nullptr);

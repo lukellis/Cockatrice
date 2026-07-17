@@ -1168,8 +1168,47 @@ foundation-first: the library, the always-on seam, and migration of today's logi
 first; real rule enforcement grows inside the engine incrementally later (still gated
 behind an explicit design pass, per the Assisted-Mode philosophy). Sequenced as
 Increment 0 (build setup: ccache + disk — **done**), Increment 1 (server `RulesEngine`
-foundation), Increment 2 (Commander-only client + module migration), Increment 3+
-(enforcement, future). Each increment builds/tests/pushes independently.
+foundation — **done**, see below), Increment 2 (Commander-only client + module
+migration — next), Increment 3+ (enforcement, future). Each increment
+builds/tests/pushes independently.
+
+#### Increment 1 — server RulesEngine foundation (done, 2026-07-16)
+
+- **New library `libcockatrice_rules/`** (`libcockatrice/rules/rules_engine.{h,cpp}`),
+  linking only `libcockatrice_utility` + Qt Core, linked into
+  `libcockatrice_network_server_remote`. Registered in the top-level CMake.
+- **`Rules::RulesEngine`** — the pure decision core: `phaseAutomationFor()` and
+  `nextPriorityPlayer()` migrated verbatim from `Server_Game`, plus the priority-round
+  state machine (`startPriorityRound()` / `passPriority()` returning a
+  `PriorityPassResult{changed, holder}` / `clearPriority()` / `priorityHolder()`). No
+  I/O — the server performs side effects from the engine's decisions. The
+  `CommanderPhaseAutomation` enum became `Rules::PhaseAutomation`; the dead
+  `COMMANDER_PHASE_COUNT` constant was removed.
+- **`Server_Game` now holds a `RulesEngine`** and delegates: `setActivePhase()`,
+  `advancePriority()`, `resetPriorityTo()`, `broadcastPriorityChange()` all route
+  through it and just broadcast `Event_PriorityChanged` with the engine's result.
+- **All server-side `isCommanderGame()` gates removed** — the engine is always active.
+  `Server_Game::isCommanderGame()` deleted; `Server_Player` de-gated at all three sites
+  (poison-counter creation, command-zone routing of the commander, `cmdPassPriority`).
+  Command-zone/tax/counter *decisions* still live inline in `server_player.cpp` for now
+  (a clean follow-up can migrate them into the engine).
+- **Tests:** new lightweight `tests/rules/rules_engine_test.cpp` (21 cases, links only
+  `libcockatrice_rules` — no server/DB), covering phase automation, `nextPriorityPlayer`,
+  and the priority-round state machine (start → pass → next/exhaust/no-op/clear,
+  including the solo auto-pass-loop case). The old
+  `commander_turn_structure_test.cpp` was trimmed to just its server-integration cases
+  (untap/draw mechanisms + `cmdPassPriority` gating); its pure-logic and now-removed
+  `isCommanderGame` cases are superseded by the new suite.
+- **Verified:** `servatrice` builds+links clean with the new lib; full `ctest`
+  **20/20 pass** (up from 19 executables); `format.sh --cmake --branch master` clean.
+  **Live** (local servatrice + client + Xvfb, debug-log/screenshot): a real solo
+  Commander game starts the commander (Atraxa) in the command zone (count 1), 40 life,
+  auto-draws on entering the Draw step (deck 2→1, card to hand), and resets+broadcasts
+  priority on phase change ("testuser has priority" logged) — identical behavior to
+  before, now routed through `RulesEngine`.
+- **Client untouched** this increment (still builds/runs as-is); one dangling doc
+  comment referencing `Server_Game::isCommanderGame()` remains in the client's
+  `game_meta_info.h` and is addressed in Increment 2.
 
 ### Token-efficiency plan for build & test iteration
 

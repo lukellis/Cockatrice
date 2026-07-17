@@ -104,24 +104,20 @@ void Server_Player::setupZones()
     addCounter(new Server_Counter(5, "g", makeColor(150, 255, 150), 20, 0));
     addCounter(new Server_Counter(6, "x", makeColor(255, 255, 255), 20, 0));
     addCounter(new Server_Counter(7, "storm", makeColor(255, 150, 30), 20, 0));
-    if (game->isCommanderGame()) {
-        // Poison counters: a player loses the game upon reaching 10 (rule 104.3c). See
-        // CommanderCounterNames::poisonCounterName() for why this is gated to Commander games.
-        addCounter(new Server_Counter(8, CommanderCounterNames::poisonCounterName(), makeColor(80, 200, 80), 20, 0));
-    }
+    // Poison counters: a player loses the game upon reaching 10 (rule 104.3c). Always created --
+    // this fork is wholly Commander-dedicated.
+    addCounter(new Server_Counter(8, CommanderCounterNames::poisonCounterName(), makeColor(80, 200, 80), 20, 0));
 
     // ------------------------------------------------------------------
 
-    // Assign card ids and create deck from deck list. In Commander games, a card designated as
-    // the deck's commander (deck->getBannerCard()) starts in the command zone instead of the
-    // deck. Gated to Commander games specifically because bannerCard can also be set as a
-    // generic cosmetic "cover card" on non-Commander decks, which must stay in the deck.
-    const bool isCommander = game->isCommanderGame();
+    // Assign card ids and create deck from deck list. The card designated as the deck's commander
+    // (deck->getBannerCard()) starts in the command zone instead of the deck. This fork is wholly
+    // Commander-dedicated, so the banner card is always the commander (not a cosmetic cover card).
     const CardRef commanderRef = deck->getBannerCard();
-    auto insertCardsIntoZone = [this, isCommander, &commanderRef, commandZone](auto cards, auto *zone) {
+    auto insertCardsIntoZone = [this, &commanderRef, commandZone](auto cards, auto *zone) {
         for (auto card : cards) {
             Server_CardZone *targetZone =
-                (isCommander && !commanderRef.isEmpty() && card->getName() == commanderRef.name) ? commandZone : zone;
+                (!commanderRef.isEmpty() && card->getName() == commanderRef.name) ? commandZone : zone;
             for (int k = 0; k < card->getNumber(); ++k) {
                 targetZone->insertCard(new Server_Card(card->toCardRef(), nextCardId++, 0, 0, targetZone), -1, 0);
             }
@@ -625,12 +621,6 @@ Response::ResponseCode Server_Player::cmdPassPriority(const Command_PassPriority
 {
     if (!game->getGameStarted()) {
         return Response::RespGameNotStarted;
-    }
-
-    // Priority-passing only exists for Commander games (see Server_Game::isCommanderGame());
-    // other game types keep today's fully-manual phase/turn flow.
-    if (!game->isCommanderGame()) {
-        return Response::RespContextError;
     }
 
     if (!judge) {

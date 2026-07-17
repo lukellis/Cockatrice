@@ -31,6 +31,7 @@
 #include <libcockatrice/protocol/pb/event_leave.pb.h>
 #include <libcockatrice/protocol/pb/response.pb.h>
 #include <libcockatrice/protocol/pb/serverinfo_game.pb.h>
+#include <libcockatrice/rules/rules_engine.h>
 
 class QTimer;
 class GameEventContainer;
@@ -42,28 +43,6 @@ class ServerInfo_User;
 class ServerInfo_Game;
 class Server_AbstractUserInterface;
 class Event_GameStateChanged;
-
-/**
- * @brief What (if anything) Commander turn-structure automation should do when entering a
- * phase, given the phase index (see cockatrice/src/game/phase.cpp) and turn context. Kept as
- * a pure decision separate from Server_Game::setActivePhase() so the logic (including the
- * rule 103.8a/103.8c first-draw-skip arithmetic) is unit-testable without needing a fully
- * constructed, participant-registered game.
- */
-enum class CommanderPhaseAutomation
-{
-    None,
-    UntapActivePlayer,
-    DrawForActivePlayer
-};
-
-/**
- * @brief Number of phases in a turn, for wrapping phase 10 (End/Cleanup) back to phase 0
- * (Untap) of the next turn. Coupled to cockatrice/src/game/phase.cpp: Phases::phaseTypesCount
- * — see the caveat on CommanderPhaseAutomation above; same architectural gap (no shared
- * server/client phase enum), same Commander-games-only gating to contain the assumption.
- */
-constexpr int COMMANDER_PHASE_COUNT = 11;
 
 class Server_Game : public QObject
 {
@@ -85,10 +64,9 @@ private:
     QList<int> gameTypes;
     int activePlayer, activePhase;
     int turnNumber = 0; // incremented once per nextTurn() call; turn 1 is the first turn of the game.
-    // Commander-only priority tracking (see isCommanderGame()); unused/meaningless for other
-    // game types. priorityPlayerId is -1 when not applicable (e.g. game not started).
-    int priorityPlayerId = -1;
-    QSet<int> priorityPassedBy;
+    // The Commander rules engine: owns priority-round state and pure rules decisions. Always
+    // active (this fork is wholly Commander-dedicated). See libcockatrice_rules.
+    Rules::RulesEngine rulesEngine;
     bool onlyBuddies, onlyRegistered;
     bool spectatorsAllowed;
     bool spectatorsNeedPassword;
@@ -236,64 +214,32 @@ public:
         return turnNumber;
     }
     /**
-     * @brief Whether this game's room game-type selection denotes a Commander-family game
-     * (see CommanderRules::gameTypeLabelIsCommander), used to gate Commander-specific
-     * server-side behavior (command zone placement, tax/damage tracking, turn-structure
-     * automation) so it doesn't affect other game types.
-     */
-    bool isCommanderGame() const;
-
-    /**
-     * @brief Pure decision logic for what CommanderPhaseAutomation applies when entering
-     * @p phase, given the game's current @p turnNumber and @p playerCount. Rule 103.8a/103.8c:
-     * only a strict two-player game's starting player skips their first draw step; multiplayer
-     * Commander games never skip it.
-     */
-    static CommanderPhaseAutomation phaseAutomationFor(int phase, int turnNumber, int playerCount);
-
-    /**
-     * @brief Commander-only (see isCommanderGame()) priority tracking — see
-     * COMMANDER_IMPLEMENTATION_STATUS.md "Phase 5" for what this simplifies away from the full
-     * CR priority/stack rules. -1 if not applicable (e.g. not a Commander game, or the game
-     * hasn't started).
+     * @brief The current priority holder, or -1 if no one holds priority (e.g. the game hasn't
+     * started, or a priority round has been exhausted). Delegates to the rules engine. See
+     * COMMANDER_IMPLEMENTATION_STATUS.md "Phase 5" for what this simplifies away from the full CR
+     * priority/stack rules.
      */
     int getPriorityPlayerId() const
     {
-        return priorityPlayerId;
+        return rulesEngine.priorityHolder();
     }
 
     /**
-     * @brief Called when @p passingPlayerId passes priority. Advances priority to the next
-     * player in turn order (see nextPriorityPlayer()) who hasn't yet passed since the current
-     * round started; if everyone eligible has now passed, priority simply stops (broadcasts
-     * priority_player_id -1, "no one") — Commander's simplified stand-in for "the stack is
-     * empty and everyone passes in succession" (rule 117.4), since this fork doesn't model the
-     * stack as resolvable objects (see Phase 5 notes). Deliberately does NOT auto-advance the
-     * phase/turn: this is a manual "physical simulator" fork (see CLAUDE.md), so phase changes
-     * are always a deliberate player action, never a side effect of priority passing.
+     * @brief Called when @p passingPlayerId passes priority. Delegates to
+     * Rules::RulesEngine::passPriority() (advance to the next eligible player in turn order, or
+     * stop the round if everyone has passed) and broadcasts the result. Deliberately does NOT
+     * auto-advance the phase/turn: this is a manual "physical simulator" fork (see CLAUDE.md), so
+     * phase changes are always a deliberate player action, never a side effect of priority passing.
      */
     void advancePriority(int passingPlayerId);
 
     /**
-     * @brief Starts a new priority round at @p playerId (Commander games only; a no-op
-     * otherwise). Used both by setActivePhase() (a new phase/step starts a round at the active
-     * player, rule 117.3b/117.3c simplified) and by Server_Player::onCardBeingMoved() (a card
-     * moving onto the Stack zone — i.e. a spell cast or ability activation — starts a round at
-     * whoever moved it, rule 117.3d simplified).
+     * @brief Starts a new priority round at @p playerId. Used both by setActivePhase() (a new
+     * phase/step starts a round at the active player, rule 117.3b/117.3c simplified) and by
+     * Server_Player::onCardBeingMoved() (a card moving onto the Stack zone — i.e. a spell cast or
+     * ability activation — starts a round at whoever moved it, rule 117.3d simplified).
      */
     void resetPriorityTo(int playerId);
-
-    /**
-     * @brief Pure logic: the next player, in ascending-id turn order starting just after
-     * @p currentPlayerId (wrapping around @p playerOrder), who is in neither @p passedPlayers
-     * nor @p concededPlayers. Returns -1 if every eligible player has already passed. Kept
-     * separate from advancePriority() so it's unit-testable without a fully constructed,
-     * participant-registered game (mirrors phaseAutomationFor()'s rationale above).
-     */
-    static int nextPriorityPlayer(const QList<int> &playerOrder,
-                                  int currentPlayerId,
-                                  const QSet<int> &passedPlayers,
-                                  const QSet<int> &concededPlayers);
 
     int getSecondsElapsed() const
     {

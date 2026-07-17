@@ -36,7 +36,6 @@
 #include <QRegularExpression>
 #include <QTimer>
 #include <google/protobuf/descriptor.h>
-#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/deck_list/deck_list.h>
 #include <libcockatrice/protocol/pb/card_attributes.pb.h>
 #include <libcockatrice/protocol/pb/context_connection_state_changed.pb.h>
@@ -726,60 +725,45 @@ void Server_Game::setActivePhase(int newPhase)
     event.set_phase(activePhase);
     sendGameEventContainer(prepareGameEvent(event, -1));
 
-    // Turn-structure automation, Commander games only (see isCommanderGame()) so other game
-    // types keep today's fully-manual behavior.
-    if (isCommanderGame()) {
-        CommanderPhaseAutomation automation = phaseAutomationFor(newPhase, turnNumber, getPlayerCount());
-        if (automation != CommanderPhaseAutomation::None) {
-            auto *activePlayerObj = dynamic_cast<Server_Player *>(getPlayers().value(activePlayer));
-            if (activePlayerObj) {
-                GameEventStorage ges;
-                if (automation == CommanderPhaseAutomation::UntapActivePlayer) {
-                    activePlayerObj->setCardAttrHelper(ges, activePlayer, ZoneNames::TABLE, -1, AttrTapped,
-                                                       QStringLiteral("0"));
-                } else if (automation == CommanderPhaseAutomation::DrawForActivePlayer) {
-                    activePlayerObj->drawCards(ges, 1);
-                }
-                ges.sendToGame(this);
+    // Turn-structure automation. This fork is wholly Commander-dedicated, so it always runs.
+    Rules::PhaseAutomation automation = Rules::RulesEngine::phaseAutomationFor(newPhase, turnNumber, getPlayerCount());
+    if (automation != Rules::PhaseAutomation::None) {
+        auto *activePlayerObj = dynamic_cast<Server_Player *>(getPlayers().value(activePlayer));
+        if (activePlayerObj) {
+            GameEventStorage ges;
+            if (automation == Rules::PhaseAutomation::UntapActivePlayer) {
+                activePlayerObj->setCardAttrHelper(ges, activePlayer, ZoneNames::TABLE, -1, AttrTapped,
+                                                   QStringLiteral("0"));
+            } else if (automation == Rules::PhaseAutomation::DrawForActivePlayer) {
+                activePlayerObj->drawCards(ges, 1);
             }
+            ges.sendToGame(this);
         }
-
-        // Priority resets to the active player at the start of every phase (rule 117.3b/117.3c
-        // simplified — see advancePriority()/isCommanderGame() docs for what this doesn't model).
-        broadcastPriorityChange(activePlayer);
     }
+
+    // Priority resets to the active player at the start of every phase (rule 117.3b/117.3c
+    // simplified — see advancePriority() docs for what this doesn't model).
+    broadcastPriorityChange(activePlayer);
 }
 
 void Server_Game::resetPriorityTo(int playerId)
 {
     QMutexLocker locker(&gameMutex);
-
-    if (!isCommanderGame()) {
-        return;
-    }
-
     broadcastPriorityChange(playerId);
 }
 
 void Server_Game::broadcastPriorityChange(int playerId)
 {
     // Caller holds gameMutex.
-    priorityPassedBy.clear();
-    priorityPlayerId = playerId;
+    int holder = rulesEngine.startPriorityRound(playerId);
     Event_PriorityChanged event;
-    event.set_priority_player_id(priorityPlayerId);
+    event.set_priority_player_id(holder);
     sendGameEventContainer(prepareGameEvent(event, -1));
 }
 
 void Server_Game::advancePriority(int passingPlayerId)
 {
     QMutexLocker locker(&gameMutex);
-
-    if (!isCommanderGame() || priorityPlayerId != passingPlayerId) {
-        return; // cmdPassPriority already validates this; defensive for other callers.
-    }
-
-    priorityPassedBy.insert(passingPlayerId);
 
     auto players = getPlayers();
     QSet<int> concededPlayers;
@@ -789,86 +773,18 @@ void Server_Game::advancePriority(int passingPlayerId)
         }
     }
 
-    int next = nextPriorityPlayer(players.keys(), passingPlayerId, priorityPassedBy, concededPlayers);
-    if (next != -1) {
-        priorityPlayerId = next;
-        Event_PriorityChanged event;
-        event.set_priority_player_id(priorityPlayerId);
-        sendGameEventContainer(prepareGameEvent(event, -1));
-        return;
+    // The engine advances to the next eligible player, or stops the round (holder -1) if everyone
+    // has passed in succession — it deliberately does NOT auto-advance the phase/turn (see the
+    // engine's passPriority() docs for the full rationale, incl. the solo auto-pass infinite-loop
+    // this design avoids). The server just broadcasts whatever the engine decided.
+    Rules::PriorityPassResult result = rulesEngine.passPriority(passingPlayerId, players.keys(), concededPlayers);
+    if (!result.changed) {
+        return; // passingPlayerId didn't hold priority; cmdPassPriority already validates this.
     }
 
-    // Everyone eligible has passed in succession without anyone starting a new round (rule 117.4
-    // would resolve the top stack object here; this fork's Stack zone is a manual visual aid with
-    // no resolvable objects, see Phase 5 notes) — priority simply stops. No one holds it again
-    // until the next priority-triggering event: a phase change (setActivePhase) or a spell/ability
-    // going on the stack (resetPriorityTo, see Server_Player::onCardBeingMoved). Deliberately does
-    // NOT auto-advance the phase/turn: this is a manual "physical simulator" fork (see CLAUDE.md's
-    // design principles) — phase advancement is always a deliberate player action, never an
-    // automatic side effect of priority passing. (An earlier version of this function did
-    // auto-advance here; in a solo/last-player-standing game that meant passing priority handed it
-    // right back to the same player with nothing else to wait on, which combined with the
-    // client's auto-pass toggle caused a genuine infinite loop, only stopped by servatrice's own
-    // flood-protection. This design removes the loop at its root instead of rate-limiting it.)
-    priorityPassedBy.clear();
-    priorityPlayerId = -1;
     Event_PriorityChanged event;
-    event.set_priority_player_id(priorityPlayerId);
+    event.set_priority_player_id(result.holder);
     sendGameEventContainer(prepareGameEvent(event, -1));
-}
-
-int Server_Game::nextPriorityPlayer(const QList<int> &playerOrder,
-                                    int currentPlayerId,
-                                    const QSet<int> &passedPlayers,
-                                    const QSet<int> &concededPlayers)
-{
-    const int n = playerOrder.size();
-    if (n == 0) {
-        return -1;
-    }
-
-    int startIndex = playerOrder.indexOf(currentPlayerId);
-    for (int step = 1; step <= n; ++step) {
-        int idx = (startIndex + step + n) % n;
-        int candidate = playerOrder.at(idx);
-        if (candidate == currentPlayerId || concededPlayers.contains(candidate) || passedPlayers.contains(candidate)) {
-            continue;
-        }
-        return candidate;
-    }
-    return -1;
-}
-
-bool Server_Game::isCommanderGame() const
-{
-    const QStringList &roomGameTypes = room->getGameTypes();
-    for (int typeIndex : gameTypes) {
-        if (typeIndex >= 0 && typeIndex < roomGameTypes.size() &&
-            CommanderRules::gameTypeLabelIsCommander(roomGameTypes.at(typeIndex))) {
-            return true;
-        }
-    }
-    return false;
-}
-
-CommanderPhaseAutomation Server_Game::phaseAutomationFor(int phase, int turnNumber, int playerCount)
-{
-    // Phase indices match the client's phase order (cockatrice/src/game/phase.cpp:
-    // Phases::phases[]) — there's no shared server/client phase enum, so this is inherently
-    // coupled to that ordering.
-    constexpr int UNTAP_PHASE = 0;
-    constexpr int DRAW_PHASE = 2;
-
-    if (phase == UNTAP_PHASE) {
-        return CommanderPhaseAutomation::UntapActivePlayer;
-    }
-    if (phase == DRAW_PHASE) {
-        // Rule 103.8a/103.8c: only a strict two-player game's starting player skips their
-        // first draw step; multiplayer Commander games never skip it.
-        bool skipFirstDraw = turnNumber == 1 && playerCount == 2;
-        return skipFirstDraw ? CommanderPhaseAutomation::None : CommanderPhaseAutomation::DrawForActivePlayer;
-    }
-    return CommanderPhaseAutomation::None;
 }
 
 qint64 Server_Game::generateArrowId()
