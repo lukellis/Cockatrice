@@ -6,6 +6,12 @@ across sessions so work can resume cleanly if a session is interrupted (e.g. OOM
 in the sandbox). See the "Commander-Rules Fork of Cockatrice" section of
 [README.md](README.md) for the user-facing feature description.
 
+> **See also:** [Design & Implementation Review (2026-07-16)](#design--implementation-review--2026-07-16)
+> at the end of this file — a cross-cutting review covering known issues, the
+> "reorganize-don't-re-architect" decision on a bigger rules engine, a
+> token-efficiency plan for build/test iteration, and an EC2 hosting runbook for
+> real multiplayer play-testing.
+
 ## Origin / goal
 
 Fork of [Cockatrice/Cockatrice](https://github.com/Cockatrice/Cockatrice), adding
@@ -1073,3 +1079,149 @@ as needing a card-rules engine this fork doesn't have).
    abilities, community ability data) and Phase 8 (combat) still need a real
    card-rules engine and real design discussion before implementation
    starts; not a reasonable unilateral next step at any scope.
+
+## Design & Implementation Review — 2026-07-16
+
+A cross-cutting review of the fork as it stands (after Phase 7 Increment 2 and the
+basic-land/multi-select mana follow-ups). Records issues, an architecture decision
+on whether to pursue a bigger rules engine, a token-efficiency plan for iterating
+in this sandbox, and an EC2 hosting runbook — so future sessions inherit the
+conclusions instead of re-deriving them.
+
+### Verdict
+
+The fork is in good shape for its intended scope. The scoped-down "advisory,
+non-blocking, reuse-existing-mechanisms" approach is sound and well-tested. The
+conservative text parsers, the priority "stop at -1" model, and the SBA/lethal
+warnings are all correct for what they claim to do. No correctness bug was found in
+the shipped Commander logic in scope. The recommendations below are about
+maintainability, iteration cost, and enabling real multiplayer play-testing — not
+about fixing broken behavior.
+
+### Issues found (prioritized)
+
+1. **Disk pressure (operational, act first).** The 8 GiB root fs runs near full
+   (observed 96% used, ~348 MiB free). UI-test PNGs, a `-DTEST=ON` build tree, and
+   Qt object files can exhaust it and hard-fail a build mid-link — a plausible way
+   for a session to get wedged (distinct from the historical *RAM* OOM; swap and RAM
+   are currently healthy). Mitigations: prune stale screenshots/build artifacts,
+   keep only one build tree hot at a time, and check `df -h /` before any build or
+   UI-test batch.
+2. **No `ccache` (build efficiency).** Every rebuild pays full `cc1plus`/MOC cost on
+   2 vCPUs. The design doc itself recommends ccache (§5.1). This is the biggest lever
+   on both wall-clock build time and the *token* cost of iterating (fewer "still
+   building" round-trips). Set it up (`sudo dnf install -y ccache` or pip is n/a;
+   configure `CMAKE_CXX_COMPILER_LAUNCHER=ccache`) with a cache dir on the disk-backed
+   home, not tmpfs.
+3. **Commander logic is interleaved into core hot-path files (organizational).**
+   `if (isCommanderGame())` guards and Commander state live directly inside
+   `Server_Game::setActivePhase()`, `Server_Player::onCardBeingMoved()`,
+   `Server_Player::setupZones()`, and priority fields on `Server_Game`. It is
+   *correct*, but (a) it scatters the fork's behavior across the files most likely to
+   conflict on an upstream merge, and (b) it is the direct reason the test suite
+   **can't** write true end-to-end tests of the phase automation —
+   `Server_Game::addPlayer()` needs a live `Server_AbstractUserInterface`, so the
+   automation path is only tested via the extracted pure helper `phaseAutomationFor()`.
+   See the architecture decision below for the right-sized remedy.
+4. **`isCommanderGame()` is uncached on hot paths (micro).** It re-scans the room's
+   game-type `QStringList` with a substring match on every phase change and every
+   card move. Trivially cacheable (compute once at game start / first call). Low
+   severity, easy win.
+5. **Pre-existing upstream UB: `~Server_Game()` calls `deleteLater()` on itself.**
+   Not this fork's code, but it bites the test suite (worked around by
+   heap-allocating and never freeing `FakeServer`/`Server_Room`/`Server_Game`). Worth
+   filing upstream against Cockatrice with the repro already documented in the Phase 4
+   section, so the workaround doesn't silently rot.
+
+### Architecture decision: reorganize, don't re-architect
+
+**Do not build the design doc's full `libcockatrice_rules/` + `RulesEngine`/
+`GameState` engine (§3 Phase 1, §4).** That engine only pays for itself once there is
+real **card-effect execution** — genuine stack resolution, mana payment, combat —
+i.e. the 8–12-week Phase 7 card-ability engine that is deliberately out of scope.
+Everything actually built here is advisory counters + warnings + display; wrapping
+that in a `RulesEngine`/`GameState` abstraction is premature abstraction that adds a
+library and merge surface without adding capability. A large refactor whose payoff is
+a feature set we've explicitly excluded is the wrong trade.
+
+**Instead, a lightweight *organizational* extraction is the right-sized move** for
+issue #3 above: pull the scattered `isCommanderGame()` hooks into one cohesive seam —
+e.g. a `CommanderController` (or a `commander/` module of free functions) that the
+core calls at named points: `onPhaseChanged(phase, turn, players)`,
+`onCardMoved(card, fromZone, toZone)`, `onZonesSetup(player)`. This is a refactor of
+*organization*, not *capability*:
+
+- Closes the end-to-end testing gap — the controller takes plain data, so the real
+  automation path becomes unit-testable without a live UI.
+- One place to read all Commander behavior instead of six `grep isCommanderGame` hits.
+- Smaller, more legible upstream diff.
+
+If real enforcement (the full engine) is ever pursued, that is a separate, explicit,
+multi-month decision — and this seam is a reasonable stepping stone toward it. **Status:
+proposed, not yet built** (awaiting a go/no-go; it is a non-trivial change to core
+files and should be its own commit with the full test suite re-run).
+
+### Token-efficiency plan for build & test iteration
+
+The dominant token cost in the current loop is **reading screenshots** — each `Read`
+of a 1280×800 PNG is a large image-token hit. Plan, highest-value first:
+
+1. **Log-assertion-first testing.** The debug log is already established as ground
+   truth (it caught the command-zone card-count bug that pixels only hinted at). Lean
+   into it: verify wire/game state by `grep`-ing `/tmp/cockatrice_gui.log` for the
+   expected protobuf lines (cheap text) and reserve screenshot+`Read` for genuinely
+   *visual* properties (layout, color, rotation). Do not `Read` a PNG to confirm
+   something the log states exactly.
+2. **A one-shot scenario runner** (`.uitest/scenario.py <name>`) that encapsulates the
+   currently-manual dance (start Xvfb if needed → launch servatrice+client → wait →
+   drive a scripted input sequence → assert-on-log → print PASS/FAIL as text →
+   teardown). Turns a ~15-round-trip manual sequence into one Bash call with text
+   output and near-zero image tokens.
+3. **ccache** (issue #2) — fewer/faster rebuilds means fewer polling round-trips.
+4. **Keep the `-DTEST=ON` and client build trees separate** so running the GTest suite
+   never forces a client relink and vice-versa.
+
+**Status: proposed, not yet built.**
+
+### EC2 hosting runbook (play-test from a local client)
+
+Facts for this box: public IPv4 is **ephemeral** (changes on stop/start — observed
+`18.144.25.26`, us-west-1), private `172.31.3.100`. `servatrice` binds
+**0.0.0.0:4747** (TCP) and **:4748** (websocket). `.uitest/servatrice_local.ini`
+(`type=none` DB, `method=none` auth, registration off) works as-is for casual play —
+no MySQL needed.
+
+1. **Open the instance's AWS Security Group**: inbound **TCP 4747** (and 4748 for
+   websocket/browser clients) from your/your friends' home IPs. Done in the AWS
+   console/CLI, not on the box. Prefer scoping to known IPs (see security note).
+2. **Stable address (optional):** allocate an **Elastic IP** if you want the address
+   to survive a stop/start; otherwise re-check the public IPv4 each session.
+3. **Run a persistent `servatrice`** under `tmux`/`systemd`/`nohup` so it outlives the
+   SSH/agent session, e.g. `nohup ./build/servatrice/servatrice --config
+   .uitest/servatrice_local.ini --log-to-console > /tmp/servatrice.log 2>&1 & disown`.
+4. **Local client:** Connect → New Host → `<public-ip> : 4747`, any username, no
+   password.
+5. **Play-test caveats:**
+   - **Friends must run *this fork's* client build, not stock Cockatrice**, to see any
+     client-side Commander features (command-zone UI, keyword row, one-click mana tap,
+     priority button, SBA/lethal warnings). The server-side bits (commander starts in
+     command zone, tax counter, auto-untap/draw, priority events) fire regardless of
+     client; the *UI* lives in the fork.
+   - **Card database must match.** The 12-card `.uitest/sample_cards.xml` is all this
+     box has. For real decks, each client needs a real MTGJSON-derived `cards.xml`;
+     the server does not strictly need the full DB for play, but clients do. Disk
+     pressure (issue #1) makes hosting a full card DB on the box impractical.
+   - **Security:** `method=none` means anyone reaching the port can join. Fine behind a
+     locked-down Security Group; never pair it with `0.0.0.0/0`.
+
+### Deliberate non-fix: priority passing ignores `turnOrderReversed`
+
+`Server_Game::nextPriorityPlayer()` always steps in ascending player-id order and does
+**not** consult the `turnOrderReversed` flag, whereas `Server_Game::nextTurn()` does.
+So in a game where "Reverse Turn" has been used, priority would pass in the opposite
+direction from the turn. **This is intentionally left unfixed:** turn reversal is a
+Cockatrice table convenience, not a real MTG mechanic, so the non-reversed case (which
+is correct) is sufficient for Commander play. Documented here so a future session
+doesn't mistake it for an oversight — it is a scoped decision, not a bug to silently
+"fix." (The header comment on `nextPriorityPlayer()` already says "ascending-id turn
+order," making the assumption explicit at the source.)
