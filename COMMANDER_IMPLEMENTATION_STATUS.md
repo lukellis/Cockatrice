@@ -34,7 +34,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Narrow slice done (2026-07-16)** | Cost validation/auto-tap needs Phase 7 (out of reach) — still not implemented. The one in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) is implemented, tested, and live-verified; see "Phase 6" section below. |
-| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action (batch tap-for-mana across a whole selection, with a choice dialog for ambiguous/dual-color abilities) instead of a separate per-card menu item. Increments 3–4 (triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stage 1 done (2026-07-16)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 implemented — narrow self-targeted activated abilities (`{T}: Draw a card.` / gain / lose life), reusing 100% existing protocol commands. Stages 2–6 (targeting, a real stack, real mana payment, triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -649,6 +649,138 @@ follow-up, since it needs to reason about the whole selection at once, not one c
 
 **Status: implemented, tested, and live-verified.**
 
+### Phase 7 "real card-ability execution engine" — staged roadmap, Stage 1 implemented (2026-07-16)
+
+The user asked to build "Phase 7's card ability engine" — clarified via a follow-up
+question to mean a genuine *execution* engine (parse and actually run a card's effect),
+not more display-only parsing like Increments 1–2 above. This is the single biggest
+scope item in the whole fork: the design doc itself estimates this phase at 8–12 weeks,
+and it's the actual prerequisite every other simplified phase (5's no-stack-resolution,
+6's no-real-mana-payment, 8's not-started-at-all) has been built *around*. Per this
+fork's standing rule that Phases 6–8 need explicit sign-off before implementation, this
+went through a full plan-mode design pass (staged roadmap + a concretely-scoped Stage 1)
+before any code was written, rather than attempting the whole thing at once.
+
+The user also said to borrow from Forge and XMage "where useful," since this project is
+open source too. Checked both: **Forge is GPL-3.0** (`Card-Forge/forge`), **XMage is
+MIT** (`magefree/mage`). This fork is licensed **GPLv2 "or (at your option) any later
+version"** (confirmed via `LICENSE` + per-file header language) — the "or later" clause
+makes it compatible with GPLv3 Forge code, and MIT XMage code is compatible with
+anything, so literal reuse would be legally permissible with attribution. Consistent
+with the precedent Phase 5 already set (it read XMage's `GameImpl.playPriority()`
+directly but "borrowed the algorithmic shape, not the code"), this effort continues
+that approach for architecture and treats literal reuse of Forge's card-script *data*
+(their community-curated per-card ability corpus) as a separate, later decision — their
+script format is its own bespoke DSL needing a real interpreter before any of that data
+is usable here, and it's a different-shaped effort than the IR below. Not a blocker for
+starting, just correctly sequenced after the IR proves itself.
+
+**Full staged roadmap** (only Stage 1 is implemented; each later stage needs its own
+explicit go-ahead when reached, same gating as this one):
+1. **Stage 1 (done, this section): Effect IR + narrow self-targeted activated
+   abilities.** No targeting, no stack, no cost payment beyond `{T}`. Zero protocol
+   changes.
+2. **Stage 2: Targeting.** A `TargetSpec` + a "choose a permanent/player on the board"
+   interaction — the first genuinely new UI interaction mode in this fork (combat has
+   none either). Needed before "deal damage to target creature" can work.
+3. **Stage 3: A real resolvable Stack.** Stack objects become structured (source,
+   controller, parsed effect), wired into Phase 5's priority system so an exhausted
+   round with a non-empty stack resolves the top object instead of just stopping.
+   **Key finding for this stage**: servatrice has no card database today, by design —
+   keeping resolution *client-driven* (the resolving player's client computes the
+   effect and sends the same primitive commands Stage 1 uses) avoids a much bigger
+   architecture change and matches this fork's existing trust model (Cockatrice
+   already trusts clients not to cheat at manual card moves). Biggest behavioral change
+   of any stage — priority becomes consequential, not advisory.
+4. **Stage 4: Real mana cost payment** (Phase 6 for real). Parse `{2}{W}{U}`-style
+   costs, `canPay()`/`pay()` against a player's pool.
+5. **Stage 5: Triggered abilities** (the design doc's own original "Increment 3"). ETB/
+   dies triggers off zone-change events already flowing through
+   `Server_Player::onCardBeingMoved()`, queued onto the now-real stack (Stage 3) in
+   APNAP order.
+6. **Stage 6: Combat** (Phase 8), now that keyword abilities (Increment 1) can matter
+   mechanically.
+
+Community ability-data integration (Forge's corpus or any other source) is evaluated
+after Stages 1–3 prove the IR out, not scheduled into a specific stage.
+
+**Stage 1 — what's implemented**: `EffectKind`/`CardEffect`/`ActivatedAbility` (new
+`libcockatrice_card/libcockatrice/card/ability/card_effects.h`) — a flat enum + struct
+IR, matching the plain-struct style of `ManaAbility` rather than `std::variant`, for
+consistency with the sibling ability types. `ActivatedAbilities::parse(const CardInfo&)`
+(new `activated_abilities.{h,cpp}`, same directory) is structurally a near-exact sibling
+of `ManaAbilities::parse()` — same line-split, same reminder-text handling (a third copy
+of the same small helper, per this codebase's established "small enough to duplicate"
+convention), same "exact shape or skip" conservatism — generalized from mana-producing
+effects to three self-targeted, tap-only effect shapes: `"{T}: Draw a card."` →
+`DrawCards{1}`, `"{T}: You gain N life."` → `GainLife{n}`, `"{T}: You lose N life."` →
+`LoseLife{n}`. Anything needing a target, a non-tap cost, a plural/non-matching
+phrasing, or more than one effect per line is left unrecognized, never guessed at.
+
+**Client wiring reuses the existing generic-Tap interception from Increment 2 — zero
+new protocol messages.** `player_actions.cpp`'s `cardMenuAction()` already intercepts
+`cmTap`/`cmUntap` before the generic per-card toggle loop to handle mana abilities; a
+parallel `nonManaActivatedAbilityForCard()` helper (mirroring `manaTapOptionsForCard()`)
+checks each card being tapped for exactly one qualifying `ActivatedAbility`, and
+`actApplyTap()` appends the matching *already-existing* command to the same batch as the
+tap toggle: `DrawCards{n}` → `Command_DrawCards{number: n}` (the same command the manual
+Draw-phase button already sends), `GainLife{n}`/`LoseLife{n}` → `Command_IncCounter` on
+the `"life"` counter (found by name, same lookup convention as the life-total SBA
+warning in `player_graphics_item.cpp`) with a positive/negative delta. No new menu item
+appears — this rides the same "Tap / Untap" context-menu entry as any other card,
+consistent with how mana abilities were folded into the generic Tap action in the
+Increment 2 follow-up. `AddCounterToSelf` exists in the IR for shape-completeness but no
+parser produces it yet — not wired client-side either.
+
+- **Testing**: new `tests/card_ability/activated_abilities_test.cpp` (10 cases, GTest,
+  no card database, same `CardInfo::newInstance()` convention as the other ability
+  tests): each of the 3 effect shapes matched exactly, no-qualifying-line, a non-tap
+  cost skipped, a targeted-effect line skipped (documents Stage 1 has no targeting
+  yet), a plural "Draw two cards" phrasing correctly *not* matched (documents the
+  narrow-whitelist boundary), reminder-text stripped, case-insensitivity, multiple
+  qualifying lines both returned. All 10/10 pass; full suite **21/21 executables**
+  pass, zero regressions. `format.sh --cmake --branch master` clean (no changes
+  needed).
+- **Verified live**, not just compiled: local servatrice + Xvfb + real client, a real
+  solo Commander game with two throwaway test cards added to `.uitest/sample_cards.xml`
+  for this session and removed afterward (no real printed Magic card has exactly
+  `"{T}: Draw a card."` — most "tap: draw" effects carry restrictions this narrow
+  whitelist doesn't parse): "Test Draw Rock" (`{T}: Draw a card.`) and "Test Life Rock"
+  (`{T}: You gain 2 life.`), alongside Atraxa (a card with unrelated text, as a
+  false-positive check). Confirmed via debug-log cross-reference, not just screenshots:
+  - Right-clicking either test card showed only the generic "Tap / Untap" entry — no
+    new menu item, confirming the reused-dispatch design.
+  - Tapping Test Life Rock sent one batched command,
+    `Command_SetCardAttr { zone: "table" attribute: AttrTapped attr_value: "1" }` +
+    `Command_IncCounter { counter_id: 0 delta: 2 }`, and the server responded with
+    `Event_SetCounter { counter_id: 0 value: 42 }` (40 → 42, confirming the +2 landed)
+    + the matching tap event.
+  - Tapping Test Draw Rock sent `Command_SetCardAttr` + `Command_DrawCards { number: 1
+    }` in the same batch; the server responded `Event_DrawCards { number: 0 }` since
+    the test library was already empty by that point in the session (gracefully
+    handled, same pre-existing empty-deck behavior documented in Phase 4/Phase 9 above
+    — not a bug) plus the tap event.
+  - Tapping Atraxa (real printed text `"Flying, vigilance, deathtouch, lifelink\nAt the
+    beginning of your end step, proliferate."`, no qualifying Stage 1 line) sent
+    **only** the bare `Command_SetCardAttr` tap toggle — no extra command appended,
+    confirming no false positive.
+  - Along the way, found and fixed a real gap in `.uitest/uitest.py`'s `type_text()`:
+    apostrophes and newlines had no keysym mapping and were silently dropped (needed
+    for typing a decklist like `"1 Atraxa, Praetors' Voice\n..."` into the "Load from
+    clipboard" dialog, since this sandbox has no `xclip`/`xsel` to set the real X11
+    clipboard). Added `"'": "apostrophe"` and `"\n": "Return"` to the existing
+    punctuation-keysym table.
+- **Deliberately excluded**: everything Stages 2–6 above cover — targeting, a real
+  stack, real mana payment, triggered abilities, combat. Also excluded within Stage 1
+  itself: multi-line cards where more than one line would qualify (left unhandled
+  rather than guessed at, same as `manaTapOptionsForCard`'s analogous case), and
+  broadening the 3-effect whitelist (cheap, low-risk follow-up once this shape is
+  proven, not attempted preemptively).
+
+**Status: Stage 1 implemented, tested, and live-verified. Stages 2–6 are a roadmap, not
+yet scoped for implementation — each needs its own explicit go-ahead, per this fork's
+standing rule for Phases 6–8.**
+
 ## Phase 9: State-Based Actions (advisory warnings)
 
 Design doc §3 Phase 9 calls for full state-based-action checking. Real Magic re-checks
@@ -1117,10 +1249,15 @@ as needing a card-rules engine this fork doesn't have).
    "Phase 6" section above. Cost validation/auto-tap/payment remain out of
    scope, needing Phase 7's card-ability engine.
 5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
-   see "Phase 7" section above. Increments 2–4 (mana abilities, triggered
-   abilities, community ability data) and Phase 8 (combat) still need a real
-   card-rules engine and real design discussion before implementation
-   starts; not a reasonable unilateral next step at any scope.
+   see "Phase 7" section above. Increment 2 (mana abilities) also **done**.
+6. ~~Phase 7's real card-ability *execution* engine~~ — **staged roadmap
+   scoped, Stage 1 done (2026-07-16).** See "Phase 7 'real card-ability
+   execution engine'" section above for the full Stage 1–6 roadmap and
+   Stage 1's implementation (narrow self-targeted activated abilities, zero
+   protocol changes). Stages 2–6 (targeting, a real stack, real mana
+   payment, triggered abilities, combat) remain scoped but not implemented
+   — each needs its own explicit sign-off before implementation starts, not
+   a blanket green light.
 
 ## Design & Implementation Review — 2026-07-16
 

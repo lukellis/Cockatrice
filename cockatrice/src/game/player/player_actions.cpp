@@ -10,6 +10,7 @@
 #include "../board/counter_state.h"
 #include "../zones/view_zone_logic.h"
 
+#include <libcockatrice/card/ability/activated_abilities.h>
 #include <libcockatrice/card/ability/mana_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
@@ -33,6 +34,7 @@
 #include <libcockatrice/utility/counter_limits.h>
 #include <libcockatrice/utility/expression.h>
 #include <libcockatrice/utility/zone_names.h>
+#include <optional>
 
 // milliseconds in between triggers of the move top cards until action
 static constexpr int MOVE_TOP_CARD_UNTIL_INTERVAL = 100;
@@ -1662,6 +1664,29 @@ static QList<ManaTapOption> manaTapOptionsForCard(const CardItem *card)
     return options;
 }
 
+// Stage 1 of a real card-ability execution engine (see COMMANDER_IMPLEMENTATION_STATUS.md's Phase
+// 7 section for the staged roadmap): a card's simplest self-targeted "{T}: <effect>." activated
+// ability, if it has exactly one. Unlike mana abilities, Stage 1 effects are never ambiguous by
+// construction (no choice dialog needed) -- a card with more than one qualifying line is left
+// unhandled here rather than guessed at, same conservatism as the parser itself.
+static std::optional<CardEffect> nonManaActivatedAbilityForCard(const CardItem *card)
+{
+    if (!card || card->getTapped() || !card->getZone() || card->getZone()->getName() != ZoneNames::TABLE) {
+        return std::nullopt;
+    }
+
+    ExactCard exactCard = card->getCard();
+    if (!exactCard) {
+        return std::nullopt;
+    }
+
+    const QList<ActivatedAbility> abilities = ActivatedAbilities::parse(exactCard.getInfo());
+    if (abilities.size() != 1) {
+        return std::nullopt;
+    }
+    return abilities.first().effect;
+}
+
 QList<ManaTapChoice> PlayerActions::computeManaTapChoices(const QList<CardItem *> &cardList) const
 {
     QList<ManaTapChoice> choices;
@@ -1721,6 +1746,38 @@ void PlayerActions::actApplyTap(QList<CardItem *> cardList, QMap<const CardItem 
         }
         // options.size() > 1 with no entry in chosenManaOptions means the choice dialog was
         // skipped somehow -- don't guess, just tap without adding mana.
+
+        // Stage 1 of a real card-ability execution engine: a recognized non-mana "{T}: <effect>."
+        // ability batches its matching, already-existing command alongside the tap toggle above --
+        // see nonManaActivatedAbilityForCard()'s doc comment. Independent of the mana handling
+        // above (different, mutually-exclusive regex whitelists on the same rules text), so both
+        // can fire for a card that happens to have one line of each kind.
+        if (const std::optional<CardEffect> effect = nonManaActivatedAbilityForCard(card)) {
+            switch (effect->kind) {
+                case EffectKind::DrawCards: {
+                    auto *drawCmd = new Command_DrawCards;
+                    drawCmd->set_number(effect->amount);
+                    commandList.append(drawCmd);
+                    break;
+                }
+                case EffectKind::GainLife:
+                case EffectKind::LoseLife: {
+                    const int delta = effect->kind == EffectKind::GainLife ? effect->amount : -effect->amount;
+                    for (auto it = counters.constBegin(); it != counters.constEnd(); ++it) {
+                        if (it.value()->getName() == QStringLiteral("life")) {
+                            auto *lifeCmd = new Command_IncCounter;
+                            lifeCmd->set_counter_id(it.key());
+                            lifeCmd->set_delta(delta);
+                            commandList.append(lifeCmd);
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case EffectKind::AddCounterToSelf:
+                    break; // not wired yet -- no parser produces this kind
+            }
+        }
     }
 
     if (!commandList.isEmpty()) {
