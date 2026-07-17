@@ -12,12 +12,10 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
-#include <QRadioButton>
-#include <QSet>
 #include <QSpinBox>
-#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/protocol/pb/serverinfo_game.pb.h>
 #include <libcockatrice/protocol/pending_command.h>
+#include <libcockatrice/rules/commander_rules.h>
 #include <libcockatrice/utility/string_limits.h>
 
 void DlgCreateGame::sharedCtor()
@@ -32,7 +30,7 @@ void DlgCreateGame::sharedCtor()
     maxPlayersEdit = new QSpinBox();
     maxPlayersEdit->setMinimum(1);
     maxPlayersEdit->setMaximum(100);
-    maxPlayersEdit->setValue(2);
+    maxPlayersEdit->setValue(4);
     maxPlayersLabel->setBuddy(maxPlayersEdit);
 
     auto *generalGrid = new QGridLayout;
@@ -42,19 +40,6 @@ void DlgCreateGame::sharedCtor()
     generalGrid->addWidget(maxPlayersEdit, 1, 1);
     generalGroupBox = new QGroupBox(tr("General"));
     generalGroupBox->setLayout(generalGrid);
-
-    auto *gameTypeLayout = new QVBoxLayout;
-    QMapIterator<int, QString> gameTypeIterator(gameTypes);
-    while (gameTypeIterator.hasNext()) {
-        gameTypeIterator.next();
-        auto *gameTypeRadioButton = new QRadioButton(gameTypeIterator.value(), this);
-        gameTypeLayout->addWidget(gameTypeRadioButton);
-        gameTypeCheckBoxes.insert(gameTypeIterator.key(), gameTypeRadioButton);
-        bool isChecked = SettingsCache::instance().getGameTypes().contains(gameTypeIterator.value() + ", ");
-        gameTypeCheckBoxes[gameTypeIterator.key()]->setChecked(isChecked);
-    }
-    auto *gameTypeGroupBox = new QGroupBox(tr("Game type"));
-    gameTypeGroupBox->setLayout(gameTypeLayout);
 
     passwordLabel = new QLabel(tr("&Password:"));
     passwordEdit = new QLineEdit;
@@ -99,28 +84,10 @@ void DlgCreateGame::sharedCtor()
     startingLifeTotalEdit = new QSpinBox();
     startingLifeTotalEdit->setMinimum(1);
     startingLifeTotalEdit->setMaximum(99999); ///< Arbitrary but we can raise this when people start complaining.
-    startingLifeTotalEdit->setValue(20);
+    // Commander games start at 40 life; this fork is Commander-only, so this is always the
+    // default (the host can still freely override it).
+    startingLifeTotalEdit->setValue(40);
     startingLifeTotalLabel->setBuddy(startingLifeTotalEdit);
-
-    // Commander games start at 40 life and are typically 4-player multiplayer; default these
-    // fields when a "Commander" game type is selected, so hosts don't have to remember to change
-    // them. The host can still freely override either value afterwards.
-    {
-        QMapIterator<int, QRadioButton *> commanderDefaultsIterator(gameTypeCheckBoxes);
-        while (commanderDefaultsIterator.hasNext()) {
-            commanderDefaultsIterator.next();
-            QRadioButton *gameTypeRadioButton = commanderDefaultsIterator.value();
-            if (!CommanderRules::gameTypeLabelIsCommander(gameTypeRadioButton->text())) {
-                continue;
-            }
-            connect(gameTypeRadioButton, &QRadioButton::toggled, this, [this](bool checked) {
-                if (checked) {
-                    startingLifeTotalEdit->setValue(40);
-                    maxPlayersEdit->setValue(4);
-                }
-            });
-        }
-    }
 
     shareDecklistsOnLoadCheckBox = new QCheckBox(tr("Open decklists in lobby"));
 
@@ -146,12 +113,11 @@ void DlgCreateGame::sharedCtor()
     grid->addWidget(joinRestrictionsGroupBox, 0, 1);
 
     // Middle row: left column
-    grid->addWidget(gameTypeGroupBox, 1, 0);
+    grid->addWidget(gameSetupOptionsGroupBox, 1, 0);
 
-    // Middle row: right column (game setup + spectators)
+    // Middle row: right column
     auto *rightLayout = new QVBoxLayout;
-    rightLayout->addWidget(spectatorsGroupBox, Qt::AlignTop); // top
-    rightLayout->addWidget(gameSetupOptionsGroupBox);         // bottom
+    rightLayout->addWidget(spectatorsGroupBox, Qt::AlignTop);
 
     grid->addLayout(rightLayout, 1, 1);
 
@@ -235,20 +201,6 @@ DlgCreateGame::DlgCreateGame(const ServerInfo_Game &gameInfo, const QMap<int, QS
     spectatorsCanTalkCheckBox->setChecked(gameInfo.spectators_can_chat());
     spectatorsSeeEverythingCheckBox->setChecked(gameInfo.spectators_omniscient());
 
-    QSet<int> types;
-    for (int i = 0; i < gameInfo.game_types_size(); ++i) {
-        types.insert(gameInfo.game_types(i));
-    }
-
-    QMapIterator<int, QString> gameTypeIterator(gameTypes);
-    while (gameTypeIterator.hasNext()) {
-        gameTypeIterator.next();
-
-        QRadioButton *gameTypeCheckBox = gameTypeCheckBoxes.value(gameTypeIterator.key());
-        gameTypeCheckBox->setEnabled(false);
-        gameTypeCheckBox->setChecked(types.contains(gameTypeIterator.key()));
-    }
-
     connect(buttonBox, &QDialogButtonBox::accepted, this, &DlgCreateGame::accept);
 
     setWindowTitle(tr("Game information"));
@@ -257,7 +209,7 @@ DlgCreateGame::DlgCreateGame(const ServerInfo_Game &gameInfo, const QMap<int, QS
 void DlgCreateGame::actReset()
 {
     descriptionEdit->setText("");
-    maxPlayersEdit->setValue(2);
+    maxPlayersEdit->setValue(4);
 
     passwordEdit->setText("");
     onlyBuddiesCheckBox->setChecked(false);
@@ -269,18 +221,9 @@ void DlgCreateGame::actReset()
     spectatorsSeeEverythingCheckBox->setChecked(false);
     createGameAsSpectatorCheckBox->setChecked(false);
 
-    startingLifeTotalEdit->setValue(20);
+    startingLifeTotalEdit->setValue(40);
     shareDecklistsOnLoadCheckBox->setChecked(false);
     createGameAsJudgeCheckBox->setChecked(false);
-
-    QMapIterator<int, QRadioButton *> gameTypeCheckBoxIterator(gameTypeCheckBoxes);
-    while (gameTypeCheckBoxIterator.hasNext()) {
-        gameTypeCheckBoxIterator.next();
-        // must set auto enclusive to false to be able to set the check to false
-        gameTypeCheckBoxIterator.value()->setAutoExclusive(false);
-        gameTypeCheckBoxIterator.value()->setChecked(false);
-        gameTypeCheckBoxIterator.value()->setAutoExclusive(true);
-    }
 
     descriptionEdit->setFocus();
 }
@@ -302,13 +245,16 @@ void DlgCreateGame::actOK()
     cmd.set_starting_life_total(startingLifeTotalEdit->value());
     cmd.set_share_decklists_on_load(shareDecklistsOnLoadCheckBox->isChecked());
 
+    // This fork is Commander-only: the client no longer offers a game-type choice, so always
+    // submit whichever of the room's configured game types are Commander-family (per the room
+    // config's own labels; see CommanderRules::gameTypeLabelIsCommander()).
     auto _gameTypes = QString();
-    QMapIterator<int, QRadioButton *> gameTypeCheckBoxIterator(gameTypeCheckBoxes);
-    while (gameTypeCheckBoxIterator.hasNext()) {
-        gameTypeCheckBoxIterator.next();
-        if (gameTypeCheckBoxIterator.value()->isChecked()) {
-            cmd.add_game_type_ids(gameTypeCheckBoxIterator.key());
-            _gameTypes += gameTypeCheckBoxIterator.value()->text() + ", ";
+    QMapIterator<int, QString> gameTypeIterator(gameTypes);
+    while (gameTypeIterator.hasNext()) {
+        gameTypeIterator.next();
+        if (CommanderRules::gameTypeLabelIsCommander(gameTypeIterator.value())) {
+            cmd.add_game_type_ids(gameTypeIterator.key());
+            _gameTypes += gameTypeIterator.value() + ", ";
         }
     }
 

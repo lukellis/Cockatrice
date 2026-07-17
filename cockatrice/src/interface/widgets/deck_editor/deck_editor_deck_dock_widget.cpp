@@ -11,8 +11,8 @@
 #include <QSplitter>
 #include <QTextEdit>
 #include <libcockatrice/card/database/card_database_manager.h>
-#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/models/deck_list/commander_deck_validator.h>
+#include <libcockatrice/rules/commander_rules.h>
 #include <libcockatrice/utility/string_limits.h>
 
 static int findRestoreIndex(const CardRef &wanted, const QComboBox *combo)
@@ -129,12 +129,6 @@ void DeckEditorDeckDockWidget::createDeckDock()
     quickSettingsWidget->addSettingsWidget(showBannerCardCheckBox);
     quickSettingsWidget->addSettingsWidget(showTagsWidgetCheckBox);
 
-    formatLabel = new QLabel(this);
-
-    formatComboBox = new QComboBox(this);
-    formatComboBox->addItem(tr("Loading Database..."));
-    formatComboBox->setEnabled(false); // Disable until loaded
-
     commentsLabel = new QLabel();
     commentsLabel->setObjectName("commentsLabel");
     commentsEdit = new QTextEdit;
@@ -222,9 +216,6 @@ void DeckEditorDeckDockWidget::createDeckDock()
     upperLayout->addWidget(commentsLabel, 1, 0);
     upperLayout->addWidget(commentsEdit, 1, 1);
 
-    upperLayout->addWidget(formatLabel, 2, 0);
-    upperLayout->addWidget(formatComboBox, 2, 1);
-
     upperLayout->addWidget(bannerCardLabel, 3, 0);
     upperLayout->addWidget(bannerCardComboBox, 3, 1);
 
@@ -282,44 +273,6 @@ void DeckEditorDeckDockWidget::createDeckDock()
 
     refreshShortcuts();
     retranslateUi();
-
-    connect(CardDatabaseManager::getInstance(), &CardDatabase::cardDatabaseLoadingFinished, this,
-            &DeckEditorDeckDockWidget::initializeFormats);
-
-    if (CardDatabaseManager::getInstance()->getLoadStatus() == LoadStatus::Ok) {
-        initializeFormats();
-    }
-}
-
-void DeckEditorDeckDockWidget::initializeFormats()
-{
-    QStringList allFormats = CardDatabaseManager::query()->getAllFormatsWithCount().keys();
-
-    formatComboBox->clear(); // Remove "Loading Database..."
-    formatComboBox->setEnabled(true);
-
-    // Populate with formats
-    formatComboBox->addItem("", "");
-    for (auto formatName : allFormats) {
-        formatComboBox->addItem(formatName, formatName); // store the raw key in itemData
-    }
-
-    QString format = deckStateManager->getMetadata().gameFormat;
-    if (!format.isEmpty()) {
-        formatComboBox->setCurrentIndex(formatComboBox->findData(format));
-    } else {
-        // Ensure no selection is visible initially
-        formatComboBox->setCurrentIndex(-1);
-    }
-
-    connect(formatComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
-        if (index >= 0) {
-            QString formatKey = formatComboBox->itemData(index).toString();
-            deckStateManager->setFormat(formatKey);
-        } else {
-            deckStateManager->setFormat(""); // clear format if deselected
-        }
-    });
 }
 
 ExactCard DeckEditorDeckDockWidget::getCurrentCard()
@@ -378,12 +331,7 @@ void DeckEditorDeckDockWidget::updateHash()
 
 void DeckEditorDeckDockWidget::updateCommanderValidation()
 {
-    const QString format = deckStateManager->getMetadata().gameFormat;
-    if (!CommanderRules::formatUsesColorIdentity(format)) {
-        commanderValidationLabel->setVisible(false);
-        return;
-    }
-
+    // This fork is Commander-only, so deck validation always runs (no format-picker gate).
     CommanderDeckValidator::Result result = CommanderDeckValidator::validate(*getModel());
     commanderValidationLabel->setVisible(true);
     if (result.isValid) {
@@ -518,10 +466,6 @@ void DeckEditorDeckDockWidget::syncDisplayWidgetsToModel()
     updateBannerCardComboBox();
     bannerCardComboBox->blockSignals(false);
     updateHash();
-
-    formatComboBox->blockSignals(true);
-    formatComboBox->setCurrentIndex(formatComboBox->findData(deckStateManager->getMetadata().gameFormat));
-    formatComboBox->blockSignals(false);
 
     deckTagsDisplayWidget->blockSignals(true);
     deckTagsDisplayWidget->setTags(deckStateManager->getMetadata().tags);
@@ -777,7 +721,6 @@ void DeckEditorDeckDockWidget::retranslateUi()
     showTagsWidgetCheckBox->setText(tr("Show tags selection menu"));
     commentsLabel->setText(tr("&Comments:"));
     activeGroupCriteriaLabel->setText(tr("Group by:"));
-    formatLabel->setText(tr("Format:"));
 
     hashLabel1->setText(tr("Hash:"));
 

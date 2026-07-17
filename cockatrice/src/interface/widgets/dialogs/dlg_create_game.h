@@ -17,7 +17,6 @@ class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
-class QRadioButton;
 class QSpinBox;
 class Response;
 class ServerInfo_Game;
@@ -38,7 +37,6 @@ private slots:
 private:
     TabRoom *room;
     QMap<int, QString> gameTypes;
-    QMap<int, QRadioButton *> gameTypeCheckBoxes;
 
     QGroupBox *generalGroupBox, *spectatorsGroupBox, *gameSetupOptionsGroupBox;
     QLabel *descriptionLabel, *passwordLabel, *maxPlayersLabel, *startingLifeTotalLabel, *shareDecklistsOnLoadLabel;

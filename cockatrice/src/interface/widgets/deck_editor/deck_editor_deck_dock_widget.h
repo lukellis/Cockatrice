@@ -58,7 +58,6 @@ public slots:
     void actSwapCard(const ExactCard &card, const QString &zoneName);
     void actSwapSelection();
     void actRemoveCard();
-    void initializeFormats();
 
 signals:
     void selectedCardChanged(const ExactCard &card);
@@ -84,8 +83,6 @@ private:
     LineEditUnfocusable *hashLabel;
     QLabel *activeGroupCriteriaLabel;
     QComboBox *activeGroupCriteriaComboBox;
-    QLabel *formatLabel;
-    QComboBox *formatComboBox;
     QLabel *commanderValidationLabel;
 
     QAction *aRemoveCard, *aIncrement, *aDecrement, *aSwapCard;

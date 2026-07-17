@@ -1,7 +1,7 @@
 #include "deck_list_model.h"
 
 #include <libcockatrice/card/database/card_database_manager.h>
-#include <libcockatrice/card/format/commander_rules.h>
+#include <libcockatrice/rules/commander_rules.h>
 
 DeckListModel::DeckListModel(QObject *parent)
     : QAbstractItemModel(parent), lastKnownColumn(1), lastKnownOrder(Qt::AscendingOrder)
@@ -785,18 +785,19 @@ static bool isCardNodeLegalForFormat(const QString &format,
 
 void DeckListModel::refreshCardFormatLegalities()
 {
-    QString format = deckList->getGameFormat();
+    // This fork is Commander-only: card legality is always checked against the "commander"
+    // format's rules (singleton/banned list, via the card database's <formats> block) and the
+    // designated commander's color identity, regardless of any stored/legacy deck format field.
+    const QString format = QStringLiteral("commander");
 
     bool hasCommanderIdentity = false;
     QSet<QChar> commanderColorIdentity;
-    if (CommanderRules::formatUsesColorIdentity(format)) {
-        const CardRef bannerCard = deckList->getBannerCard();
-        if (!bannerCard.isEmpty()) {
-            ExactCard commanderCard = CardDatabaseManager::query()->getCard(bannerCard);
-            if (commanderCard) {
-                commanderColorIdentity = CommanderRules::colorIdentity(commanderCard.getInfo());
-                hasCommanderIdentity = true;
-            }
+    const CardRef bannerCard = deckList->getBannerCard();
+    if (!bannerCard.isEmpty()) {
+        ExactCard commanderCard = CardDatabaseManager::query()->getCard(bannerCard);
+        if (commanderCard) {
+            commanderColorIdentity = CommanderRules::colorIdentity(commanderCard.getInfo());
+            hasCommanderIdentity = true;
         }
     }
 
