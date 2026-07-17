@@ -1226,7 +1226,7 @@ to just this fork's actual changes.
 This sandbox can now actually run and screenshot the real `cockatrice` GUI
 headlessly (Xvfb + Qt xcb platform + XTest input simulation via
 `python-xlib`), not just build it. Full recipe, missing-library fixes, and
-the reusable driver script (`.uitest/uitest.py`, gitignored) are documented
+the reusable driver script (`.uitest/uitest.py`, checked in) are documented
 in `CLAUDE.md`. This immediately paid off: driving the real deck editor
 (create a Commander deck, add a commander, read the live validation tooltip
 off a screenshot) caught a real double-counting bug in
@@ -1240,7 +1240,7 @@ work, not just unit tests.
 
 **Full live end-to-end game verification (beyond the deck editor):** also ran
 an actual local `servatrice` (config at `.uitest/servatrice_local.ini`,
-gitignored — `type=none` database, `method=none` auth, room configured with
+checked in — `type=none` database, `method=none` auth, room configured with
 "Commander" as a game type), connected the client to it, created and started
 a real 1-player Commander game, and read the exact wire protocol
 (`Event_GameStateChanged`, `Event_SetCardAttr`, `Event_DrawCards`,
@@ -1698,7 +1698,7 @@ of a 1280×800 PNG is a large image-token hit. Plan, highest-value first:
 live-verified; item 3 (ccache) was already done as part of Increment 0 (see
 above); items 1 and 4 still apply as ongoing practice, not one-time setup.**
 
-`.uitest/scenario.py` (gitignored, alongside `uitest.py`) now exists:
+`.uitest/scenario.py` (checked in, alongside `uitest.py`) now exists:
 `setup` (idempotent Xvfb/servatrice/client bring-up), `teardown` [`--all`
 to also kill Xvfb], `list`, and `run <name> [<name> ...]` which drives a
 named scenario function and asserts against `/tmp/cockatrice_gui.log` /

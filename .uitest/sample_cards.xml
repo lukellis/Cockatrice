@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cockatrice_carddatabase version="4">
+    <formats>
+        <format formatName="commander">
+            <minDeckSize>100</minDeckSize>
+            <maxDeckSize>100</maxDeckSize>
+            <allowedCounts>
+                <count max="1">legal</count>
+                <count max="0">banned</count>
+            </allowedCounts>
+            <exceptions>
+                <exception>
+                    <maxCopies>unlimited</maxCopies>
+                    <cardCondition field="type" match="contains" value="Basic Land" />
+                </exception>
+            </exceptions>
+        </format>
+    </formats>
+    <cards>
+        <card>
+            <name>Atraxa, Praetors' Voice</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>Flying, vigilance, deathtouch, lifelink
+At the beginning of your end step, proliferate.</text>
+            <prop>
+                <colors>WUBG</colors>
+                <manacost>{G}{W}{U}{B}</manacost>
+                <cmc>4</cmc>
+                <type>Legendary Creature — Phyrexian Angel</type>
+                <maintype>Creature</maintype>
+                <pt>4/4</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Kaya's Wrath</name>
+            <set>WAR</set>
+            <tablerow>0</tablerow>
+            <text>Destroy all creatures and planeswalkers. You gain 2 life for each creature and planeswalker destroyed this way.</text>
+            <prop>
+                <colors>WB</colors>
+                <manacost>{2}{W}{B}</manacost>
+                <cmc>4</cmc>
+                <type>Sorcery</type>
+                <maintype>Sorcery</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Cultivate</name>
+            <set>M19</set>
+            <tablerow>0</tablerow>
+            <text>Search your library for up to two basic land cards, reveal them, and put one onto the battlefield tapped and the other into your hand. Then shuffle.</text>
+            <prop>
+                <colors>G</colors>
+                <manacost>{2}{G}</manacost>
+                <cmc>3</cmc>
+                <type>Sorcery</type>
+                <maintype>Sorcery</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Baleful Strix</name>
+            <set>C13</set>
+            <tablerow>0</tablerow>
+            <text>Flying, deathtouch
+When Baleful Strix enters the battlefield, draw a card.</text>
+            <prop>
+                <colors>UB</colors>
+                <manacost>{U}{B}</manacost>
+                <cmc>2</cmc>
+                <type>Artifact Creature — Bird</type>
+                <maintype>Creature</maintype>
+                <pt>1/1</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Lightning Bolt</name>
+            <set>M11</set>
+            <tablerow>0</tablerow>
+            <text>Lightning Bolt deals 3 damage to any target.</text>
+            <prop>
+                <colors>R</colors>
+                <manacost>{R}</manacost>
+                <cmc>1</cmc>
+                <type>Instant</type>
+                <maintype>Instant</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Sol Ring</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>{T}: Add {C}{C}.</text>
+            <prop>
+                <colors></colors>
+                <manacost>{1}</manacost>
+                <cmc>1</cmc>
+                <type>Artifact</type>
+                <maintype>Artifact</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Command Tower</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>{T}: Add one mana of any color in your commander's color identity.</text>
+            <prop>
+                <colors></colors>
+                <type>Land</type>
+                <maintype>Land</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Plains</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>({T}: Add {W}.)</text>
+            <prop>
+                <colors></colors>
+                <type>Basic Land — Plains</type>
+                <maintype>Land</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Island</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>({T}: Add {U}.)</text>
+            <prop>
+                <colors></colors>
+                <type>Basic Land — Island</type>
+                <maintype>Land</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Swamp</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>({T}: Add {B}.)</text>
+            <prop>
+                <colors></colors>
+                <type>Basic Land — Swamp</type>
+                <maintype>Land</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Forest</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>({T}: Add {G}.)</text>
+            <prop>
+                <colors></colors>
+                <type>Basic Land — Forest</type>
+                <maintype>Land</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Reflecting Pool</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>{T}: Add a color of mana already produced by a land you control.</text>
+            <prop>
+                <colors></colors>
+                <type>Land</type>
+                <maintype>Land</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+    </cards>
+</cockatrice_carddatabase>

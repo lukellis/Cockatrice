@@ -107,7 +107,11 @@ real system each one exercises:
 There is no display and no screenshot/VNC tooling by default, but a real Qt GUI
 *can* be driven and screenshotted headlessly here — this took real effort to
 figure out (missing-library errors are not obvious from the Qt error message
-alone), so don't rediscover it from scratch. Recipe:
+alone), so don't rediscover it from scratch. All of `.uitest/` (`uitest.py`,
+`scenario.py`, `sample_cards.xml`, `servatrice_local.ini`) is checked into the
+repo specifically so this survives a clone onto a different host, not just a
+different session on the same sandbox — `__pycache__` inside it is still
+gitignored. Recipe:
 
 1. Disk is usually critically tight in this sandbox (often <100 MiB free on
    the 8 GiB root fs) — check `df -h /` first and `sudo dnf clean all` /
@@ -129,11 +133,11 @@ alone), so don't rediscover it from scratch. Recipe:
 6. **No card database exists by default** (`WITH_ORACLE=OFF`, and fetching a
    real MTGJSON dataset isn't feasible with disk this tight). Drop a small
    hand-crafted one at `~/.local/share/Cockatrice/Cockatrice/cards.xml` (see
-   `.uitest/sample_cards.xml` in this repo — gitignored, not part of the
+   `.uitest/sample_cards.xml` in this repo — checked in, but not part of the
    Cockatrice product — for a working ~12-card example with a real commander
    and format rules) before launching, or restart the client after adding it.
-7. Drive and observe with `.uitest/uitest.py` (gitignored, kept in-repo so it
-   survives across sessions): `python3 .uitest/uitest.py {shot <file.png> |
+7. Drive and observe with `.uitest/uitest.py` (checked in so it survives
+   across sessions and hosts): `python3 .uitest/uitest.py {shot <file.png> |
    click <x> <y> | move <x> <y> | key <keysym> | type <text>}`, all against
    `DISPLAY=:99`. Read the resulting PNG with the Read tool to actually look
    at it. `move` + a ~2s pause before `shot` triggers Qt tooltips, which is
@@ -147,7 +151,7 @@ alone), so don't rediscover it from scratch. Recipe:
    before calling it done, not just via GTest.
 9. **For server-side behavior (command zone, counters, phase automation,
    priority), spin up a real local `servatrice` too** — don't rely on the
-   client alone. `.uitest/servatrice_local.ini` (gitignored, copy of
+   client alone. `.uitest/servatrice_local.ini` (checked in, copy of
    `servatrice/servatrice.ini.example` with `type=none` database,
    `method=none` auth, and room game types renamed to `"Commander"`/
    `"Standard"`) needs no MySQL/auth setup:

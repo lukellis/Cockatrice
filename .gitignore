@@ -1,6 +1,6 @@
 tags
 build*
-.uitest/
+.uitest/__pycache__/
 *.log
 *.qm
 .directory
