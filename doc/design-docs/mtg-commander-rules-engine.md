@@ -6,10 +6,19 @@
 > [`COMMANDER_IMPLEMENTATION_STATUS.md`](../../COMMANDER_IMPLEMENTATION_STATUS.md)
 > for a phase-by-phase tracking of what's actually built versus this proposal.
 > Notably: this fork stayed on Cockatrice's original protocol/branding rather than
-> forking to an independent ecosystem as §0 here suggests, and phases are being
-> implemented directly into upstream Cockatrice's existing structure rather than a
-> new `libcockatrice_rules/` library as §3 Phase 1 proposes — see the status doc
-> for the reasoning.
+> forking to an independent ecosystem as §0 here suggests.
+>
+> **Direction update (2026-07-16):** the fork is now adopting this doc's §3 Phase 1
+> `libcockatrice_rules/` library structure after all. The earlier phases were built
+> directly into Cockatrice's existing files (behind `isCommanderGame()` gates), but
+> that logic is being migrated into a dedicated `RulesEngine` home so future work
+> lands in one place instead of scattered hooks. The fork is also being made **wholly
+> Commander-only** — no other game type or format — so those gates are being removed
+> entirely (the engine is always active). This is a *foundation-first* adoption:
+> real rule *enforcement* (stack resolution, mana payment, combat — Phases 5–8's hard
+> parts) still grows incrementally inside that engine later, not all at once. See
+> [`COMMANDER_IMPLEMENTATION_STATUS.md`](../../COMMANDER_IMPLEMENTATION_STATUS.md)'s
+> "Design & Implementation Review" and the Phase 1 tracking row for status.
 
 # MTG Commander Rules Engine - Design Document
 

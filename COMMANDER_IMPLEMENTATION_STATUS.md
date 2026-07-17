@@ -28,7 +28,7 @@ life default — not the full stack/priority/combat engine).
 
 | Design doc phase | Status here | Notes |
 |---|---|---|
-| §3 Phase 1: Foundation & Build Setup | **Diverged** | No separate `libcockatrice_rules/` library was created (doc §3 Phase 1); new logic instead lives directly in existing `libcockatrice_card`, `libcockatrice_models`, `libcockatrice_network` per Cockatrice's existing structure. Also stayed on Cockatrice's original branding/protocol rather than forking to an independent ecosystem (doc §0) — this fork intentionally stays protocol-compatible with upstream (zero `.proto` changes) rather than diverging, since that was assessed as lower-risk for a fork this size. Commander is a selectable game type (doc §3 Phase 1 item 4: done). |
+| §3 Phase 1: Foundation & Build Setup | **In progress (reversed 2026-07-16)** | Originally *diverged*: new logic lived directly in existing `libcockatrice_card`/`libcockatrice_models`/`libcockatrice_network` behind `isCommanderGame()` gates, with no separate rules library. **As of 2026-07-16 this is being reversed** — a dedicated `libcockatrice_rules/` + `RulesEngine` is being stood up and the scattered logic migrated into it, and the fork is being made **wholly Commander-only** (game-type gates removed; engine always active). Foundation-first: the library/seam lands now, real enforcement grows inside it later. Still stays on Cockatrice's original branding/protocol (doc §0) — not forking to an independent ecosystem. See the [Design & Implementation Review](#design--implementation-review--2026-07-16) and its plan for scope/sequencing. |
 | §3 Phase 2: Commander Deck Validation | **Done** | `CommanderDeckValidator` (100-card count, singleton, color identity, legality), wired into both server-side game-start and a live client-side deck-editor status label. |
 | §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
@@ -1157,9 +1157,19 @@ core calls at named points: `onPhaseChanged(phase, turn, players)`,
 - Smaller, more legible upstream diff.
 
 If real enforcement (the full engine) is ever pursued, that is a separate, explicit,
-multi-month decision — and this seam is a reasonable stepping stone toward it. **Status:
-proposed, not yet built** (awaiting a go/no-go; it is a non-trivial change to core
-files and should be its own commit with the full test suite re-run).
+multi-month decision — and this seam is a reasonable stepping stone toward it.
+
+**Decision (2026-07-16): proceeding with the seam, and going further than "just
+reorganize."** The user directed building the `libcockatrice_rules/` + `RulesEngine`
+foundation now (so all future Commander work has one home), *and* making the fork
+**wholly Commander-only** — every `isCommanderGame()` gate removed, engine always
+active, non-Commander game types/format UI stripped from the client. This is
+foundation-first: the library, the always-on seam, and migration of today's logic land
+first; real rule enforcement grows inside the engine incrementally later (still gated
+behind an explicit design pass, per the Assisted-Mode philosophy). Sequenced as
+Increment 0 (build setup: ccache + disk — **done**), Increment 1 (server `RulesEngine`
+foundation), Increment 2 (Commander-only client + module migration), Increment 3+
+(enforcement, future). Each increment builds/tests/pushes independently.
 
 ### Token-efficiency plan for build & test iteration
 
