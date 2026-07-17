@@ -33,7 +33,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
-| §3 Phase 6: Mana System | **Scoped, not implemented** | Cost validation/auto-tap needs Phase 7 (out of reach). A narrow, in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) was scoped and documented; see "Phase 6" section below. Awaiting a decision on whether to build it. |
+| §3 Phase 6: Mana System | **Narrow slice done (2026-07-16)** | Cost validation/auto-tap needs Phase 7 (out of reach) — still not implemented. The one in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) is implemented, tested, and live-verified; see "Phase 6" section below. |
 | §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action (batch tap-for-mana across a whole selection, with a choice dialog for ambiguous/dual-color abilities) instead of a separate per-card menu item. Increments 3–4 (triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
@@ -296,7 +296,48 @@ Implementation:
   to `MessageLogWidget`, logging both "`<player>` has priority." and
   "Everyone has passed. No one has priority."
 
-## Phase 6: Mana System — scoped, not yet implemented
+## Phase 6: Mana System — auto-empty slice implemented (2026-07-16)
+
+**Status: the narrow "auto-empty at phase end" slice below is implemented, tested, and
+live-verified.** The user picked this from three offered next steps (the alternatives
+were migrating command-zone/tax logic into `RulesEngine`, or building more
+`.uitest/scenario.py` scenarios). Cost validation/auto-tap/payment remain out of scope,
+per the original scoping below.
+
+**What's implemented**: `Rules::RulesEngine::manaCounterNames()` (new static method,
+`libcockatrice_rules/libcockatrice/rules/rules_engine.{h,cpp}`) returns the fixed list
+`{"w","u","b","r","g","x"}` — the names `Server_Player::setupZones()` already gives its
+per-player mana counters. `Server_Player::emptyManaPool(GameEventStorage &ges)` (new
+method, `server_player.{h,cpp}`) loops that player's counters, zeroing (via the existing
+`Server_Counter::setCount(0)`) any whose name is in that list and enqueuing
+`Event_SetCounter` only for ones that actually changed (reusing `setCount()`'s existing
+`didChange` return, same dedup convention as `cmdSetCounter`/`cmdIncCounter`).
+`Server_Game::setActivePhase()` calls it for **every** player (not just the active one,
+unlike the untap/draw automation above) on every phase/step transition, via one shared
+`GameEventStorage` sent in a single batch.
+- **Tests**: `tests/rules/rules_engine_test.cpp` gained
+  `ManaCounterNamesCoversTheFiveColorsPlusColorless` (asserts the exact 6-name list).
+  Full suite: **20/20 pass**, zero regressions. `format.sh --cmake --branch master` clean
+  (no changes needed).
+- **Verified live** (local servatrice + Xvfb + real client, debug-log cross-reference —
+  not just screenshots, per this repo's log-first testing practice): a real solo
+  Commander game (Atraxa, Forest, Sol Ring), starting mana pool at 0 for all 6 colors.
+  Manually set White to 1 (`Command_IncCounter` → `Event_SetCounter { counter_id: 1
+  value: 1 }`), then advanced Untap → Upkeep: `Event_SetActivePhase { phase: 1 }` was
+  immediately followed by `Event_SetCounter { counter_id: 1 value: 0 }` — no client-side
+  action needed, the pool emptied server-side on the phase transition alone. Repeated
+  with Green (set to 1, advanced Upkeep → Draw): same auto-empty fired for Green
+  (`counter_id: 5`), and critically **no spurious event fired for the already-zero White
+  counter** — confirming the `didChange` dedup avoids event spam on every single phase
+  change for players with an empty pool (the common case). Life (40), Commander Tax (0),
+  and poison (0) were confirmed untouched throughout (no unexpected `Event_SetCounter`
+  for those counter ids in the log).
+- **Deliberately still excluded**, unchanged from the original scoping: cost parsing,
+  `canPay()` validation, auto-tap suggestions, mana-ability activation from context
+  menus (Phase 7's territory) — this slice only ever zeroes counters, never reads or
+  validates a cost.
+
+### Original scoping (context for the slice above)
 
 Design doc §3 Phase 6 (4–5 week estimate) specs a `ManaPool`/`ManaCost` pair that
 parses a card's printed cost and validates/auto-pays it (`canPay()`, `pay()`,
@@ -1071,9 +1112,10 @@ as needing a card-rules engine this fork doesn't have).
    Header guards, `nullptr` usage, single-declaration-per-line, Doxygen
    comment style, and memory-management guidance were all already clean.
    Pure renames — full 17-test GTest suite still passes.
-4. Phase 6 (mana system) — **scoped, not implemented.** See "Phase 6" section
-   above for the narrow in-scope slice identified (auto-empty mana pools at
-   phase end); awaiting a decision on whether to build it.
+4. ~~Phase 6 (mana system) narrow slice~~ — **done (2026-07-16).** Auto-empty
+   mana pools at every phase/step end (rule 500.4), for every player. See
+   "Phase 6" section above. Cost validation/auto-tap/payment remain out of
+   scope, needing Phase 7's card-ability engine.
 5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
    see "Phase 7" section above. Increments 2–4 (mana abilities, triggered
    abilities, community ability data) and Phase 8 (combat) still need a real
@@ -1336,6 +1378,16 @@ is future work, not yet scoped** — the plan doc's own "Increment 3+" section
 sketches the direction (a resolvable stack-object model, mana `canPay()`/`pay()`,
 then combat) but explicitly defers it pending its own design pass, per this fork's
 standing rule that Phases 6–8 need explicit sign-off before implementation.
+
+**Update (2026-07-16, later session):** the user picked the Phase 6 mana auto-empty
+slice as the next increment (from a choice of three offered — the others were
+migrating command-zone/tax logic into `RulesEngine`, or adding more
+`.uitest/scenario.py` scenarios). Implemented, tested, and live-verified — see the
+"Phase 6" section above for full detail. `Rules::RulesEngine::manaCounterNames()` +
+`Server_Player::emptyManaPool()` now zero every player's w/u/b/r/g/x counters on every
+phase/step transition (rule 500.4). This is still just the counter-zeroing slice —
+cost validation/`canPay()`/auto-tap remain out of scope pending Phase 7's card-ability
+engine, unchanged from the original scoping decision.
 
 ### Token-efficiency plan for build & test iteration
 

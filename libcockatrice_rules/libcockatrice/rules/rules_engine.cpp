@@ -45,6 +45,12 @@ int RulesEngine::nextPriorityPlayer(const QList<int> &playerOrder,
     return -1;
 }
 
+const QStringList &RulesEngine::manaCounterNames()
+{
+    static const QStringList names{"w", "u", "b", "r", "g", "x"};
+    return names;
+}
+
 int RulesEngine::startPriorityRound(int playerId)
 {
     passedBy.clear();

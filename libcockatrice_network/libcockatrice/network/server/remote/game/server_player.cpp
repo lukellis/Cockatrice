@@ -48,6 +48,7 @@
 #include <libcockatrice/protocol/pb/serverinfo_user.pb.h>
 #include <libcockatrice/rng/rng_abstract.h>
 #include <libcockatrice/rules/commander_counter_names.h>
+#include <libcockatrice/rules/rules_engine.h>
 #include <libcockatrice/utility/color.h>
 #include <libcockatrice/utility/string_limits.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -217,6 +218,24 @@ Response::ResponseCode Server_Player::drawCards(GameEventStorage &ges, int numbe
     }
 
     return Response::RespOk;
+}
+
+void Server_Player::emptyManaPool(GameEventStorage &ges)
+{
+    // Rule 500.4: a mana pool empties at the end of every step and phase. Called from
+    // Server_Game::setActivePhase() for every player on every phase/step transition.
+    const QStringList &manaCounterNames = Rules::RulesEngine::manaCounterNames();
+    for (Server_Counter *counter : counters) {
+        if (!manaCounterNames.contains(counter->getName())) {
+            continue;
+        }
+        if (counter->setCount(0)) {
+            Event_SetCounter event;
+            event.set_counter_id(counter->getId());
+            event.set_value(counter->getCount());
+            ges.enqueueGameEvent(event, playerId);
+        }
+    }
 }
 
 void Server_Player::onCardBeingMoved(GameEventStorage &ges,

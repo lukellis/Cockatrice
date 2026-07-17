@@ -28,6 +28,7 @@ public:
     void clearZones() override;
 
     Response::ResponseCode drawCards(GameEventStorage &ges, int number);
+    void emptyManaPool(GameEventStorage &ges);
     void onCardBeingMoved(GameEventStorage &ges,
                           const MoveCardStruct &cardStruct,
                           Server_CardZone *startzone,

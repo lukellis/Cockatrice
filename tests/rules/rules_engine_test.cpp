@@ -43,6 +43,15 @@ TEST(RulesEngineTest, OtherPhasesHaveNoAutomation)
     }
 }
 
+TEST(RulesEngineTest, ManaCounterNamesCoversTheFiveColorsPlusColorless)
+{
+    QStringList names = RulesEngine::manaCounterNames();
+    EXPECT_EQ(names.size(), 6);
+    for (const QString &color : {"w", "u", "b", "r", "g", "x"}) {
+        EXPECT_TRUE(names.contains(color)) << color.toStdString();
+    }
+}
+
 // ---- RulesEngine::nextPriorityPlayer (pure decision logic) ----
 
 TEST(RulesEngineTest, NextPriorityPlayerAdvancesToNextInOrder)

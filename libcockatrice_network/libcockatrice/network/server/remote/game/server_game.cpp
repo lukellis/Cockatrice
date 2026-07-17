@@ -741,6 +741,16 @@ void Server_Game::setActivePhase(int newPhase)
         }
     }
 
+    // Mana pools empty at the end of every step and phase (rule 500.4) — unlike untap/draw
+    // above, this applies to every player, not just the active one.
+    GameEventStorage manaGes;
+    for (auto *anyPlayer : getPlayers().values()) {
+        if (auto *player = dynamic_cast<Server_Player *>(anyPlayer)) {
+            player->emptyManaPool(manaGes);
+        }
+    }
+    manaGes.sendToGame(this);
+
     // Priority resets to the active player at the start of every phase (rule 117.3b/117.3c
     // simplified — see advancePriority() docs for what this doesn't model).
     broadcastPriorityChange(activePlayer);

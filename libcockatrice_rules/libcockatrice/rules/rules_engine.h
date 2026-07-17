@@ -3,6 +3,7 @@
 
 #include <QList>
 #include <QSet>
+#include <QStringList>
 
 namespace Rules
 {
@@ -69,6 +70,14 @@ public:
                                   int currentPlayerId,
                                   const QSet<int> &passedPlayers,
                                   const QSet<int> &concededPlayers);
+
+    /**
+     * @brief The names of the per-player counters that make up a mana pool (Server_Player::setupZones()'s
+     * w/u/b/r/g/x counters). A mana pool empties at the end of every step and phase (rule 500.4) --
+     * this list is what the server zeroes on every phase/step transition, for every player, not just
+     * the active one.
+     */
+    static const QStringList &manaCounterNames();
 
     // ---- Priority round state ----
 
