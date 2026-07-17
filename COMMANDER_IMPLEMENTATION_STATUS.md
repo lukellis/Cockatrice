@@ -1357,7 +1357,44 @@ of a 1280×800 PNG is a large image-token hit. Plan, highest-value first:
 4. **Keep the `-DTEST=ON` and client build trees separate** so running the GTest suite
    never forces a client relink and vice-versa.
 
-**Status: proposed, not yet built.**
+**Status (2026-07-16, follow-up session): item 2 (scenario runner) built and
+live-verified; item 3 (ccache) was already done as part of Increment 0 (see
+above); items 1 and 4 still apply as ongoing practice, not one-time setup.**
+
+`.uitest/scenario.py` (gitignored, alongside `uitest.py`) now exists:
+`setup` (idempotent Xvfb/servatrice/client bring-up), `teardown` [`--all`
+to also kill Xvfb], `list`, and `run <name> [<name> ...]` which drives a
+named scenario function and asserts against `/tmp/cockatrice_gui.log` /
+`/tmp/servatrice.log` via regex polling (`Ctx.assert_log`), printing a plain
+PASS/FAIL instead of requiring a screenshot `Read` to confirm state. Scenario
+functions get a small `Ctx` wrapping `uitest.py`'s input primitives
+(`click`/`move`/`drag`/`key`/`type_text`/`shot`) plus the assertion helper.
+Also added `uitest.py key_combo(modifier, key)` (e.g. `ctrl+a` to select-all
+in a text field before retyping it), which didn't exist before — the input
+primitives only covered single keysyms.
+
+One scenario shipped as a proof this actually works end-to-end, not just
+compiles: `connect` launches a fresh client, drives the Connect-to-Server
+dialog (explicitly filling New Host name/host/port and player name, rather
+than depending on a "Known Hosts" entry that only exists if a prior manual
+session saved one — found and fixed after the first run hit a "You need to
+name your new connection profile" blocking dialog), clicks Connect, and
+asserts `Event_ServerIdentification` appears in the client log. Two real bugs
+in the new tool were caught and fixed by actually running it, not just
+reading it back: `key_combo`'s modifier-name mapping (`"ctrl".capitalize()`
+produces the keysym name `"Ctrl_L"`, which doesn't exist — the real X11
+keysym is `"Control_L"` — sending keycode 0 crashed python-xlib's own error
+handler) and a stray no-op `ctx.assert_log` statement left in from drafting.
+Verified live: a full cold-client run reached the room-joined "Play" home
+screen with `Event_ServerIdentification` correctly captured via log grep,
+confirmed with one final screenshot (not needed for the assertion itself,
+just to double check post-hoc).
+
+Not built yet: more scenarios beyond `connect` (e.g. a full solo-game-start
+scenario asserting command zone/tax counter/life-40 the way the manual
+process in this file's "Full live end-to-end game verification" section
+already does by hand) — left for whenever that specific verification is
+next needed, following this same pattern.
 
 ### EC2 hosting runbook (play-test from a local client)
 
