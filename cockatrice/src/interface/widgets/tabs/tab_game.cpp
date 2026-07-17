@@ -1162,7 +1162,6 @@ void TabGame::actResetLayout()
 void TabGame::createPlayAreaWidget(bool bReplay)
 {
     phasesToolbar = new PhasesToolbar;
-    phasesToolbar->setCommanderGame(game->getGameMetaInfo()->isCommanderGame());
     if (!bReplay) {
         connect(phasesToolbar, &PhasesToolbar::sendGameCommand, game->getGameEventHandler(),
                 qOverload<const ::google::protobuf::Message &, int>(&GameEventHandler::sendGameCommand));

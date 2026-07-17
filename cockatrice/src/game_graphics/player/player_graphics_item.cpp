@@ -15,7 +15,7 @@
 
 #include <QGraphicsView>
 #include <QMessageBox>
-#include <libcockatrice/utility/commander_counter_names.h>
+#include <libcockatrice/rules/commander_counter_names.h>
 
 PlayerGraphicsItem::PlayerGraphicsItem(PlayerLogic *_player) : player(_player)
 {
@@ -35,7 +35,7 @@ PlayerGraphicsItem::PlayerGraphicsItem(PlayerLogic *_player) : player(_player)
             [this](PlayerLogic *p, int number, bool deckIsEmpty) {
                 // Assisted-mode warning for the empty-library draw-loss SBA (rule 104.3b): number
                 // == 0 && deckIsEmpty means the draw was attempted but nothing was left to draw.
-                if (number == 0 && deckIsEmpty && p->getGame()->getGameMetaInfo()->isCommanderGame()) {
+                if (number == 0 && deckIsEmpty) {
                     QMessageBox::warning(
                         nullptr, tr("Empty library"),
                         tr("%1 attempted to draw from an empty library and has lost the game (rule 104.3b).")
@@ -227,7 +227,7 @@ void PlayerGraphicsItem::onCounterAdded(CounterState *state)
         widget->setShortcutsActive();
     }
 
-    if (state->getName() == "life" && player->getGame()->getGameMetaInfo()->isCommanderGame()) {
+    if (state->getName() == "life") {
         // Assisted-mode warning for the life-total loss SBA (rule 104.3a). Only fires on the
         // crossing, same dedup approach as the commander-damage warning below.
         connect(state, &CounterState::valueChanged, this, [this](int oldValue, int newValue) {

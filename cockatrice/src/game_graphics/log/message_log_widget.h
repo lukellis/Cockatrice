@@ -84,9 +84,8 @@ public slots:
                         int amount,
                         bool isLentToAnotherPlayer);
     /**
-     * @brief Commander-only (see GameMetaInfo::isCommanderGame): logs who now holds priority
-     * within the active phase's priority-passing round (see COMMANDER_IMPLEMENTATION_STATUS.md's
-     * Phase 5 section).
+     * @brief Logs who now holds priority within the active phase's priority-passing round (see
+     * COMMANDER_IMPLEMENTATION_STATUS.md's Phase 5 section).
      */
     void logPriorityChanged(PlayerLogic *player);
     /**

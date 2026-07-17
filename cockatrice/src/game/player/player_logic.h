@@ -79,10 +79,10 @@ signals:
     void rearrangeCounters();
     void activeChanged(bool active);
     /**
-     * @brief Commander-only (see GameMetaInfo::isCommanderGame): whether this player currently
-     * holds priority within the active phase's priority-passing round. Separate from
-     * activeChanged (whose turn it is) — see COMMANDER_IMPLEMENTATION_STATUS.md's Phase 5
-     * section for why priority can belong to a non-active player.
+     * @brief Whether this player currently holds priority within the active phase's
+     * priority-passing round. Separate from activeChanged (whose turn it is) — see
+     * COMMANDER_IMPLEMENTATION_STATUS.md's Phase 5 section for why priority can belong to a
+     * non-active player.
      */
     void holdsPriorityChanged(bool holdsPriority);
     void zoneIdChanged(int zoneId);

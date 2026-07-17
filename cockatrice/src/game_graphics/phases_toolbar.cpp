@@ -139,7 +139,7 @@ void PriorityButton::paint(QPainter *painter, const QStyleOptionGraphicsItem *op
 }
 
 PhasesToolbar::PhasesToolbar(QGraphicsItem *parent)
-    : QGraphicsItem(parent), commanderGame(false), width(100), height(100), ySpacing(1), symbolSize(8)
+    : QGraphicsItem(parent), width(100), height(100), ySpacing(1), symbolSize(8)
 {
     auto *aUntapAll = new QAction(this);
     connect(aUntapAll, &QAction::triggered, this, &PhasesToolbar::actUntapAll);
@@ -172,7 +172,6 @@ PhasesToolbar::PhasesToolbar(QGraphicsItem *parent)
     connect(aToggleAutoPassPriority, &QAction::triggered, this, &PhasesToolbar::actToggleAutoPassPriority);
 
     passPriorityButton = new PriorityButton(aToggleAutoPassPriority, this);
-    passPriorityButton->setVisible(false);
     connect(passPriorityButton, &PhaseButton::clicked, this, &PhasesToolbar::actPassPriority);
 
     rearrangeButtons();
@@ -265,10 +264,8 @@ void PhasesToolbar::rearrangeButtons()
     y += ySpacing;
     nextTurnButton->setPos(marginSize, y += symbolSize);
 
-    if (commanderGame) {
-        y += ySpacing;
-        passPriorityButton->setPos(marginSize, y + symbolSize);
-    }
+    y += ySpacing;
+    passPriorityButton->setPos(marginSize, y + symbolSize);
 }
 
 void PhasesToolbar::setHeight(double _height)
@@ -281,21 +278,6 @@ void PhasesToolbar::setHeight(double _height)
     width = symbolSize + 2 * marginSize;
 
     rearrangeButtons();
-}
-
-void PhasesToolbar::setCommanderGame(bool isCommanderGame)
-{
-    if (commanderGame == isCommanderGame) {
-        return;
-    }
-
-    commanderGame = isCommanderGame;
-    passPriorityButton->setVisible(commanderGame);
-    // One more button-height's worth of vertical space to reserve/release, matching how
-    // nextTurnButton is already accounted for in buttonCount despite not being in buttonList.
-    buttonCount += commanderGame ? 1 : -1;
-
-    setHeight(height);
 }
 
 void PhasesToolbar::setPriorityHolder(bool localPlayerHasPriority)

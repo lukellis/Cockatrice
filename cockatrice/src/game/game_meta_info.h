@@ -9,7 +9,6 @@
 
 #include <QMap>
 #include <QObject>
-#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/protocol/pb/serverinfo_game.pb.h>
 
 // Translation layer class to expose protobuf safely and hook it up to Qt Signals.
@@ -83,22 +82,6 @@ public:
     QString findRoomGameType(int index)
     {
         return roomGameTypes.find(gameInfo_.game_types(index)).value();
-    }
-
-    /**
-     * @brief Whether this game's selected game type(s) denote a Commander-family game,
-     * mirroring Server_Game::isCommanderGame() server-side. Used to gate client-only
-     * Commander UI (advisory warnings, future priority-passing controls) to Commander
-     * games specifically, the same way the server gates its own Commander-only behavior.
-     */
-    bool isCommanderGame()
-    {
-        for (int i = 0; i < gameTypesSize(); ++i) {
-            if (CommanderRules::gameTypeLabelIsCommander(findRoomGameType(i))) {
-                return true;
-            }
-        }
-        return false;
     }
 
 public slots:

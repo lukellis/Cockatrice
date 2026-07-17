@@ -95,10 +95,9 @@ private:
     QList<PhaseButton *> buttonList;
     PhaseButton *nextTurnButton;
     PriorityButton *passPriorityButton;
-    bool commanderGame;
     bool autoPassPriority = false;
     double width, height, ySpacing, symbolSize;
-    int buttonCount = 12;
+    int buttonCount = 13;
     static const int spaceCount = 6;
     static const double marginSize;
     void rearrangeButtons();
@@ -109,13 +108,6 @@ public:
     [[nodiscard]] QRectF boundingRect() const override;
     void retranslateUi();
     void setHeight(double _height);
-    /**
-     * @brief Shows or hides the Commander-only "Pass Priority" button (sends
-     * Command_PassPriority; see COMMANDER_IMPLEMENTATION_STATUS.md's Phase 5 section).
-     * Non-Commander games never see this button, matching how the rest of the toolbar's
-     * phases are shared across all game types.
-     */
-    void setCommanderGame(bool isCommanderGame);
     [[nodiscard]] double getWidth() const
     {
         return width;

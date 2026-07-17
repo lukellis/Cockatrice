@@ -559,13 +559,13 @@ void GameEventHandler::eventSetActivePhase(const Event_SetActivePhase &event,
     }
     game->getGameState()->setCurrentPhase(phase);
 
-    // Commander-only Assisted-Mode advisory: discarding down to the maximum hand size (rule
-    // 514.1) involves a real choice of which cards to discard, so — unlike untap/draw, which
-    // have no decision point — this warns rather than auto-discarding. Phase index matches the
-    // client's own phase order (Phases::phases[] in phase.cpp): 10 is End/Cleanup.
+    // Assisted-Mode advisory: discarding down to the maximum hand size (rule 514.1) involves a
+    // real choice of which cards to discard, so — unlike untap/draw, which have no decision
+    // point — this warns rather than auto-discarding. Phase index matches the client's own
+    // phase order (Phases::phases[] in phase.cpp): 10 is End/Cleanup.
     constexpr int CLEANUP_PHASE = 10;
     constexpr int MAX_HAND_SIZE = 7;
-    if (phase == CLEANUP_PHASE && game->getGameMetaInfo()->isCommanderGame()) {
+    if (phase == CLEANUP_PHASE) {
         PlayerLogic *localPlayer = game->getPlayerManager()->getPlayer(game->getPlayerManager()->getLocalPlayerId());
         if (localPlayer) {
             const int handSize = localPlayer->getHandZone()->getCards().size();
