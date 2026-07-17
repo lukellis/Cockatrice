@@ -28,7 +28,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Scoped, not implemented** | Cost validation/auto-tap needs Phase 7 (out of reach). A narrow, in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) was scoped and documented; see "Phase 6" section below. Awaiting a decision on whether to build it. |
-| §3 Phase 7: Card Ability System | **Increments 1–2 done** | Evergreen keyword recognition + display (Increment 1) and simple fixed-color mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Increments 3–4 (triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action (batch tap-for-mana across a whole selection, with a choice dialog for ambiguous/dual-color abilities) instead of a separate per-card menu item. Increments 3–4 (triggered abilities, community ability data) still need a real rules engine and are out of scope. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -485,6 +485,120 @@ every other manual action in this fork already uses.
   conditional/restricted abilities, non-`{T}` mana effects, and any auto-payment during
   casting (that's Phase 6, still undecided). Increments 3–4 (triggered abilities,
   community ability data) remain out of scope pending a real design discussion.
+
+**Status: implemented, tested, and live-verified.**
+
+### Follow-up fix: basic lands were excluded by the reminder-text strip
+
+Found while answering a user question about the mana pool, before starting a new increment: the
+original `ManaAbilities::parse()` stripped **all** parenthesized text as reminder text before
+line-matching, same convention as `CardKeywords`/`CommanderRules`. That's correct for reminder
+text that merely *explains* an unrelated printed ability, but basic lands are a special case —
+their mana ability (rule 305.6) isn't a printed ability at all, so Oracle/MTGJSON text renders it
+as reminder text that **is** the entire line (e.g. Forest's real text, `({T}: Add {G}.)`, exactly
+matching this repo's own `.uitest/sample_cards.xml`). The blanket strip discarded that whole line,
+so Forest/Island/Swamp/Mountain/Plains — the most common mana source in any real game — never got
+the one-click "Tap: Add {X}" action, only nonbasic mana rocks/lands whose ability text isn't
+wrapped in parens (e.g. Sol Ring).
+
+**Fix**: `ManaAbilities::parse()` now checks each line for whether the parentheses wrap the
+*entire* line first; if so, the parens are unwrapped and the inner text is matched directly,
+rather than stripped. A line where reminder text is only part of a larger line (explaining an
+unrelated ability) still goes through the original strip-then-match path unchanged. Same "reduces
+entirely to X" conservatism as the rest of this parser — no broadening of what counts as a match,
+just correcting which text counts as the ability line for the one whole-line-parenthetical case
+basic lands hit.
+
+- Updated `tests/card_ability/mana_abilities_test.cpp`: replaced `ReminderTextIsStripped` (which
+  asserted the now-corrected-away behavior) with `BasicLandWholeLineReminderTextIsRecognized`
+  (Forest's real text now returns `ManaAbility{"G", 1}`) and added
+  `MidLineReminderTextIsStillStripped` (`"Flying (reminder text explaining flying.)"` still
+  correctly returns empty, confirming non-whole-line reminder text is unaffected). All 10/10
+  cases pass.
+- **Verified live**, not just compiled: relinked `cockatrice` against the updated
+  `libcockatrice_card` (no full rebuild needed — only this one library changed), local servatrice
+  + Xvfb + a real solo Commander game with a 3-card test deck (Atraxa, Forest, Sol Ring). Drew and
+  played the real `Forest` card from `.uitest/sample_cards.xml`, confirmed via screenshot: the
+  Card Info panel shows its actual text `({T}: Add {G}.)`, right-clicking it now shows "Tap: Add
+  {G}" (previously absent), clicking it taps the Forest and the sidebar's green mana counter goes
+  from 0 to 1 — cross-referenced against the message log ("testuser sets counter Green to 1 (+1)"
+  / "testuser taps Forest."). Right-clicking again post-tap correctly shows no action, matching
+  existing untapped-only gating.
+
+### Follow-up feature: multi-select tap-for-mana + color-choice abilities
+
+User feedback after the reminder-text fix above: manually right-clicking each land was still
+tedious with many mana sources selected at once (e.g. five Forests), and asked for the *existing*
+generic "Tap / Untap" action itself to handle mana for a whole multi-selection in one click, with
+a picker dialog for any card whose contribution isn't a single unambiguous color (a genuine choice
+ability like a dual land or Command Tower, or a card with more than one qualifying ability line).
+Explicitly scoped down for cards needing battlefield/commander-state inspection to resolve (e.g.
+Command Tower's real "in your commander's color identity" restriction, Reflecting Pool's "already
+produced by a land you control"): per the user's direction, these are simplified to "any of the
+five colors, let the player pick the legal one themselves" rather than attempting real inspection.
+
+**`ManaAbilities` parsing extended** (`mana_abilities.{h,cpp}`): `ManaAbility` changed from a
+single `producedSymbol` field to `symbolOptions` (a `QStringList`, `isChoice()` when it has more
+than one entry). Three shapes now recognized, in addition to the existing fixed-color one:
+- `{T}: Add {X} or {Y}.` / `{T}: Add {X}, {Y}, or {Z}.` (comma/"or"-separated, as opposed to the
+  existing fixed pattern's directly-*concatenated* symbols, which still means "all simultaneously"
+  — e.g. Sol Ring's `{C}{C}`, unchanged) — a real regex-parsed choice among the listed colors.
+- `{T}: Add one mana of any color.` and Command Tower's real qualified phrasing (`"...in your
+  commander's color identity."`) — recognized by exact phrase match, both simplified to a 5-way
+  choice among W/U/B/R/G.
+- Reflecting Pool's real phrasing (`"Add a color of mana already produced by a land you
+  control."`) — same 5-way-choice simplification.
+- New tests in `mana_abilities_test.cpp` cover all three shapes plus a directly-concatenated
+  mixed-symbol negative case; full suite now 15/15.
+
+**Client-side integration — folded into the generic Tap action, not a separate menu item**: the
+previous Increment 2 per-card "Tap: Add {X}" context-menu action (`CardMenu::addManaAbilityActions()`)
+is removed entirely. Instead, `PlayerActions::cardMenuAction()`'s `cmTap`/`cmUntap` handling now
+intercepts *before* the existing generic per-card toggle loop (design doc §3 Phase 7 "Increment 2"
+follow-up, since it needs to reason about the whole selection at once, not one card at a time):
+- `computeManaTapChoices(cardList)` — for every table-zone, currently-untapped card in the
+  selection, flattens its `ManaAbilities::parse()` result into individual (color, amount) options
+  (one fixed ability = one option; a choice ability, or more than one qualifying ability line on
+  one card = one option per color). Cards with exactly one option are unambiguous; cards with more
+  are collected as pending choices.
+- If nothing needs a choice, `actApplyTap()` sends one batch immediately: a tap-toggle command per
+  selected card (existing per-card-toggle semantics unchanged — mixed-selection tap/untap still
+  toggles each card independently) plus one `Command_IncCounter` per card being tapped with an
+  unambiguous mana ability. No dialog, true one-click for the common case (e.g. five Forests).
+- If any cards need a choice, nothing is sent yet — `requestManaAbilityChoiceDialog(cardList,
+  choices)` is emitted instead (same request/response pattern as this file's other dialogs, e.g.
+  `requestSetPTDialog`). `PlayerDialogs::onManaAbilityChoiceDialogRequested()` builds a small
+  `QDialog` (one `QComboBox` row per ambiguous card, OK/Cancel), and only on OK calls
+  `actApplyTap(cardList, chosenOptions)` — which rebuilds the *entire* batch (toggles for every
+  selected card + auto-applied mana for unambiguous cards + the user's chosen color for ambiguous
+  ones) from scratch and sends it as one command list. Cancel sends nothing at all — the action is
+  atomic, no partial tap/mana state on cancel (verified live below).
+- `manaTapOptionsForCard()` (the per-card flattening helper) and `actApplyTap()` both live in
+  `player_actions.cpp`; the small `ManaTapOption`/`ManaTapChoice` plain structs are declared in
+  `player_actions.h` so both `PlayerActions` and `PlayerDialogs` can share them across the
+  signal/slot boundary.
+- **Verified live**, not just compiled: relinked `cockatrice` (only the `libcockatrice_card` +
+  `cockatrice` targets needed rebuilding), local servatrice + Xvfb + a real solo Commander game
+  with a 6-card deck (Atraxa, 3×Forest, Command Tower, Sol Ring). Three cases confirmed via
+  screenshot + message-log cross-reference:
+  1. Rubber-band-selecting all 3 Forests and choosing "Tap / Untap" once tapped all three
+     simultaneously and incremented the green counter 0→3 in one batch, no dialog — the "five
+     Forests" case the user asked for.
+  2. Ctrl-selecting Command Tower (a 5-way choice, its real printed text confirmed in the Card
+     Info panel: `{T}: Add one mana of any color in your commander's color identity.`) together
+     with Sol Ring (unambiguous) and tapping: a dialog appeared with exactly one row ("Command
+     Tower", a 5-item combo box: Add {W}/{U}/{B}/{R}/{G}) — Sol Ring correctly got no row. Picking
+     {U} and clicking OK tapped both cards and set Colorless to 2 (+2, from Sol Ring, auto-applied)
+     and Blue to 1 (+1, from the chosen option) in the same batch.
+  3. Untapping both, then tapping Command Tower alone and clicking Cancel on the dialog: confirmed
+     via screenshot and log (no new entries) that the card stayed untapped and no counters changed
+     — the all-or-nothing cancel behavior works as designed.
+- **Deliberately excluded**: real battlefield/commander-color-identity inspection for Command
+  Tower/Reflecting-Pool-style abilities (simplified to "any of five colors" instead, per explicit
+  user direction); mana dorks/creatures work through the same generic path as lands/artifacts
+  (any table-zone permanent with a recognized ability qualifies) but weren't separately live-tested
+  this session, since the codepath doesn't distinguish card type — only zone/tapped-state and the
+  parsed ability data matter.
 
 **Status: implemented, tested, and live-verified.**
 

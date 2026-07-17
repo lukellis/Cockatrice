@@ -32,6 +32,27 @@ class Command_MoveCard;
 class GameEventContext;
 class PendingCommand;
 class PlayerLogic;
+
+// One selectable option for a card whose mana ability isn't a single unambiguous color -- either
+// because it has more than one qualifying ManaAbilities::ManaAbility line, or because its one
+// line is itself a player choice among colors (see ManaAbilities::ManaAbility::isChoice()).
+struct ManaTapOption
+{
+    QString label;  // e.g. "Add {W}", shown in the choice dialog
+    QString symbol; // "W", "U", "B", "R", "G", or "C"
+    int amount = 1;
+};
+
+// A single table-zone card, about to be tapped as part of a multi-select Tap action, whose mana
+// contribution needs the player to pick one of several options before the tap can be batched
+// with a counter increment.
+struct ManaTapChoice
+{
+    const CardItem *card = nullptr;
+    QString cardName;
+    QList<ManaTapOption> options;
+};
+
 class PlayerActions : public QObject
 {
     Q_OBJECT
@@ -81,6 +102,7 @@ signals:
     void requestCreateTokenDialog(const QStringList &predefinedTokens);
     void requestCreateRelatedFromRelationDialog(const CardItem *sourceCard, const CardRelation *cardRelation);
     void requestMoveCardXCardsFromTopDialog(int defaultNumberTopCardsToPlaceBelow, int deckSize);
+    void requestManaAbilityChoiceDialog(QList<CardItem *> cardList, QList<ManaTapChoice> choices);
     void requestSetPTDialog(const QString &oldPT);
     void requestSetAnnotationDialog(const QString &oldAnnotation);
     void requestSetCardCounterDialog(int counterId, const QString &oldValueForDlg);
@@ -189,7 +211,7 @@ public slots:
     void actRequestSetCardCounterDialog(QList<CardItem *> selectedCards, int counterId);
     void actSetCardCounter(QList<CardItem *> selectedCards, int counterId, const QString &counterValue);
     void actIncrementAllCardCounters(QList<CardItem *> cardsToUpdate);
-    void actActivateManaAbility(const CardItem *card, const QString &manaSymbol, int amount);
+    void actApplyTap(QList<CardItem *> cardList, QMap<const CardItem *, ManaTapOption> chosenManaOptions);
     void actAttach();
     void actUnattach(QList<CardItem *> selectedCards);
     void actDrawArrow();
@@ -250,6 +272,8 @@ private:
     void cmdSetBottomCard(Command_MoveCard &cmd);
 
     void offsetCardCounter(QList<CardItem *> selectedCards, int counterId, int offset);
+
+    QList<ManaTapChoice> computeManaTapChoices(const QList<CardItem *> &cardList) const;
 };
 
 #endif // COCKATRICE_PLAYER_ACTIONS_H

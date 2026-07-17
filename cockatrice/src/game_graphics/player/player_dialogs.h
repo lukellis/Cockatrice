@@ -44,6 +44,7 @@ public slots:
     void onSetPTDialogRequested(const QString &oldPT);
     void onSetAnnotationDialogRequested(const QString &oldAnnotation);
     void onSetCardCounterDialogRequested(int counterId, const QString &oldValueForDlg);
+    void onManaAbilityChoiceDialogRequested(QList<CardItem *> cardList, QList<ManaTapChoice> choices);
 
 private:
     PlayerGraphicsItem *player;

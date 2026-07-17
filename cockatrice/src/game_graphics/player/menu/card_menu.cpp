@@ -13,7 +13,6 @@
 #include "pt_menu.h"
 
 #include <QPainter>
-#include <libcockatrice/card/ability/mana_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -168,57 +167,6 @@ CardMenu::CardMenu(PlayerGraphicsItem *_player, const CardItem *_card, bool _sho
     }
 }
 
-/**
- * @brief Builds one menu action per simple fixed-mana ability ManaAbilities::parse() recognizes on
- * this menu's card (design doc §3 Phase 7 "Increment 2"), each performing the tap-and-add-mana that
- * a player would otherwise do manually in two steps. Only called for a table-zone, untapped card --
- * see the caller in createTableMenu().
- */
-void CardMenu::addManaAbilityActions()
-{
-    ExactCard exactCard = card->getCard();
-    if (!exactCard) {
-        return;
-    }
-
-    const QList<ManaAbilities::ManaAbility> manaAbilities = ManaAbilities::parse(exactCard.getInfo());
-    if (manaAbilities.isEmpty()) {
-        return;
-    }
-
-    addSeparator();
-
-    auto *actions = player->getLogic()->getPlayerActions();
-    const QMap<int, CounterState *> counters = player->getLogic()->getCounters();
-
-    for (const ManaAbilities::ManaAbility &ability : manaAbilities) {
-        QString symbols;
-        for (int i = 0; i < ability.amount; ++i) {
-            symbols += QStringLiteral("{%1}").arg(ability.producedSymbol);
-        }
-
-        QColor iconColor = Qt::gray;
-        const QString counterName =
-            ability.producedSymbol == QLatin1String("C") ? QStringLiteral("x") : ability.producedSymbol.toLower();
-        for (auto *counter : counters) {
-            if (counter->getName() == counterName) {
-                iconColor = counter->getColor();
-                break;
-            }
-        }
-
-        auto *action = new QAction(tr("Tap: Add %1").arg(symbols), this);
-        action->setIcon(createCircleIcon(iconColor));
-        const QString symbol = ability.producedSymbol;
-        const int amount = ability.amount;
-        connect(action, &QAction::triggered, actions,
-                [actions, this, symbol, amount]() { actions->actActivateManaAbility(card, symbol, amount); });
-
-        aActivateManaAbility.append(action);
-        addAction(action);
-    }
-}
-
 void CardMenu::removePlayer(PlayerLogic *playerToRemove)
 {
     for (auto it = playersInfo.begin(); it != playersInfo.end();) {
@@ -252,9 +200,6 @@ void CardMenu::createTableMenu(bool canModifyCard)
     addAction(aFlip);
     if (card->getFaceDown()) {
         addAction(aPeek);
-    }
-    if (!card->getTapped()) {
-        addManaAbilityActions();
     }
     addSeparator();
     addAction(aClone);

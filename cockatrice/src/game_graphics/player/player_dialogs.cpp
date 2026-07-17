@@ -6,6 +6,10 @@
 #include "../dialogs/dlg_roll_dice.h"
 #include "../player/player_graphics_item.h"
 
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QInputDialog>
 #include <libcockatrice/card/relation/card_relation.h>
 #include <libcockatrice/utility/string_limits.h>
@@ -58,6 +62,9 @@ PlayerDialogs::PlayerDialogs(PlayerGraphicsItem *_player, PlayerActions *_player
 
     connect(playerActions, &PlayerActions::requestSetCardCounterDialog, this,
             &PlayerDialogs::onSetCardCounterDialogRequested);
+
+    connect(playerActions, &PlayerActions::requestManaAbilityChoiceDialog, this,
+            &PlayerDialogs::onManaAbilityChoiceDialogRequested);
 }
 
 void PlayerDialogs::onViewTopCardsDialogRequested(int defaultNumberTopCards, int deckSize)
@@ -296,4 +303,39 @@ void PlayerDialogs::onSetCardCounterDialogRequested(int counterId, const QString
         return;
     }
     playerActions->actSetCardCounter(cards, counterId, dialog.textValue());
+}
+
+void PlayerDialogs::onManaAbilityChoiceDialogRequested(QList<CardItem *> cardList, QList<ManaTapChoice> choices)
+{
+    QDialog dialog(dialogParent());
+    dialog.setWindowTitle(tr("Choose mana to add"));
+
+    auto *layout = new QFormLayout(&dialog);
+    QList<QComboBox *> combos;
+    for (const auto &choice : choices) {
+        auto *combo = new QComboBox(&dialog);
+        for (const auto &option : choice.options) {
+            combo->addItem(option.label);
+        }
+        layout->addRow(choice.cardName, combo);
+        combos.append(combo);
+    }
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addRow(buttons);
+
+    emit requestDialogSemaphore(true);
+    int result = dialog.exec();
+    emit requestDialogSemaphore(false);
+    if (result != QDialog::Accepted) {
+        return;
+    }
+
+    QMap<const CardItem *, ManaTapOption> chosen;
+    for (int i = 0; i < choices.size(); ++i) {
+        chosen.insert(choices[i].card, choices[i].options[combos[i]->currentIndex()]);
+    }
+    playerActions->actApplyTap(cardList, chosen);
 }

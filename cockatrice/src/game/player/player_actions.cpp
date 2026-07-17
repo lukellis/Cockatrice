@@ -10,6 +10,7 @@
 #include "../board/counter_state.h"
 #include "../zones/view_zone_logic.h"
 
+#include <libcockatrice/card/ability/mana_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
 #include <libcockatrice/protocol/pb/command_attach_card.pb.h>
@@ -1632,34 +1633,99 @@ static QString manaCounterNameForSymbol(const QString &manaSymbol)
     return manaSymbol.toLower();
 }
 
-void PlayerActions::actActivateManaAbility(const CardItem *card, const QString &manaSymbol, int amount)
+// Flattens a card's recognized mana abilities (design doc §3 Phase 7 "Increment 2") into the set
+// of individually selectable (color, amount) options a player could pick when tapping it: a
+// single fixed-color ability contributes one option; a choice ability (or a card with more than
+// one qualifying ability line) contributes one option per color. Only meaningful for an untapped
+// table-zone card -- anything else (wrong zone, already tapped, no card data) returns empty.
+static QList<ManaTapOption> manaTapOptionsForCard(const CardItem *card)
 {
-    if (!card || !card->getZone()) {
-        return;
+    if (!card || card->getTapped() || !card->getZone() || card->getZone()->getName() != ZoneNames::TABLE) {
+        return {};
     }
 
-    QList<const ::google::protobuf::Message *> commandList;
+    ExactCard exactCard = card->getCard();
+    if (!exactCard) {
+        return {};
+    }
 
-    auto *tapCmd = new Command_SetCardAttr;
-    tapCmd->set_zone(card->getZone()->getName().toStdString());
-    tapCmd->set_card_id(card->getId());
-    tapCmd->set_attribute(AttrTapped);
-    tapCmd->set_attr_value("1");
-    commandList.append(tapCmd);
-
-    const QString counterName = manaCounterNameForSymbol(manaSymbol);
-    const QMap<int, CounterState *> counters = player->getCounters();
-    for (auto it = counters.constBegin(); it != counters.constEnd(); ++it) {
-        if (it.value()->getName() == counterName) {
-            auto *counterCmd = new Command_IncCounter;
-            counterCmd->set_counter_id(it.key());
-            counterCmd->set_delta(amount);
-            commandList.append(counterCmd);
-            break;
+    QList<ManaTapOption> options;
+    for (const auto &ability : ManaAbilities::parse(exactCard.getInfo())) {
+        for (const QString &symbol : ability.symbolOptions) {
+            QString symbols;
+            for (int i = 0; i < ability.amount; ++i) {
+                symbols += QStringLiteral("{%1}").arg(symbol);
+            }
+            options.append(ManaTapOption{QObject::tr("Add %1").arg(symbols), symbol, ability.amount});
         }
     }
+    return options;
+}
 
-    sendGameCommand(prepareGameCommand(commandList));
+QList<ManaTapChoice> PlayerActions::computeManaTapChoices(const QList<CardItem *> &cardList) const
+{
+    QList<ManaTapChoice> choices;
+    for (const auto &card : cardList) {
+        const QList<ManaTapOption> options = manaTapOptionsForCard(card);
+        if (options.size() > 1) {
+            choices.append(ManaTapChoice{card, card->getName(), options});
+        }
+    }
+    return choices;
+}
+
+void PlayerActions::actApplyTap(QList<CardItem *> cardList, QMap<const CardItem *, ManaTapOption> chosenManaOptions)
+{
+    QList<const ::google::protobuf::Message *> commandList;
+    const QMap<int, CounterState *> counters = player->getCounters();
+
+    auto appendManaIncrement = [&](const QString &symbol, int amount) {
+        const QString counterName = manaCounterNameForSymbol(symbol);
+        for (auto it = counters.constBegin(); it != counters.constEnd(); ++it) {
+            if (it.value()->getName() == counterName) {
+                auto *counterCmd = new Command_IncCounter;
+                counterCmd->set_counter_id(it.key());
+                counterCmd->set_delta(amount);
+                commandList.append(counterCmd);
+                break;
+            }
+        }
+    };
+
+    for (const auto &card : cardList) {
+        if (!card || !card->getZone()) {
+            continue;
+        }
+
+        const bool wasTapped = card->getTapped();
+        auto *cmd = new Command_SetCardAttr;
+        cmd->set_zone(card->getZone()->getName().toStdString());
+        cmd->set_card_id(card->getId());
+        cmd->set_attribute(AttrTapped);
+        cmd->set_attr_value(std::to_string(1 - static_cast<int>(wasTapped)));
+        commandList.append(cmd);
+
+        if (wasTapped) {
+            continue; // untapping -- never adds mana
+        }
+
+        auto chosenIt = chosenManaOptions.constFind(card);
+        if (chosenIt != chosenManaOptions.constEnd()) {
+            appendManaIncrement(chosenIt.value().symbol, chosenIt.value().amount);
+            continue;
+        }
+
+        const QList<ManaTapOption> options = manaTapOptionsForCard(card);
+        if (options.size() == 1) {
+            appendManaIncrement(options.first().symbol, options.first().amount);
+        }
+        // options.size() > 1 with no entry in chosenManaOptions means the choice dialog was
+        // skipped somehow -- don't guess, just tap without adding mana.
+    }
+
+    if (!commandList.isEmpty()) {
+        sendGameCommand(prepareGameCommand(commandList));
+    }
 }
 
 /**
@@ -1804,22 +1870,26 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
 {
     QList<CardItem *> cardList = selectedCards;
 
+    // Leaving both for compatibility with server. Handled ahead of the generic per-card loop
+    // below since it operates on the whole selection at once (multi-select tap-for-mana, design
+    // doc §3 Phase 7 "Increment 2" follow-up): every card being tapped (not untapped) with a
+    // recognized mana ability auto-adds mana to the pool, unless it has more than one option (a
+    // choice ability, or multiple ability lines), in which case a dialog asks which to use before
+    // anything is sent.
+    if (type == cmUntap || type == cmTap) {
+        const QList<ManaTapChoice> choices = computeManaTapChoices(cardList);
+        if (choices.isEmpty()) {
+            actApplyTap(cardList, {});
+        } else {
+            emit requestManaAbilityChoiceDialog(cardList, choices);
+        }
+        return;
+    }
+
     QList<const ::google::protobuf::Message *> commandList;
     if (type <= cmClone) {
         for (const auto &card : cardList) {
             switch (type) {
-                // Leaving both for compatibility with server
-                case cmUntap:
-                    // fallthrough
-                case cmTap: {
-                    auto *cmd = new Command_SetCardAttr;
-                    cmd->set_zone(card->getZone()->getName().toStdString());
-                    cmd->set_card_id(card->getId());
-                    cmd->set_attribute(AttrTapped);
-                    cmd->set_attr_value(std::to_string(1 - static_cast<int>(card->getTapped())));
-                    commandList.append(cmd);
-                    break;
-                }
                 case cmDoesntUntap: {
                     auto *cmd = new Command_SetCardAttr;
                     cmd->set_zone(card->getZone()->getName().toStdString());
