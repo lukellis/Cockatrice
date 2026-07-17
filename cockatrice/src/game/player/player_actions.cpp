@@ -1,5 +1,6 @@
 #include "player_actions.h"
 
+#include "../../game_graphics/board/ability_target_picker.h"
 #include "../../game_graphics/dialogs/dlg_move_top_cards_until.h"
 #include "../../game_graphics/dialogs/dlg_roll_dice.h"
 #include "../../game_graphics/player/card_menu_action_type.h"
@@ -10,10 +11,12 @@
 #include "../board/counter_state.h"
 #include "../zones/view_zone_logic.h"
 
+#include <QGraphicsScene>
 #include <libcockatrice/card/ability/activated_abilities.h>
 #include <libcockatrice/card/ability/mana_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
+#include <libcockatrice/protocol/pb/command_activate_targeted_effect.pb.h>
 #include <libcockatrice/protocol/pb/command_attach_card.pb.h>
 #include <libcockatrice/protocol/pb/command_change_zone_properties.pb.h>
 #include <libcockatrice/protocol/pb/command_create_token.pb.h>
@@ -1774,6 +1777,13 @@ void PlayerActions::actApplyTap(QList<CardItem *> cardList, QMap<const CardItem 
                     }
                     break;
                 }
+                case EffectKind::DealDamage:
+                    // Phase 7 Stage 2: targeted effects never reach this switch in practice --
+                    // cardMenuAction() intercepts a lone card with a TargetKind::AnyTarget
+                    // ability before actApplyTap() is ever called, routing it through
+                    // AbilityTargetPicker + actApplyTapWithTarget() instead (see below). Kept as
+                    // an explicit no-op case (not a default:) so this switch stays exhaustive.
+                    break;
                 case EffectKind::AddCounterToSelf:
                     break; // not wired yet -- no parser produces this kind
             }
@@ -1783,6 +1793,40 @@ void PlayerActions::actApplyTap(QList<CardItem *> cardList, QMap<const CardItem 
     if (!commandList.isEmpty()) {
         sendGameCommand(prepareGameCommand(commandList));
     }
+}
+
+// Phase 7 Stage 2 (targeting): the resolved-target sibling of actApplyTap(), called only for the
+// single-card path AbilityTargetPicker feeds (see cardMenuAction()'s cmTap interception below --
+// targeted-ability activation is single-card-selection only, unlike Stage 1's untargeted effects).
+// Deliberately does not also apply an unambiguous mana ability the way actApplyTap() does for
+// untargeted taps -- no real printed card combines a mana ability with a targeted damage ability
+// on the same tap-cost line, so this is left unhandled rather than guessed at, same conservatism
+// as every other narrow boundary in this parser/dispatch pair.
+void PlayerActions::actApplyTapWithTarget(CardItem *card, CardEffect effect, AbilityTarget target)
+{
+    if (!card || !card->getZone()) {
+        return;
+    }
+
+    QList<const ::google::protobuf::Message *> commandList;
+
+    auto *tapCmd = new Command_SetCardAttr;
+    tapCmd->set_zone(card->getZone()->getName().toStdString());
+    tapCmd->set_card_id(card->getId());
+    tapCmd->set_attribute(AttrTapped);
+    tapCmd->set_attr_value("1");
+    commandList.append(tapCmd);
+
+    auto *effectCmd = new Command_ActivateTargetedEffect;
+    effectCmd->set_amount(effect.amount);
+    effectCmd->set_target_player_id(target.targetPlayerId);
+    if (!target.isPlayer) {
+        effectCmd->set_target_zone(target.targetZone.toStdString());
+        effectCmd->set_target_card_id(target.targetCardId);
+    }
+    commandList.append(effectCmd);
+
+    sendGameCommand(prepareGameCommand(commandList));
 }
 
 /**
@@ -1926,6 +1970,27 @@ void PlayerActions::actRevealRandomGraveyardCard(int revealToPlayerId)
 void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActionType type)
 {
     QList<CardItem *> cardList = selectedCards;
+
+    // Phase 7 Stage 2 (targeting): checked ahead of everything else below, and only for a single
+    // selected card -- multi-select batch-targeting (each card needing its own independently
+    // resolved target) is real added complexity explicitly deferred, not attempted here (same
+    // "left unhandled rather than guessed at" conservatism as the parser's own boundaries).
+    // nonManaActivatedAbilityForCard() already returns std::nullopt for an already-tapped card,
+    // so this naturally never fires on an cmUntap click.
+    if (type == cmTap && cardList.size() == 1) {
+        CardItem *soleCard = cardList.first();
+        if (const std::optional<CardEffect> effect = nonManaActivatedAbilityForCard(soleCard);
+            effect && effect->target == TargetKind::AnyTarget) {
+            auto *picker = new AbilityTargetPicker(player, soleCard);
+            soleCard->scene()->addItem(picker);
+            connect(picker, &AbilityTargetPicker::targetChosen, this,
+                    [this, soleCard, effect = *effect](const AbilityTarget &target) {
+                        actApplyTapWithTarget(soleCard, effect, target);
+                    });
+            picker->grabMouse();
+            return;
+        }
+    }
 
     // Leaving both for compatibility with server. Handled ahead of the generic per-card loop
     // below since it operates on the whole selection at once (multi-select tap-for-mana, design

@@ -8,28 +8,50 @@
  * rather than a std::variant -- consistency with this codebase's existing ability types matters
  * more here than using a fancier C++ feature.
  *
- * Each kind below is a self-contained, targetless effect (applies to the activating player or
- * their own permanent only) -- this is Stage 1 of the card-ability execution engine; targeted
- * effects (deal damage to a target, destroy target permanent, etc.) need a TargetSpec this IR
- * doesn't have yet. See COMMANDER_IMPLEMENTATION_STATUS.md's Phase 7 section for the staged
- * roadmap this is Stage 1 of.
+ * Stage 1 kinds below are self-contained, targetless effects (apply to the activating player or
+ * their own permanent only). Stage 2 adds DealDamage, the first kind needing a target -- see
+ * TargetKind below. See COMMANDER_IMPLEMENTATION_STATUS.md's Phase 7 section for the staged
+ * roadmap this is Stage 2 of.
  */
 enum class EffectKind
 {
     DrawCards,       // the activating player draws `amount` cards
     GainLife,        // the activating player gains `amount` life
     LoseLife,        // the activating player loses `amount` life
+    DealDamage,      // `amount` damage to whichever target was chosen at activation -- see TargetKind
     AddCounterToSelf // reserved for future use -- no parser recognizes this yet
 };
+
+/**
+ * @brief What kind of target, if any, an effect needs chosen at activation time. Stage 1 effects
+ * are all TargetKind::None (self-only). Stage 2 introduces AnyTarget (a permanent or a player,
+ * resolved via the client's board-click targeting interaction) for DealDamage -- no finer-grained
+ * kinds (e.g. "target creature" only, "target player" only) are recognized yet; see
+ * ActivatedAbilities::parse()'s doc comment for the exact phrasing this covers.
+ */
+enum class TargetKind
+{
+    None,
+    AnyTarget
+};
+
+// Fork convention: the per-card counter id reserved for marked damage. Server_Card's counters map
+// (libcockatrice_network's server_card.h) is a plain QMap<int,int> with no name field at all, unlike
+// per-player Server_Counter (which has a real name, e.g. "life") -- there is no pre-existing
+// "damage" counter to reuse the way Stage 1 reused "life", so this fork invents one, the same way
+// Phase 9 invented a new named "poison" per-player counter. Shared by client display code and the
+// server-side cmdActivateTargetedEffect handler so both agree on the id.
+constexpr int DAMAGE_CARD_COUNTER_ID = 0;
 
 struct CardEffect
 {
     EffectKind kind;
     int amount = 1;
+    TargetKind target = TargetKind::None; // DealDamage sets AnyTarget; every other kind stays None
 
     bool operator==(const CardEffect &other) const
     {
-        return kind == other.kind && amount == other.amount;
+        return kind == other.kind && amount == other.amount && target == other.target;
     }
 };
 

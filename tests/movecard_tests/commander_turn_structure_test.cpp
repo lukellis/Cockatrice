@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 #include <libcockatrice/protocol/pb/card_attributes.pb.h>
+#include <libcockatrice/protocol/pb/command_activate_targeted_effect.pb.h>
 #include <libcockatrice/protocol/pb/command_pass_priority.pb.h>
 #include <libcockatrice/protocol/pb/serverinfo_user.pb.h>
 #include <libcockatrice/rng/rng_abstract.h>
@@ -19,7 +20,8 @@ RNG_Abstract *rng = nullptr; // this needs to be defined due to other functions 
 // The pure rules logic (phase automation, priority-round state machine) lives in
 // libcockatrice_rules and is tested without any server dependency in tests/rules/rules_engine_test.
 // This file covers only the server-side integration: the reused untap/draw mechanisms that
-// Server_Game::setActivePhase() drives, and cmdPassPriority's gating.
+// Server_Game::setActivePhase() drives, cmdPassPriority's gating, and cmdActivateTargetedEffect's
+// gating (Phase 7 Stage 2).
 
 namespace
 {
@@ -64,6 +66,28 @@ TEST(CommanderTurnStructureTest, PassPriorityRejectedBeforeGameStarts)
     ResponseContainer rc(0);
     GameEventStorage ges;
     EXPECT_EQ(player.cmdPassPriority(cmd, rc, ges), Response::RespGameNotStarted);
+}
+
+// ---- Server_Player::cmdActivateTargetedEffect (Phase 7 Stage 2) ----
+// Same limitation as cmdPassPriority above: only the gating check reachable without a started,
+// participant-registered game is covered here. The player-target/card-target resolution logic
+// (game->getPlayer(), zone/card lookup, life-counter-by-name lookup) is exercised live per
+// COMMANDER_IMPLEMENTATION_STATUS.md's Phase 7 Stage 2 verification section, not unit-tested,
+// same as every other automation path in this file.
+
+TEST(CommanderTurnStructureTest, ActivateTargetedEffectRejectedBeforeGameStarts)
+{
+    Server_Game &game = makeGame(4, 40);
+    ServerInfo_User user;
+    user.set_name("test-user");
+    Server_Player player(&game, 1, user, false, nullptr);
+
+    Command_ActivateTargetedEffect cmd;
+    cmd.set_amount(3);
+    cmd.set_target_player_id(1);
+    ResponseContainer rc(0);
+    GameEventStorage ges;
+    EXPECT_EQ(player.cmdActivateTargetedEffect(cmd, rc, ges), Response::RespGameNotStarted);
 }
 
 // ---- Underlying mechanisms reused by the automatic untap/draw (setCardAttrHelper, drawCards) ----

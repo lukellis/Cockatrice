@@ -13,8 +13,10 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <algorithm>
+#include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/deck_list/deck_list.h>
 #include <libcockatrice/deck_list/tree/deck_list_card_node.h>
+#include <libcockatrice/protocol/pb/command_activate_targeted_effect.pb.h>
 #include <libcockatrice/protocol/pb/command_attach_card.pb.h>
 #include <libcockatrice/protocol/pb/command_change_zone_properties.pb.h>
 #include <libcockatrice/protocol/pb/command_concede.pb.h>
@@ -39,6 +41,7 @@
 #include <libcockatrice/protocol/pb/event_draw_cards.pb.h>
 #include <libcockatrice/protocol/pb/event_game_log_notice.pb.h>
 #include <libcockatrice/protocol/pb/event_player_properties_changed.pb.h>
+#include <libcockatrice/protocol/pb/event_set_card_counter.pb.h>
 #include <libcockatrice/protocol/pb/event_set_counter.pb.h>
 #include <libcockatrice/protocol/pb/event_shuffle.pb.h>
 #include <libcockatrice/protocol/pb/response.pb.h>
@@ -653,6 +656,80 @@ Response::ResponseCode Server_Player::cmdPassPriority(const Command_PassPriority
     }
 
     game->advancePriority(playerId);
+
+    return Response::RespOk;
+}
+
+// Phase 7 Stage 2 (targeting) of the card-ability execution engine. Unlike every other
+// counter/attribute command in this file, the target here is not implicitly "this player's own
+// state" -- it's whatever the activating client's board-click targeting interaction resolved,
+// which may be another player entirely. card_id is only unique within one player's zone (never
+// globally), so the target is always addressed by the explicit (target_player_id, target_zone,
+// target_card_id) triple carried on the command, resolved via game->getPlayer(), the same way
+// cmdMoveCard/cmdCreateArrow already resolve cross-player targets. No write-permission gate is
+// applied here (unlike cmdMoveCard's zone-write-permission check) -- a spell/ability legitimately
+// affecting an opponent's life total or marked damage is intended MTG behavior, not a "reach into
+// someone else's stuff" edge case that needs gating, the same leniency cmdCreateArrow already
+// has for pointing an arrow at anyone's public-zone card.
+Response::ResponseCode Server_Player::cmdActivateTargetedEffect(const Command_ActivateTargetedEffect &cmd,
+                                                                ResponseContainer & /*rc*/,
+                                                                GameEventStorage &ges)
+{
+    if (!game->getGameStarted()) {
+        return Response::RespGameNotStarted;
+    }
+    if (conceded) {
+        return Response::RespContextError;
+    }
+
+    auto *targetPlayer = dynamic_cast<Server_Player *>(game->getPlayer(cmd.target_player_id()));
+    if (!targetPlayer) {
+        return Response::RespNameNotFound;
+    }
+
+    if (!cmd.has_target_zone()) {
+        // Player-target path: decrement the target's own "life" counter, the same named counter
+        // Stage 1's self-targeted GainLife/LoseLife effects already use, just now looked up on
+        // targetPlayer instead of the sender. This reuses the already-wired Phase 9 life <= 0
+        // advisory warning on the target's own client (a cause-agnostic CounterState::valueChanged
+        // hook) for free -- no new SBA code needed here.
+        const QMap<int, Server_Counter *> &targetCounters = targetPlayer->getCounters();
+        for (auto it = targetCounters.constBegin(); it != targetCounters.constEnd(); ++it) {
+            if (it.value()->getName() == QStringLiteral("life")) {
+                if (it.value()->incrementCount(-cmd.amount())) {
+                    Event_SetCounter event;
+                    event.set_counter_id(it.value()->getId());
+                    event.set_value(it.value()->getCount());
+                    ges.enqueueGameEvent(event, targetPlayer->getPlayerId());
+                }
+                break;
+            }
+        }
+        return Response::RespOk;
+    }
+
+    // Card-target path: mark damage on the targeted permanent via the fork's conventional
+    // DAMAGE_CARD_COUNTER_ID (see card_effects.h -- Server_Card's counters have no name field at
+    // all, unlike per-player Server_Counter, so this is an invented convention, same category as
+    // Phase 9's new "poison" per-player counter). Purely advisory -- this engine doesn't track
+    // toughness as a number anywhere, so there is no automatic destroy/lethal-damage check here,
+    // consistent with every other SBA in this fork being advisory-only.
+    Server_CardZone *zone = targetPlayer->getZones().value(nameFromStdString(cmd.target_zone()));
+    if (!zone || !zone->hasCoords()) {
+        return Response::RespContextError;
+    }
+
+    Server_Card *card = zone->getCard(cmd.target_card_id());
+    if (!card) {
+        return Response::RespNameNotFound;
+    }
+
+    Event_SetCardCounter event;
+    event.set_zone_name(zone->getName().toStdString());
+    event.set_card_id(card->getId());
+    if (card->incrementCounter(DAMAGE_CARD_COUNTER_ID, cmd.amount(), &event)) {
+        ges.enqueueGameEvent(event, targetPlayer->getPlayerId());
+    }
 
     return Response::RespOk;
 }

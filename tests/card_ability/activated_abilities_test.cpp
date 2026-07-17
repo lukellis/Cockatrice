@@ -50,11 +50,22 @@ TEST(ActivatedAbilitiesTest, NonTapCostLineIsNotMatched)
     EXPECT_TRUE(ActivatedAbilities::parse(*card).isEmpty());
 }
 
-TEST(ActivatedAbilitiesTest, TargetedEffectLineIsNotMatched)
+TEST(ActivatedAbilitiesTest, DealDamageAnyTargetLineIsRecognized)
 {
-    // Stage 1 has no TargetSpec yet -- targeted effects must be skipped, not guessed at.
-    auto card = makeCard("{T}: Deal 1 damage to any target.");
-    EXPECT_TRUE(ActivatedAbilities::parse(*card).isEmpty());
+    auto card = makeCard("{T}: Deal 3 damage to any target.");
+    const QList<ActivatedAbility> expected = {{true, {EffectKind::DealDamage, 3, TargetKind::AnyTarget}}};
+    EXPECT_EQ(ActivatedAbilities::parse(*card), expected);
+}
+
+TEST(ActivatedAbilitiesTest, NonAnyTargetPhrasingIsNotMatched)
+{
+    // Stage 2 only recognizes the modern "any target" templating -- older phrasings naming a
+    // specific target type are deliberately skipped, not guessed at.
+    auto creatureTarget = makeCard("{T}: Deal 1 damage to target creature.");
+    EXPECT_TRUE(ActivatedAbilities::parse(*creatureTarget).isEmpty());
+
+    auto playerTarget = makeCard("{T}: Deal 1 damage to target player.");
+    EXPECT_TRUE(ActivatedAbilities::parse(*playerTarget).isEmpty());
 }
 
 TEST(ActivatedAbilitiesTest, PluralDrawPhrasingIsNotMatched)

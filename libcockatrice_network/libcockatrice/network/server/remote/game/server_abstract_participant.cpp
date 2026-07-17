@@ -9,6 +9,7 @@
 #include "server_player.h"
 
 #include <libcockatrice/protocol/get_pb_extension.h>
+#include <libcockatrice/protocol/pb/command_activate_targeted_effect.pb.h>
 #include <libcockatrice/protocol/pb/command_attach_card.pb.h>
 #include <libcockatrice/protocol/pb/command_change_zone_properties.pb.h>
 #include <libcockatrice/protocol/pb/command_concede.pb.h>
@@ -322,6 +323,14 @@ Response::ResponseCode Server_AbstractParticipant::cmdIncCounter(const Command_I
     return Response::RespFunctionNotAllowed;
 }
 
+Response::ResponseCode
+Server_AbstractParticipant::cmdActivateTargetedEffect(const Command_ActivateTargetedEffect & /*cmd*/,
+                                                      ResponseContainer & /*rc*/,
+                                                      GameEventStorage & /*ges*/)
+{
+    return Response::RespFunctionNotAllowed;
+}
+
 Response::ResponseCode Server_AbstractParticipant::cmdCreateCounter(const Command_CreateCounter & /*cmd*/,
                                                                     ResponseContainer & /*rc*/,
                                                                     GameEventStorage & /*ges*/)
@@ -515,6 +524,9 @@ Server_AbstractParticipant::processGameCommand(const GameCommand &command, Respo
             break;
         case GameCommand::PASS_PRIORITY:
             return cmdPassPriority(command.GetExtension(Command_PassPriority::ext), rc, ges);
+            break;
+        case GameCommand::ACTIVATE_TARGETED_EFFECT:
+            return cmdActivateTargetedEffect(command.GetExtension(Command_ActivateTargetedEffect::ext), rc, ges);
             break;
         case GameCommand::DUMP_ZONE:
             return cmdDumpZone(command.GetExtension(Command_DumpZone::ext), rc, ges);

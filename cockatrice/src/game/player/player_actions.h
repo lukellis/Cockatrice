@@ -17,6 +17,7 @@
 
 #include <QMenu>
 #include <QObject>
+#include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/card/relation/card_relation_type.h>
 #include <libcockatrice/filters/filter_string.h>
 
@@ -51,6 +52,19 @@ struct ManaTapChoice
     const CardItem *card = nullptr;
     QString cardName;
     QList<ManaTapOption> options;
+};
+
+// Phase 7 Stage 2 (targeting): a resolved target for a CardEffect with TargetKind::AnyTarget,
+// produced by AbilityTargetPicker's board-click targeting interaction. card_id is only unique
+// within one player's zone, never globally, so a card target is always addressed by the explicit
+// (targetPlayerId, targetZone, targetCardId) triple, never targetCardId alone -- same convention
+// Command_ActivateTargetedEffect carries over the wire.
+struct AbilityTarget
+{
+    bool isPlayer = true;
+    int targetPlayerId = -1;
+    QString targetZone;    // empty when isPlayer
+    int targetCardId = -1; // -1 when isPlayer
 };
 
 class PlayerActions : public QObject
@@ -212,6 +226,7 @@ public slots:
     void actSetCardCounter(QList<CardItem *> selectedCards, int counterId, const QString &counterValue);
     void actIncrementAllCardCounters(QList<CardItem *> cardsToUpdate);
     void actApplyTap(QList<CardItem *> cardList, QMap<const CardItem *, ManaTapOption> chosenManaOptions);
+    void actApplyTapWithTarget(CardItem *card, CardEffect effect, AbilityTarget target);
     void actAttach();
     void actUnattach(QList<CardItem *> selectedCards);
     void actDrawArrow();

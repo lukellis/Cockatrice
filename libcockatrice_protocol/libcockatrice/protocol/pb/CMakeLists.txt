@@ -6,6 +6,7 @@ set(PROTO_FILES
     admin_commands.proto
     card_attributes.proto
     color.proto
+    command_activate_targeted_effect.proto
     command_attach_card.proto
     command_change_zone_properties.proto
     command_concede.proto

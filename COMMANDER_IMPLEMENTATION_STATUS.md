@@ -34,7 +34,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Narrow slice done (2026-07-16)** | Cost validation/auto-tap needs Phase 7 (out of reach) — still not implemented. The one in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) is implemented, tested, and live-verified; see "Phase 6" section below. |
-| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stage 1 done (2026-07-16)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 implemented — narrow self-targeted activated abilities (`{T}: Draw a card.` / gain / lose life), reusing 100% existing protocol commands. Stages 2–6 (targeting, a real stack, real mana payment, triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–2 done (2026-07-17)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities) and Stage 2 (targeting — board-click picker, players and permanents, a new `Command_ActivateTargetedEffect`) both implemented, tested, and live-verified. Stages 3–6 (a real stack, real mana payment, triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -777,9 +777,156 @@ parser produces it yet — not wired client-side either.
   broadening the 3-effect whitelist (cheap, low-risk follow-up once this shape is
   proven, not attempted preemptively).
 
-**Status: Stage 1 implemented, tested, and live-verified. Stages 2–6 are a roadmap, not
-yet scoped for implementation — each needs its own explicit go-ahead, per this fork's
-standing rule for Phases 6–8.**
+**Status: Stage 1 implemented, tested, and live-verified.**
+
+### Stage 2 — Targeting (2026-07-17)
+
+Authorized by the user via a dedicated plan-mode design pass (same treatment Stage 1 got),
+following two explicit scope decisions: targets can be **players and creatures/permanents**
+(not just players), and the player picks a target by **clicking on the board** (reusing the
+existing arrow-drag hover/highlight visual), not a `QComboBox` dialog. Both choices are
+bigger than the minimal slice — this is genuinely the first new UI interaction mode in the
+fork, and the first command capable of mutating another player's game state outside
+`Command_MoveCard`/`Command_CreateArrow`.
+
+**Research that shaped the design** (three parallel Explore passes + direct code reads):
+- `card_id` is **per-player/per-zone, never globally unique** (`Server_CardZone::getCard()`
+  only scans its own zone) — any cross-player target reference needs an explicit
+  `(player_id, zone, card_id)` triple, not `card_id` alone.
+- `Command_SetCardAttr`/`Command_IncCounter`/`Command_SetCardCounter`/`Command_IncCardCounter`
+  all resolve only the **sender's own** `zones`/`counters` map — none can address another
+  player's state. `Command_MoveCard` and `Command_CreateArrow` are the only existing
+  precedents for real cross-player addressing, both via explicit `*_player_id` fields
+  resolved through `game->getPlayer(id)`.
+- Per-card counters (`Server_Card`'s `QMap<int,int> counters`) have **no semantic name at
+  all**, unlike per-player `Server_Counter` (which has a real name, e.g. `"life"`) — there is
+  no pre-existing "damage" counter to reuse the way Stage 1 reused `life`. This fork invents
+  one (`DAMAGE_CARD_COUNTER_ID = 0`), the same category of invention as Phase 9's new
+  `poison` per-player counter.
+- Cockatrice doesn't track toughness as a number anywhere (P/T is display text only), so a
+  creature "taking damage" can only ever be an advisory counter overlay — never an automatic
+  destroy/SBA. Consistent with the fork's whole advisory philosophy, not a new compromise.
+- The client already had a fully-built targeting interaction: `ArrowDragItem`/`ArrowTarget`
+  (`cockatrice/src/game_graphics/board/arrow_item.{h,cpp}`, `arrow_target.{h,cpp}`), built for
+  the pre-existing arrow/attach feature. Both `CardItem` and `PlayerTarget` already uniformly
+  support hover-highlight (`setBeingPointedAt(true)`) and are discoverable via
+  `scene()->items(pos)` + `qgraphicsitem_cast`. `ArrowDragItem::mouseMoveEvent`'s
+  hover/highlight loop was the direct model for the new picker's own loop — not reusable
+  as-is, since its `mouseReleaseEvent` is hard-wired to build and send `Command_CreateArrow`,
+  but the grab/hover/resolve mechanics transfer directly.
+
+**What's implemented**:
+- **IR extension** (`card_effects.h`): new `TargetKind` enum (`None`/`AnyTarget`),
+  `CardEffect::target` field (defaults `None` for all Stage 1 kinds), new
+  `EffectKind::DealDamage`, and the new `DAMAGE_CARD_COUNTER_ID = 0` convention constant,
+  shared by client display code and the server handler.
+- **Parser extension** (`activated_abilities.cpp`): recognizes `"{T}: Deal N damage to any
+  target."` — only the modern "any target" templating; older phrasings naming a specific
+  target type (`"target creature"`, `"target player"`) are deliberately not matched, same
+  "exact shape or skip" conservatism as every other pattern in this parser.
+- **Protocol** (second-ever `.proto` change in this fork, after Phase 5's
+  `Command_PassPriority`): new `Command_ActivateTargetedEffect` (`GameCommand` ext 1036 —
+  next free after Phase 5's 1035), carrying `amount`, `target_player_id`, and an optional
+  `target_zone`/`target_card_id` pair (absent `target_zone` means the target is the player
+  themselves, same convention `Command_CreateArrow` already uses). Deliberately single-purpose
+  ("deal N damage to a resolved target") rather than a generic "any targeted effect" message —
+  matches this fork's precedent of narrow, single-purpose protocol additions. No new event —
+  the broadcast reuses existing `Event_SetCounter` (player-target path) and
+  `Event_SetCardCounter` (card-target path) exactly as-is.
+- **Server handler**, new `Server_Player::cmdActivateTargetedEffect` (`server_player.{h,cpp}`,
+  registered in `Server_AbstractParticipant::processGameCommand`'s dispatch switch like every
+  other command): resolves `targetPlayer = dynamic_cast<Server_Player*>(game->getPlayer(...))`
+  the same way `cmdCreateArrow`/`cmdMoveCard` already do. Player-target path finds
+  `targetPlayer`'s `"life"` counter by name (same lookup-by-name idiom Stage 1's own
+  `GainLife`/`LoseLife` already uses, just now on a different player's counters) and
+  decrements it — this automatically benefits from the already-wired Phase 9 life ≤ 0 warning
+  on the *target's* own client (a cause-agnostic `CounterState::valueChanged` hook), no new
+  code needed. Card-target path resolves the zone/card via `targetPlayer->getZones()` (same
+  `hasCoords()` gate `cmdSetCardCounter` already uses, naturally excluding hidden zones) and
+  increments `DAMAGE_CARD_COUNTER_ID`. **No write-permission gate** — mirrors `cmdCreateArrow`'s
+  leniency, not `cmdMoveCard`'s write-permission-list check: a spell/ability legitimately
+  affecting an opponent's life total or marked damage is intended MTG behavior, not a "reach
+  into someone else's stuff" edge case needing gating — a deliberate call, same treatment as
+  the existing `turnOrderReversed` non-fix note below.
+- **Client targeting interaction**, new `AbilityTargetPicker`
+  (`cockatrice/src/game_graphics/board/ability_target_picker.{h,cpp}`), subclassing the
+  existing `ArrowItem` base directly (reusing its arrow-drawing `paint()`/`updatePath()` and
+  position-tracking machinery) rather than reimplementing it. Unlike `ArrowDragItem` (which
+  begins mid-drag, with a mouse button already held from the gesture that spawned it), this is
+  constructed from a context-menu action with no button currently held — so its own fresh
+  press-drag-release cycle (via `grabMouse()`) is what resolves or cancels the pick, not a
+  drag's release alone. Only `CardItem`s on the `TABLE` zone (permanents) and `PlayerTarget`s
+  are valid candidates. Right-click, Escape, or releasing over nothing/an invalid candidate
+  cancels (`targetCancelled()`, sends nothing) — same atomic, no-partial-state precedent as the
+  mana-ability-choice dialog's Cancel button.
+- **Wired into the existing generic Tap/Untap interception** in
+  `PlayerActions::cardMenuAction()` (`player_actions.cpp`), checked *before* the existing
+  mana-choice logic, and **only for a single selected card** — multi-select batch-targeting
+  (each card needing its own independently resolved target) is real added complexity
+  explicitly deferred, not attempted this stage, same "left unhandled rather than guessed at"
+  conservatism as Stage 1's own multi-line-card boundary.
+  `nonManaActivatedAbilityForCard()` already returns `std::nullopt` for an already-tapped
+  card, so this naturally never fires on an untap click. New
+  `PlayerActions::actApplyTapWithTarget()` builds the same `Command_SetCardAttr` tap toggle
+  Stage 1 already sends, plus one `Command_ActivateTargetedEffect` from the resolved target,
+  batched and sent together. Deliberately does not also apply an unambiguous mana ability the
+  way `actApplyTap()` does for untargeted taps — no real printed card combines a mana ability
+  with a targeted damage ability on the same tap-cost line, left unhandled rather than
+  guessed at.
+- **Testing**: `tests/card_ability/activated_abilities_test.cpp` gained
+  `DealDamageAnyTargetLineIsRecognized` and `NonAnyTargetPhrasingIsNotMatched` (11/11 pass,
+  up from 10 — the old `TargetedEffectLineIsNotMatched` test/rationale was superseded since
+  Stage 2 now does recognize the "any target" shape). `tests/movecard_tests/
+  commander_turn_structure_test.cpp` gained `ActivateTargetedEffectRejectedBeforeGameStarts`,
+  parallel to Phase 5's `cmdPassPriority` gating test (only the gating check reachable
+  without a started, participant-registered game — the same lightweight-testing limitation
+  documented for every other automation path in this file). Full suite: **21/21 executables
+  pass**, zero regressions. `format.sh --cmake --branch master` run and applied (cosmetic
+  reformatting across the changed files) — rebuilt and retested clean after.
+- **Verified live**, not just compiled: local servatrice + Xvfb + real client, a real solo
+  Commander game with a throwaway "Test Bolt Rock" (`{T}: Deal 3 damage to any target.`, added
+  to `.uitest/sample_cards.xml` for the session and removed afterward, same precedent as
+  Stage 1's own throwaway test cards) alongside Baleful Strix as a real permanent target.
+  Confirmed via debug-log cross-reference:
+  - Right-clicking the untapped card and choosing "Tap / Untap" entered targeting mode (a
+    red-highlighted picker item grabbing the mouse) instead of sending any command
+    immediately — confirmed via the log showing no `Command_SetCardAttr`/
+    `Command_ActivateTargetedEffect` until a target was actually resolved.
+  - **Self-target**: dragging from the card to the player's own avatar sent one batched
+    command, `Command_SetCardAttr { attribute: AttrTapped attr_value: "1" }` +
+    `Command_ActivateTargetedEffect { amount: 3 target_player_id: 0 }`, and the server
+    responded with `Event_SetCounter { counter_id: 0 value: 37 }` (40 → 37) + the matching tap
+    event — confirmed visually (life total updated to 37 on the avatar).
+  - **Card-target**: targeting Baleful Strix (a real permanent) instead sent
+    `Command_ActivateTargetedEffect { amount: 3 target_player_id: 0 target_zone: "table"
+    target_card_id: 2 }`, and the server responded with `Event_SetCardCounter { card_id: 2
+    counter_id: 0 counter_value: 3 }` — confirmed visually (a "3" damage badge appeared on
+    Baleful Strix; life total stayed untouched).
+  - **Cancel**: right-clicking mid-targeting produced zero new log lines on either the client
+    or server — confirmed the card stayed untapped and no state changed, the same
+    atomic-cancel behavior already proven for the mana-choice dialog.
+  - **Phase 9 SBA warning still fires, cause-agnostic**: after bringing life down to 3
+    (via the ordinary manual right-click-to-decrement life counter), one more self-targeted
+    activation (3 damage) crossed the ≤ 0 threshold and correctly produced "testuser's life
+    total has reached 0 and they have lost the game (rule 104.3a)." — proving the existing
+    Phase 9 hook (`CounterState::valueChanged`) really is cause-agnostic, requiring zero new
+    code to cover this new damage source.
+- **Deliberately excluded**: multi-select targeted-ability activation (single-card-selection
+  only this stage); real battlefield inspection for anything beyond the flat
+  `DAMAGE_CARD_COUNTER_ID` convention; any stack integration (a targeted ability still
+  resolves immediately on tap+target-chosen, exactly like Stage 1's untargeted effects — real
+  stack resolution is Stage 3, unaffected by this stage); a second, real cross-player
+  connected-client verification pass (the solo-game self-target/card-target cases above
+  already exercise the full cross-player-capable protocol path, since "any target" legitimately
+  includes targeting yourself — a genuine second connected client would add confidence but
+  wasn't required to prove the mechanism works, and was treated as optional in the design
+  plan). Stages 3–6 (a real stack, real mana payment, triggered abilities, combat) remain
+  scoped but not implemented — each needs its own explicit go-ahead per this fork's standing
+  rule.
+
+**Status: Stage 2 implemented, tested, and live-verified. Stages 3–6 are a roadmap, not yet
+scoped for implementation — each needs its own explicit go-ahead, per this fork's standing
+rule for Phases 6–8.**
 
 ## Phase 9: State-Based Actions (advisory warnings)
 
@@ -1251,13 +1398,14 @@ as needing a card-rules engine this fork doesn't have).
 5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
    see "Phase 7" section above. Increment 2 (mana abilities) also **done**.
 6. ~~Phase 7's real card-ability *execution* engine~~ — **staged roadmap
-   scoped, Stage 1 done (2026-07-16).** See "Phase 7 'real card-ability
-   execution engine'" section above for the full Stage 1–6 roadmap and
-   Stage 1's implementation (narrow self-targeted activated abilities, zero
-   protocol changes). Stages 2–6 (targeting, a real stack, real mana
-   payment, triggered abilities, combat) remain scoped but not implemented
-   — each needs its own explicit sign-off before implementation starts, not
-   a blanket green light.
+   scoped, Stages 1–2 done (2026-07-16/17).** See "Phase 7 'real card-ability
+   execution engine'" section above for the full Stage 1–6 roadmap, Stage 1's
+   implementation (narrow self-targeted activated abilities, zero protocol
+   changes), and Stage 2's implementation (board-click targeting, players and
+   permanents, a new `Command_ActivateTargetedEffect`). Stages 3–6 (a real
+   stack, real mana payment, triggered abilities, combat) remain scoped but
+   not implemented — each needs its own explicit sign-off before
+   implementation starts, not a blanket green light.
 
 ## Design & Implementation Review — 2026-07-16
 

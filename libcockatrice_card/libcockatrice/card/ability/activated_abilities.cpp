@@ -49,6 +49,19 @@ const QRegularExpression &loseLifeLinePattern()
                                        QRegularExpression::CaseInsensitiveOption);
     return re;
 }
+
+// Stage 2: only the modern "any target" templating is recognized (a target that can be a
+// creature/permanent or a player, resolved at activation time via the client's board-click
+// targeting interaction -- see AbilityTargetPicker). Older phrasings ("target creature",
+// "target player", "target creature or player") are deliberately not matched -- same "exact
+// shape or skip" conservatism as every other pattern here; broadening this whitelist is a cheap
+// follow-up once this shape is proven, not attempted now.
+const QRegularExpression &dealDamageLinePattern()
+{
+    static const QRegularExpression re(QStringLiteral(R"(^\{T\}:\s*Deal (\d+) damage to any target\.$)"),
+                                       QRegularExpression::CaseInsensitiveOption);
+    return re;
+}
 } // namespace
 
 QList<ActivatedAbility> parse(const CardInfo &card)
@@ -82,6 +95,13 @@ QList<ActivatedAbility> parse(const CardInfo &card)
         const QRegularExpressionMatch loseMatch = loseLifeLinePattern().match(line);
         if (loseMatch.hasMatch()) {
             found.append(ActivatedAbility{true, CardEffect{EffectKind::LoseLife, loseMatch.captured(1).toInt()}});
+            continue;
+        }
+
+        const QRegularExpressionMatch damageMatch = dealDamageLinePattern().match(line);
+        if (damageMatch.hasMatch()) {
+            found.append(ActivatedAbility{
+                true, CardEffect{EffectKind::DealDamage, damageMatch.captured(1).toInt(), TargetKind::AnyTarget}});
             continue;
         }
     }

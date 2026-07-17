@@ -63,6 +63,9 @@ public:
     cmdSetActivePhase(const Command_SetActivePhase &cmd, ResponseContainer &rc, GameEventStorage &ges) override;
     Response::ResponseCode
     cmdPassPriority(const Command_PassPriority &cmd, ResponseContainer &rc, GameEventStorage &ges) override;
+    Response::ResponseCode cmdActivateTargetedEffect(const Command_ActivateTargetedEffect &cmd,
+                                                     ResponseContainer &rc,
+                                                     GameEventStorage &ges) override;
     Response::ResponseCode
     cmdReverseTurn(const Command_ReverseTurn & /*cmd*/, ResponseContainer & /*rc*/, GameEventStorage &ges) override;
     Response::ResponseCode cmdChangeZoneProperties(const Command_ChangeZoneProperties &cmd,
