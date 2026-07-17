@@ -28,7 +28,7 @@ life default — not the full stack/priority/combat engine).
 
 | Design doc phase | Status here | Notes |
 |---|---|---|
-| §3 Phase 1: Foundation & Build Setup | **In progress (reversed 2026-07-16)** | Originally *diverged*: new logic lived directly in existing `libcockatrice_card`/`libcockatrice_models`/`libcockatrice_network` behind `isCommanderGame()` gates, with no separate rules library. **As of 2026-07-16 this is being reversed** — a dedicated `libcockatrice_rules/` + `RulesEngine` is being stood up and the scattered logic migrated into it, and the fork is being made **wholly Commander-only** (game-type gates removed; engine always active). Foundation-first: the library/seam lands now, real enforcement grows inside it later. Still stays on Cockatrice's original branding/protocol (doc §0) — not forking to an independent ecosystem. See the [Design & Implementation Review](#design--implementation-review--2026-07-16) and its plan for scope/sequencing. |
+| §3 Phase 1: Foundation & Build Setup | **Done (reorganized 2026-07-16)** | Originally *diverged*: new logic lived directly in existing `libcockatrice_card`/`libcockatrice_models`/`libcockatrice_network` behind `isCommanderGame()` gates, with no separate rules library. **Reversed 2026-07-16 across two increments**: Increment 1 stood up `libcockatrice_rules/` + `RulesEngine` (server-side foundation, always-on). Increment 2 made the fork **wholly Commander-only** end to end (every client- and server-side `isCommanderGame()` gate removed; create-game/deck-editor UI collapsed to Commander-only; `CommanderRules`/`CommanderCounterNames` migrated into `libcockatrice_rules`, with `CommanderDeckValidator` deliberately left in `libcockatrice_models_deck_list` — see Increment 2's writeup below for why). Foundation-first: the library/seam landed first; real enforcement still grows inside it later (Increment 3+, not yet scoped). Still stays on Cockatrice's original branding/protocol (doc §0) — not forking to an independent ecosystem. See the [Design & Implementation Review](#design--implementation-review--2026-07-16) for the full increment history. |
 | §3 Phase 2: Commander Deck Validation | **Done** | `CommanderDeckValidator` (100-card count, singleton, color identity, legality), wired into both server-side game-start and a live client-side deck-editor status label. |
 | §3 Phase 3: Command Zone & Commander Tracking | **Done** | Command zone, commander tax counter, per-opponent commander-damage counters, client-side lethal-damage warning. Matches doc's proposed `CommanderState` fields (cast count, damage-dealt-to map) conceptually, implemented as counters rather than a dedicated struct, consistent with how Cockatrice already tracks all other numeric game state. |
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
@@ -1210,15 +1210,132 @@ builds/tests/pushes independently.
   comment referencing `Server_Game::isCommanderGame()` remains in the client's
   `game_meta_info.h` and is addressed in Increment 2.
 
+#### Increment 2 — Commander-only client + module migration (done, 2026-07-16)
+
+Followed [`doc/design-docs/rules-engine-increment2-plan.md`](doc/design-docs/rules-engine-increment2-plan.md)
+in a later session, continuing from Increment 1's resume point.
+
+- **Step 1, de-gating (always-on client behavior)**: every client-side
+  `isCommanderGame()` gate removed — `player_graphics_item.cpp` (empty-library-draw,
+  life ≤ 0, poison SBA warnings), `game_event_handler.cpp` (Cleanup discard-to-hand
+  warning), the Pass Priority button (`PhasesToolbar::setCommanderGame()` deleted
+  entirely, button now always constructed visible and its vertical slot always
+  reserved in `buttonCount`), and `GameMetaInfo::isCommanderGame()` itself deleted
+  (with its now-dangling doc-comment references in `player_logic.h` and
+  `message_log_widget.h` cleaned up).
+- **Step 2, UI strip**: `dlg_create_game.cpp`'s game-type radio-button selector
+  (`gameTypeCheckBoxes`, `QRadioButton` includes, the whole "Game type" group box)
+  removed entirely — the dialog now always submits every Commander-family game type
+  id from the room's config (via `CommanderRules::gameTypeLabelIsCommander()`, no
+  UI choice) and defaults/resets to 40 life / 4 players unconditionally. The deck
+  editor's format `QComboBox`/`initializeFormats()` removed the same way;
+  `DeckListModel::refreshCardFormatLegalities()` now hardcodes the format string to
+  `"commander"` (previously read `deckList->getGameFormat()`, which would have been
+  silently empty with no picker to set it — hardcoding was necessary, not just
+  dropping the gate, since `isCardQuantityLegalForFormat()` trivially returns `true`
+  for an empty format string) and always computes color identity when a banner card
+  is set; `updateCommanderValidation()` in the deck editor dropped its
+  `formatUsesColorIdentity()` gate and always runs.
+- **Step 3, module migration — narrower than originally planned, and why**:
+  `commander_rules.{h,cpp}` (card → rules) and `commander_counter_names.h`
+  (utility → rules) both moved into `libcockatrice_rules` as planned — both are
+  unconditionally-built libraries (`libcockatrice_card`/`libcockatrice_rules`
+  always compile in every `WITH_SERVER`/`WITH_CLIENT`/`WITH_ORACLE` combination,
+  confirmed against `.ci/compile.sh`'s server-only CI path), so no cycle or
+  conditional-availability problem. **`commander_deck_validator.{h,cpp}` was
+  deliberately left in `libcockatrice_models_deck_list`**, diverging from the plan
+  doc's step 3 list: it needs `DeckListModel`, and `libcockatrice_models` is only
+  `add_subdirectory`'d under `if(WITH_ORACLE OR WITH_CLIENT)` — moving the
+  validator into the always-built `libcockatrice_rules` would have made a
+  server-only build (`MAKE_SERVER=1 MAKE_NO_CLIENT=1`, a real supported CI
+  configuration) fail to configure, since `libcockatrice_rules` would then
+  unconditionally require a target that doesn't exist in that configuration. This
+  is exactly the kind of obstacle the plan doc's acyclicity caveat anticipated,
+  just from a different angle (build-configuration availability, not a literal
+  `target_link_libraries` cycle) — same escape hatch invoked: leave the
+  tightly-coupled-to-`DeckListModel` piece where it already was.
+  `libcockatrice_models_deck_list` gained `libcockatrice_rules` as a new `PUBLIC`
+  dependency instead (one-directional: rules ← models_deck_list, confirmed acyclic
+  by a clean `cmake` reconfigure with zero errors). `cockatrice`'s own
+  `CMakeLists.txt` gained a direct `libcockatrice_rules` link (needed for
+  `commander_counter_names.h` in `player_graphics_item.cpp` and
+  `commander_rules.h` in four deck-editor/create-game/EDHRec client files).
+- **A real staleness trap, caught and fixed**: the first `make -j1 cockatrice` after
+  the Step 3 file moves + `CMakeLists.txt` edits reported **zero errors** — but this
+  was a false pass. `CMakeCache.txt`'s mtime proved `cmake` never actually
+  reconfigured during that build (a plain `make <target>` invocation, it turns out,
+  doesn't reliably re-trigger `cmake_check_build_system` here the way a bare `make`
+  does), so the link succeeded only because the *old* `liblibcockatrice_card.a` /
+  `liblibcockatrice_utility.a` archives — built days earlier, before the file
+  moves — still physically contained the moved-away `.o` members (`ar` archives
+  aren't stripped of members that fall off a `CMakeLists.txt` source list; only a
+  full archive rebuild does that). The real, moved `commander_rules.cpp` had
+  **not** actually been compiled into the new `libcockatrice_rules` at all yet.
+  Caught by explicitly checking `build/libcockatrice_rules/` for the expected new
+  `.o` files and finding them absent. Fixed by forcing `cmake .` (confirmed a clean
+  reconfigure with no dependency-graph errors — validating the acyclicity design
+  above), deleting the stale `.a` archives for the three affected libraries to force
+  a genuine relink, and rebuilding `libcockatrice_utility` → `libcockatrice_card` →
+  `libcockatrice_rules` → `libcockatrice_models_deck_list` → `cockatrice` →
+  `servatrice` in dependency order, confirming `commander_rules.cpp.o` now actually
+  appears under `build/libcockatrice_rules/` and `liblibcockatrice_card.a` no
+  longer contains it. **Lesson for future sessions doing source-file moves across
+  `CMakeLists.txt` targets in this sandbox: don't trust a clean `make <target>`
+  exit code alone after changing which files belong to which library — verify the
+  actual object files landed in the new target's build directory, or force an
+  explicit `cmake .` first.**
+- **Tests**: `commander_rules_test` relinked against `libcockatrice_rules` instead
+  of `libcockatrice_card` (its `CMakeLists.txt` target and the test file's
+  `#include` both updated); `commander_deck_validator_test` needed no `CMakeLists.txt`
+  change (already links `libcockatrice_models`, which now transitively pulls in
+  `libcockatrice_rules` via `libcockatrice_models_deck_list`'s new dependency).
+  Full suite: **20/20 pass**, zero regressions. `format.sh --cmake --branch master`
+  run clean (cosmetic include-reordering only); full rebuild + retest after
+  formatting also 20/20.
+- **Verified live** (local servatrice + Xvfb + real client, screenshot + debug-log
+  cross-reference), covering every item the plan doc's Step 4 checklist called for:
+  - Create-game dialog: no game-type selector at all; "Clear" confirms the true
+    defaults are exactly 40 life / 4 players (a "Remember settings"-enabled test
+    client showed a remembered `Players: 1` first, which is correct — remembered
+    settings still override built-in defaults by design, not a bug).
+  - Deck editor: no Format combo box/label; the Commander-legality red/green label
+    is unconditionally active (previously invisible without a format selected) and
+    correctly flagged a 3-card test deck ("Commander decks must contain exactly 100
+    cards including the commander (found 3)"), proving the hardcoded `"commander"`
+    format string in `refreshCardFormatLegalities()` resolves real singleton/banned
+    rules from the card database.
+  - Priority button: always visible with no gate; clicking it in a solo game sent
+    `Command_PassPriority` and got back `Event_PriorityChanged { priority_player_id:
+    -1 }` plus the "Everyone has passed. No one has priority." log line — the
+    corrected Phase 5 model, now ungated, still doesn't loop.
+  - Command zone / commander tax: dragging Atraxa from the command zone to the
+    battlefield still incremented `Commander Tax: Atraxa, Praetors' Voice` 0→1,
+    confirming `Server_Player`'s command-zone/tax logic (already de-gated in
+    Increment 1) is unaffected by the client-side changes.
+  - Phase 7 Increment 1 (keyword display) unaffected: Atraxa's card-info panel
+    still showed a "Keywords: Deathtouch, Flying, Lifelink, Vigilance" row (this
+    code path wasn't touched by Increment 2 at all — confirmed as a
+    no-regression check, not a new feature).
+  - Phase 9 SBA warning still fires ungated: manually decrementing life to 0
+    produced "testuser's life total has reached 0 and they have lost the game
+    (rule 104.3a)."
+
+**Status: implemented, tested, and live-verified.** Pushed to `fork/commander-rules`.
+
 #### ▶ Resume point (as of 2026-07-16)
 
-Working tree clean; `HEAD` = `fork/commander-rules` = `2eea118` (all pushed).
-**Next: Increment 2** — Commander-only client + module migration. The full step-by-step
-plan (exact client call sites, deck-editor strip, module-migration acyclicity caveat,
-build/verify, and sandbox/ccache resume notes) is in
-[`doc/design-docs/rules-engine-increment2-plan.md`](doc/design-docs/rules-engine-increment2-plan.md).
-Start there. Note Increment 2 requires a **full client rebuild** (heaviest target) and
-live Xvfb re-verification.
+Increments 0–2 of the rules-engine reorganization are done: `libcockatrice_rules`
+exists, holds `RulesEngine` + `CommanderRules` + `CommanderCounterNames`, every
+server- and client-side `isCommanderGame()` gate is gone (engine always active),
+and the client no longer offers a non-Commander game-type or deck-format choice.
+`CommanderDeckValidator` stayed in `libcockatrice_models_deck_list` by deliberate,
+documented exception (see Increment 2's Step 3 writeup above) — a future session
+revisiting library boundaries should treat that as a scoped decision, not an
+oversight. **Increment 3+ (real rule enforcement growing inside `RulesEngine`)
+is future work, not yet scoped** — the plan doc's own "Increment 3+" section
+sketches the direction (a resolvable stack-object model, mana `canPay()`/`pay()`,
+then combat) but explicitly defers it pending its own design pass, per this fork's
+standing rule that Phases 6–8 need explicit sign-off before implementation.
 
 ### Token-efficiency plan for build & test iteration
 
