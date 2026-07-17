@@ -13,7 +13,7 @@ add_executable(commander_rules_test commander_rules_test.cpp)
 
 target_link_libraries(
   commander_rules_test
-  PRIVATE libcockatrice_card
+  PRIVATE libcockatrice_rules
   PRIVATE Threads::Threads
   PRIVATE ${GTEST_BOTH_LIBRARIES}
   PRIVATE ${TEST_QT_MODULES}

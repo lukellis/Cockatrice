@@ -4,10 +4,10 @@
 
 #include <QCoreApplication>
 #include <libcockatrice/card/database/card_database_manager.h>
-#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/deck_list/deck_list.h>
 #include <libcockatrice/deck_list/tree/deck_list_card_node.h>
 #include <libcockatrice/deck_list/tree/inner_deck_list_node.h>
+#include <libcockatrice/rules/commander_rules.h>
 
 namespace CommanderDeckValidator
 {

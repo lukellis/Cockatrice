@@ -47,8 +47,8 @@
 #include <libcockatrice/protocol/pb/serverinfo_player.pb.h>
 #include <libcockatrice/protocol/pb/serverinfo_user.pb.h>
 #include <libcockatrice/rng/rng_abstract.h>
+#include <libcockatrice/rules/commander_counter_names.h>
 #include <libcockatrice/utility/color.h>
-#include <libcockatrice/utility/commander_counter_names.h>
 #include <libcockatrice/utility/string_limits.h>
 #include <libcockatrice/utility/zone_names.h>
 

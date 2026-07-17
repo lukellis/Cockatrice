@@ -11,7 +11,10 @@ elseif(Qt5_FOUND)
 endif()
 
 add_library(
-  libcockatrice_rules STATIC ${MOC_SOURCES} libcockatrice/rules/rules_engine.cpp libcockatrice/rules/rules_engine.h
+  libcockatrice_rules STATIC
+  ${MOC_SOURCES} libcockatrice/rules/rules_engine.cpp libcockatrice/rules/rules_engine.h
+  libcockatrice/rules/commander_rules.cpp libcockatrice/rules/commander_rules.h
+  libcockatrice/rules/commander_counter_names.h
 )
 
 target_include_directories(libcockatrice_rules PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -19,5 +22,6 @@ target_include_directories(libcockatrice_rules PUBLIC ${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(
   libcockatrice_rules
   PUBLIC libcockatrice_utility
+  PUBLIC libcockatrice_card
   PUBLIC ${QT_CORE_MODULE}
 )

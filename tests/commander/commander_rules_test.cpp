@@ -1,6 +1,6 @@
 #include "gtest/gtest.h"
 #include <libcockatrice/card/card_info.h>
-#include <libcockatrice/card/format/commander_rules.h>
+#include <libcockatrice/rules/commander_rules.h>
 
 namespace
 {

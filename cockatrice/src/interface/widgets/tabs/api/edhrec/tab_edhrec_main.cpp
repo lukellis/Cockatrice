@@ -23,9 +23,9 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <libcockatrice/card/database/card_database_manager.h>
-#include <libcockatrice/card/format/commander_rules.h>
 #include <libcockatrice/models/database/card/card_completer_proxy_model.h>
 #include <libcockatrice/models/database/card/card_search_model.h>
+#include <libcockatrice/rules/commander_rules.h>
 #include <version_string.h>
 
 static bool canBeCommander(const CardInfoPtr &cardInfo)

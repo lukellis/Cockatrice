@@ -464,6 +464,7 @@ if(Qt5_FOUND)
     libcockatrice_network
     libcockatrice_models
     libcockatrice_rng
+    libcockatrice_rules
     libcockatrice_settings
     ${COCKATRICE_QT_MODULES}
   )
@@ -477,6 +478,7 @@ else()
            libcockatrice_network
            libcockatrice_models
            libcockatrice_rng
+           libcockatrice_rules
            libcockatrice_settings
            ${COCKATRICE_QT_MODULES}
   )

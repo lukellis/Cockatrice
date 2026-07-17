@@ -21,7 +21,6 @@ set(UTILITY_HEADERS
     libcockatrice/utility/clamped_arithmetic.h
     libcockatrice/utility/zone_names.h
     libcockatrice/utility/days_years_between.h
-    libcockatrice/utility/commander_counter_names.h
 )
 
 add_library(libcockatrice_utility STATIC ${UTILITY_SOURCES} ${UTILITY_HEADERS})

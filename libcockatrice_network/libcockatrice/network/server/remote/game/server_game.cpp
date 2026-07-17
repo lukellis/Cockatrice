@@ -54,8 +54,8 @@
 #include <libcockatrice/protocol/pb/event_set_active_phase.pb.h>
 #include <libcockatrice/protocol/pb/event_set_active_player.pb.h>
 #include <libcockatrice/protocol/pb/game_replay.pb.h>
+#include <libcockatrice/rules/commander_counter_names.h>
 #include <libcockatrice/utility/color.h>
-#include <libcockatrice/utility/commander_counter_names.h>
 #include <libcockatrice/utility/zone_names.h>
 
 Server_Game::Server_Game(const ServerInfo_User &_creatorInfo,
