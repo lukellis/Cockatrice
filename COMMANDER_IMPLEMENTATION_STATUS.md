@@ -1210,6 +1210,16 @@ builds/tests/pushes independently.
   comment referencing `Server_Game::isCommanderGame()` remains in the client's
   `game_meta_info.h` and is addressed in Increment 2.
 
+#### ▶ Resume point (as of 2026-07-16)
+
+Working tree clean; `HEAD` = `fork/commander-rules` = `2eea118` (all pushed).
+**Next: Increment 2** — Commander-only client + module migration. The full step-by-step
+plan (exact client call sites, deck-editor strip, module-migration acyclicity caveat,
+build/verify, and sandbox/ccache resume notes) is in
+[`doc/design-docs/rules-engine-increment2-plan.md`](doc/design-docs/rules-engine-increment2-plan.md).
+Start there. Note Increment 2 requires a **full client rebuild** (heaviest target) and
+live Xvfb re-verification.
+
 ### Token-efficiency plan for build & test iteration
 
 The dominant token cost in the current loop is **reading screenshots** — each `Read`
