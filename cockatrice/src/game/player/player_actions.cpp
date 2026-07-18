@@ -12,6 +12,7 @@
 #include "../zones/view_zone_logic.h"
 
 #include <QGraphicsScene>
+#include <QMessageBox>
 #include <libcockatrice/card/ability/activated_abilities.h>
 #include <libcockatrice/card/ability/mana_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
@@ -33,6 +34,7 @@
 #include <libcockatrice/protocol/pb/command_shuffle.pb.h>
 #include <libcockatrice/protocol/pb/command_undo_draw.pb.h>
 #include <libcockatrice/protocol/pb/context_move_card.pb.h>
+#include <libcockatrice/rules/rules_engine.h>
 #include <libcockatrice/utility/clamped_arithmetic.h>
 #include <libcockatrice/utility/counter_limits.h>
 #include <libcockatrice/utility/expression.h>
@@ -1671,8 +1673,9 @@ static QList<ManaTapOption> manaTapOptionsForCard(const CardItem *card)
 // 7 section for the staged roadmap): a card's simplest self-targeted "{T}: <effect>." activated
 // ability, if it has exactly one. Unlike mana abilities, Stage 1 effects are never ambiguous by
 // construction (no choice dialog needed) -- a card with more than one qualifying line is left
-// unhandled here rather than guessed at, same conservatism as the parser itself.
-static std::optional<CardEffect> nonManaActivatedAbilityForCard(const CardItem *card)
+// unhandled here rather than guessed at, same conservatism as the parser itself. Returns the whole
+// ActivatedAbility (not just its effect) since Phase 7 Stage 4 also needs the parsed ManaCost.
+static std::optional<ActivatedAbility> nonManaActivatedAbilityForCard(const CardItem *card)
 {
     if (!card || card->getTapped() || !card->getZone() || card->getZone()->getName() != ZoneNames::TABLE) {
         return std::nullopt;
@@ -1687,7 +1690,70 @@ static std::optional<CardEffect> nonManaActivatedAbilityForCard(const CardItem *
     if (abilities.size() != 1) {
         return std::nullopt;
     }
-    return abilities.first().effect;
+    return abilities.first();
+}
+
+// Phase 7 Stage 4: the local player's current mana pool, keyed by the same w/u/b/r/g/x counter
+// names as RulesEngine::manaCounterNames() / ManaCost::coloredPips, read from the already-mirrored
+// client-side counter state (same source actApplyTap()'s mana-ability handling already reads).
+static QMap<QString, int> currentManaPool(PlayerLogic *player)
+{
+    QMap<QString, int> pool;
+    if (!player) {
+        return pool;
+    }
+    const QMap<int, CounterState *> counters = player->getCounters();
+    for (auto it = counters.constBegin(); it != counters.constEnd(); ++it) {
+        pool.insert(it.value()->getName(), it.value()->getValue());
+    }
+    return pool;
+}
+
+// Phase 7 Stage 4: a "{2}{R}"-style display string for a ManaCost, used only in the "can't afford"
+// dialog. Generic first, then colored pips in RulesEngine::manaCounterNames() order (matching the
+// deterministic payment order planManaPayment() itself uses).
+static QString manaCostDescription(const ManaCost &cost)
+{
+    QString description;
+    if (cost.generic > 0) {
+        description += QStringLiteral("{%1}").arg(cost.generic);
+    }
+    for (const QString &counterName : Rules::RulesEngine::manaCounterNames()) {
+        const int count = cost.coloredPips.value(counterName, 0);
+        const QString symbol = counterName == QLatin1String("x") ? QStringLiteral("C") : counterName.toUpper();
+        for (int i = 0; i < count; ++i) {
+            description += QStringLiteral("{%1}").arg(symbol);
+        }
+    }
+    return description;
+}
+
+// Phase 7 Stage 4: appends one negative Command_IncCounter per (counterName, amount) entry in
+// @p payment -- the exact deduction plan RulesEngine::planManaPayment() already computed -- to
+// @p commandList, looking up each counter's id by name the same way actApplyTap()'s own
+// appendManaIncrement lambda does for (positive) mana-ability production.
+static void appendManaPaymentCommands(QList<const ::google::protobuf::Message *> &commandList,
+                                      PlayerLogic *player,
+                                      const QMap<QString, int> &payment)
+{
+    if (!player || payment.isEmpty()) {
+        return;
+    }
+    const QMap<int, CounterState *> counters = player->getCounters();
+    for (auto paymentIt = payment.constBegin(); paymentIt != payment.constEnd(); ++paymentIt) {
+        if (paymentIt.value() <= 0) {
+            continue;
+        }
+        for (auto counterIt = counters.constBegin(); counterIt != counters.constEnd(); ++counterIt) {
+            if (counterIt.value()->getName() == paymentIt.key()) {
+                auto *counterCmd = new Command_IncCounter;
+                counterCmd->set_counter_id(counterIt.key());
+                counterCmd->set_delta(-paymentIt.value());
+                commandList.append(counterCmd);
+                break;
+            }
+        }
+    }
 }
 
 QList<ManaTapChoice> PlayerActions::computeManaTapChoices(const QList<CardItem *> &cardList) const
@@ -1756,14 +1822,23 @@ void PlayerActions::actApplyTap(QList<CardItem *> cardList, QMap<const CardItem 
         // COMMANDER_IMPLEMENTATION_STATUS.md's Phase 7 Stage 3 section). Independent of the mana
         // handling above (different, mutually-exclusive regex whitelists on the same rules text),
         // so both can fire for a card that happens to have one line of each kind.
-        if (const std::optional<CardEffect> effect = nonManaActivatedAbilityForCard(card)) {
-            switch (effect->kind) {
+        if (const std::optional<ActivatedAbility> ability = nonManaActivatedAbilityForCard(card)) {
+            // Phase 7 Stage 4: a costed ability is only ever activated via the single-card path
+            // in cardMenuAction() (which checks affordability up front and blocks the whole
+            // activation -- including this card's tap above -- if it can't be paid). A
+            // multi-select batch simply doesn't attempt a costed ability at all, same "don't
+            // guess" precedent as an ambiguous mana choice above; the tap already queued above is
+            // unaffected.
+            if (!ability->cost.isFree()) {
+                continue;
+            }
+            switch (ability->effect.kind) {
                 case EffectKind::DrawCards:
                 case EffectKind::GainLife:
                 case EffectKind::LoseLife: {
                     auto *abilityCmd = new Command_ActivateAbility;
-                    abilityCmd->set_effect_kind(static_cast<int>(effect->kind));
-                    abilityCmd->set_amount(effect->amount);
+                    abilityCmd->set_effect_kind(static_cast<int>(ability->effect.kind));
+                    abilityCmd->set_amount(ability->effect.amount);
                     commandList.append(abilityCmd);
                     break;
                 }
@@ -1791,8 +1866,13 @@ void PlayerActions::actApplyTap(QList<CardItem *> cardList, QMap<const CardItem 
 // Deliberately does not also apply an unambiguous mana ability the way actApplyTap() does for
 // untargeted taps -- no real printed card combines a mana ability with a targeted damage ability
 // on the same tap-cost line, so this is left unhandled rather than guessed at, same conservatism
-// as every other narrow boundary in this parser/dispatch pair.
-void PlayerActions::actApplyTapWithTarget(CardItem *card, CardEffect effect, AbilityTarget target)
+// as every other narrow boundary in this parser/dispatch pair. Phase 7 Stage 4: manaPayment is the
+// already-computed, already-affordability-checked deduction plan from cardMenuAction() (empty for a
+// free ability) -- this function only ever sends it, never re-checks or re-plans it.
+void PlayerActions::actApplyTapWithTarget(CardItem *card,
+                                          CardEffect effect,
+                                          AbilityTarget target,
+                                          const QMap<QString, int> &manaPayment)
 {
     if (!card || !card->getZone()) {
         return;
@@ -1807,6 +1887,8 @@ void PlayerActions::actApplyTapWithTarget(CardItem *card, CardEffect effect, Abi
     tapCmd->set_attr_value("1");
     commandList.append(tapCmd);
 
+    appendManaPaymentCommands(commandList, player, manaPayment);
+
     auto *effectCmd = new Command_ActivateAbility;
     effectCmd->set_effect_kind(static_cast<int>(effect.kind));
     effectCmd->set_amount(effect.amount);
@@ -1816,6 +1898,36 @@ void PlayerActions::actApplyTapWithTarget(CardItem *card, CardEffect effect, Abi
         effectCmd->set_target_card_id(target.targetCardId);
     }
     commandList.append(effectCmd);
+
+    sendGameCommand(prepareGameCommand(commandList));
+}
+
+// Phase 7 Stage 4: the untargeted sibling of actApplyTapWithTarget() -- a single card's costed
+// non-mana activated ability, resolved without needing AbilityTargetPicker at all. Called only from
+// cardMenuAction()'s single-card interception once affordability has already been checked and the
+// payment plan computed; manaPayment is sent as-is, same "already resolved, just send it" contract
+// as actApplyTapWithTarget().
+void PlayerActions::actApplyTapWithCost(CardItem *card, CardEffect effect, const QMap<QString, int> &manaPayment)
+{
+    if (!card || !card->getZone()) {
+        return;
+    }
+
+    QList<const ::google::protobuf::Message *> commandList;
+
+    auto *tapCmd = new Command_SetCardAttr;
+    tapCmd->set_zone(card->getZone()->getName().toStdString());
+    tapCmd->set_card_id(card->getId());
+    tapCmd->set_attribute(AttrTapped);
+    tapCmd->set_attr_value("1");
+    commandList.append(tapCmd);
+
+    appendManaPaymentCommands(commandList, player, manaPayment);
+
+    auto *abilityCmd = new Command_ActivateAbility;
+    abilityCmd->set_effect_kind(static_cast<int>(effect.kind));
+    abilityCmd->set_amount(effect.amount);
+    commandList.append(abilityCmd);
 
     sendGameCommand(prepareGameCommand(commandList));
 }
@@ -1962,24 +2074,52 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
 {
     QList<CardItem *> cardList = selectedCards;
 
-    // Phase 7 Stage 2 (targeting): checked ahead of everything else below, and only for a single
-    // selected card -- multi-select batch-targeting (each card needing its own independently
-    // resolved target) is real added complexity explicitly deferred, not attempted here (same
-    // "left unhandled rather than guessed at" conservatism as the parser's own boundaries).
-    // nonManaActivatedAbilityForCard() already returns std::nullopt for an already-tapped card,
-    // so this naturally never fires on an cmUntap click.
+    // Phase 7 Stages 2/4 (targeting / mana cost): checked ahead of everything else below, and only
+    // for a single selected card -- multi-select batch activation (each card needing its own
+    // independently resolved target and/or mana payment) is real added complexity explicitly
+    // deferred, not attempted here (same "left unhandled rather than guessed at" conservatism as
+    // the parser's own boundaries; actApplyTap()'s own per-card loop below only ever activates
+    // *free* non-mana abilities for a multi-select batch). nonManaActivatedAbilityForCard() already
+    // returns std::nullopt for an already-tapped card, so this naturally never fires on a cmUntap
+    // click.
     if (type == cmTap && cardList.size() == 1) {
         CardItem *soleCard = cardList.first();
-        if (const std::optional<CardEffect> effect = nonManaActivatedAbilityForCard(soleCard);
-            effect && effect->target == TargetKind::AnyTarget) {
-            auto *picker = new AbilityTargetPicker(player, soleCard);
-            soleCard->scene()->addItem(picker);
-            connect(picker, &AbilityTargetPicker::targetChosen, this,
-                    [this, soleCard, effect = *effect](const AbilityTarget &target) {
-                        actApplyTapWithTarget(soleCard, effect, target);
-                    });
-            picker->grabMouse();
-            return;
+        if (const std::optional<ActivatedAbility> ability = nonManaActivatedAbilityForCard(soleCard)) {
+            // Phase 7 Stage 4: affordability is checked once, up front, before anything (tap
+            // included) is sent -- a real activation, per rule 601.2h, either pays its full cost
+            // or never starts. planManaPayment() returns the exact deduction plan to send; the
+            // dialog below explains the shortfall the same way this fork's other advisory
+            // messages do (Phase 9 SBA warnings), even though this is otherwise the one place in
+            // this fork that actually blocks an action rather than just warning about it.
+            QMap<QString, int> payment;
+            if (!ability->cost.isFree()) {
+                const auto plan = Rules::RulesEngine::planManaPayment(ability->cost, currentManaPool(player));
+                if (!plan) {
+                    QMessageBox::information(
+                        nullptr, tr("Cannot Activate"),
+                        tr("Not enough mana to pay this ability's cost (%1).").arg(manaCostDescription(ability->cost)));
+                    return;
+                }
+                payment = *plan;
+            }
+
+            if (ability->effect.target == TargetKind::AnyTarget) {
+                auto *picker = new AbilityTargetPicker(player, soleCard);
+                soleCard->scene()->addItem(picker);
+                connect(picker, &AbilityTargetPicker::targetChosen, this,
+                        [this, soleCard, effect = ability->effect, payment](const AbilityTarget &target) {
+                            actApplyTapWithTarget(soleCard, effect, target, payment);
+                        });
+                picker->grabMouse();
+                return;
+            }
+
+            if (!ability->cost.isFree()) {
+                actApplyTapWithCost(soleCard, ability->effect, payment);
+                return;
+            }
+            // Free, untargeted ability -- fall through to the existing generic mana-choice /
+            // actApplyTap() path below, unchanged from before Stage 4.
         }
     }
 

@@ -226,7 +226,11 @@ public slots:
     void actSetCardCounter(QList<CardItem *> selectedCards, int counterId, const QString &counterValue);
     void actIncrementAllCardCounters(QList<CardItem *> cardsToUpdate);
     void actApplyTap(QList<CardItem *> cardList, QMap<const CardItem *, ManaTapOption> chosenManaOptions);
-    void actApplyTapWithTarget(CardItem *card, CardEffect effect, AbilityTarget target);
+    void actApplyTapWithTarget(CardItem *card,
+                               CardEffect effect,
+                               AbilityTarget target,
+                               const QMap<QString, int> &manaPayment = {});
+    void actApplyTapWithCost(CardItem *card, CardEffect effect, const QMap<QString, int> &manaPayment);
     void actAttach();
     void actUnattach(QList<CardItem *> selectedCards);
     void actDrawArrow();

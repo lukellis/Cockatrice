@@ -24,14 +24,18 @@ namespace ActivatedAbilities
 {
 
 /**
- * @brief Parses @p card's rules text for standalone "{T}: <effect>." lines matching one of a small
- * whitelist of exact effect shapes, and returns one ActivatedAbility per qualifying line found.
- * Currently recognized shapes: "{T}: Draw a card.", "{T}: You gain N life.", "{T}: You lose N
- * life.", "{T}: Deal N damage to any target." (the last sets CardEffect::target to
- * TargetKind::AnyTarget; older non-"any target" templating like "target creature"/"target player"
- * is deliberately not matched). Anything else on a "{T}: ..." line (an additional/alternative
- * cost, a trailing condition, or an effect shape not in the whitelist above) causes that line to
- * be skipped entirely, never guessed at -- same philosophy as ManaAbilities::parse().
+ * @brief Parses @p card's rules text for standalone "{T}: <effect>." (optionally
+ * "<mana cost>, {T}: <effect>.", Phase 7 Stage 4) lines matching one of a small whitelist of exact
+ * effect shapes, and returns one ActivatedAbility per qualifying line found. Currently recognized
+ * shapes: "{T}: Draw a card.", "{T}: You gain N life.", "{T}: You lose N life.", "{T}: Deal N
+ * damage to any target." (the last sets CardEffect::target to TargetKind::AnyTarget; older
+ * non-"any target" templating like "target creature"/"target player" is deliberately not
+ * matched), each optionally prefixed with a directly-concatenated mana-cost symbol string (plain
+ * digits and/or W/U/B/R/G/C only -- no {X}, hybrid, or Phyrexian symbols) followed by a comma,
+ * populating ActivatedAbility::cost (default free when no prefix is present). Anything else on a
+ * "{T}: ..." line (a non-mana additional/alternative cost, a trailing condition, or an effect
+ * shape not in the whitelist above) causes that line to be skipped entirely, never guessed at --
+ * same philosophy as ManaAbilities::parse().
  */
 QList<ActivatedAbility> parse(const CardInfo &card);
 

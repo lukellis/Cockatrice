@@ -2,6 +2,7 @@
 #define COCKATRICE_RULES_ENGINE_H
 
 #include <QList>
+#include <QMap>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -100,6 +101,21 @@ public:
      * the active one.
      */
     static const QStringList &manaCounterNames();
+
+    /**
+     * @brief Phase 7 Stage 4: pure mana-payment planning. Given @p cost and a player's current
+     * @p pool (keyed by the same w/u/b/r/g/x counter names as manaCounterNames(), values are the
+     * current count of each), returns the exact per-counter-name deduction plan if @p pool can
+     * afford @p cost, or std::nullopt if it can't. Colored pips are paid first, one-for-one, from
+     * the matching color only (a shortfall in any single color fails the whole plan); the
+     * remaining generic amount is then paid by draining whatever colors are left over, in
+     * manaCounterNames()'s fixed order (w, u, b, r, g, x) -- a deterministic simplification of
+     * real Magic's player-choice-driven generic payment (same "let the player pick, we don't
+     * model the restriction" spirit as the Command Tower-style mana-production simplification,
+     * just applied to which already-produced mana pays a generic cost -- bookkeeping only, not a
+     * meaningful in-game decision under this fork's flat counter-based mana pool).
+     */
+    static std::optional<QMap<QString, int>> planManaPayment(const ManaCost &cost, const QMap<QString, int> &pool);
 
     // ---- Priority round state ----
 

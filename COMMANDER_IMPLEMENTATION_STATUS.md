@@ -34,7 +34,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Narrow slice done (2026-07-16)** | Cost validation/auto-tap needs Phase 7 (out of reach) — still not implemented. The one in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) is implemented, tested, and live-verified; see "Phase 6" section below. |
-| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–3 done (2026-07-17)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), and Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`) all implemented, tested, and live-verified. Stages 4–6 (real mana payment, triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–4 done (2026-07-17/18)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`), and Stage 4 (real mana cost payment — parse a cost prefix, gate/pay it against the mana pool, zero new protocol messages) all implemented, tested, and live-verified. Stages 5–6 (triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -1068,6 +1068,128 @@ state changes, not just who's allowed to act.
 
 **Status: Stage 3 implemented, tested, and live-verified.**
 
+### Stage 4 — real mana cost payment (2026-07-17/18)
+
+Authorized by the user via a dedicated plan-mode design pass (same treatment Stages 1–3 got),
+picked from a menu of Stage 4/5/6/other options. Closes the last gap in the activated-ability
+whitelist: every ability recognized through Stage 3 cost only `{T}` — no mana. Stage 4 parses a
+mana-cost prefix off a card's activated-ability line (e.g. `{2}{R}, {T}: Deal 2 damage to any
+target.`) and actually gates/pays it against the player's existing per-player mana-pool counters
+(`w`/`u`/`b`/`r`/`g`/`x`, established in Phase 6) — the roadmap's flagged "real enforcement, not
+just advisory" item, the one deliberate exception to this fork's usual non-blocking philosophy.
+
+**Scope carve-outs, decided during design, following this parser family's established "exact
+shape or skip" conservatism**:
+- **Only non-mana `ActivatedAbility` costs** (Stage 1–3's `DrawCards`/`GainLife`/`LoseLife`/
+  `DealDamage` kinds). `ManaAbilities` (mana-*producing* abilities, Phase 7 Increment 2) stay
+  free-only — real printed mana abilities are overwhelmingly costless besides `{T}`; a costed mana
+  ability is rare enough to be separate, lower-value follow-up work, not attempted here.
+- **Cost recognized only as directly-concatenated symbols before a comma and `{T}`**, e.g.
+  `{2}{R}, {T}: ...` — each symbol must be a plain digit (generic) or one of `W`/`U`/`B`/`R`/`G`/`C`
+  (a colored or colorless pip). `{X}`, hybrid (`{W/U}`), and Phyrexian (`{W/P}`) symbols don't fit
+  this token shape at all, so a line using one simply fails to match and is skipped entirely — no
+  special-case code needed, the conservatism falls out of the regex shape itself.
+- **Real gating, not just a warning**: if the cost can't be paid, the whole activation — tap
+  included — never happens, plus a small explanatory dialog. Every other advisory/SBA mechanism in
+  this fork only ever warns after the fact; this is the first one that actually blocks.
+- **Single-card activation only**, same boundary Stage 2 already established for targeted
+  abilities: a multi-select batch tap continues to activate only *free* non-mana abilities exactly
+  as before Stage 4; a costed ability inside a multi-select batch is simply not attempted (skipped,
+  tap of *other* cards in the selection unaffected) rather than guessing at a shared/depleting pool
+  across several simultaneously-tapped cards.
+- **Deterministic, no player choice for generic payment**: colored pips are paid exactly; the
+  remaining generic amount drains whatever's left over in `RulesEngine::manaCounterNames()`'s fixed
+  w→u→b→r→g→x order. Same simplification spirit as Command Tower's "any of five colors, let the
+  player pick" (Phase 7 Increment 2 follow-up) — there, simplifying *production*; here, simplifying
+  *which already-produced mana pays a generic cost*, an even lower-stakes bookkeeping-only choice
+  under this fork's flat counter-based mana pool.
+- **Zero new protocol messages** — the biggest simplification this stage found. The client fully
+  resolves the cost from card text at activation time (same trust model every Phase 7 stage uses —
+  the server has no card database) and sends the payment as ordinary negative-delta
+  `Command_IncCounter`s, batched alongside the existing tap (`Command_SetCardAttr`) and
+  `Command_ActivateAbility` commands. The server needs no new logic at all — it's exactly as trusting
+  of a payment batch as it already is of every other client-computed command in this fork.
+
+**What's implemented**:
+- **IR extension** (`card_effects.h`): new `ManaCost` struct (`coloredPips: QMap<QString,int>` keyed
+  by mana-pool counter name, `generic: int`, `isFree()`), and a `cost` field on `ActivatedAbility`
+  (default-constructed free, so every ability recognized before Stage 4 is unaffected by
+  construction — confirmed by a new `PreExistingFreeAbilitiesStillParseAsFree` test).
+- **Parser extension** (`activated_abilities.cpp`): all four line patterns
+  (`drawCardLinePattern`/`gainLifeLinePattern`/`loseLifeLinePattern`/`dealDamageLinePattern`) gain
+  an optional, non-capturing `(?:((?:\{(?:[0-9]+|[WUBRGC])\})+),\s*)?` prefix ahead of the existing
+  `\{T\}:`. A new `parseManaCost()` helper token-scans the captured cost string the same way
+  `mana_abilities.cpp`'s `manaSymbolPattern()` already does, accumulating digit tokens into
+  `generic` and letter tokens into `coloredPips` (`C` → `"x"`, same mapping
+  `manaCounterNameForSymbol()` in `player_actions.cpp` already used).
+- **`Rules::RulesEngine::planManaPayment(cost, pool)`** (`rules_engine.{h,cpp}`) — new pure, no-I/O
+  static method, same category as `phaseAutomationFor`/`nextPriorityPlayer`. Pays colored pips
+  exactly first (fails/`nullopt` on any color shortfall), then drains the generic remainder across
+  `manaCounterNames()` in fixed order; returns the exact per-counter-name deduction plan on success.
+- **Client wiring** (`player_actions.{h,cpp}`): `nonManaActivatedAbilityForCard()` now returns the
+  whole `ActivatedAbility` (not just its `CardEffect`) so the cost travels with it.
+  `cardMenuAction()`'s existing single-card `cmTap` interception (previously only for targeted
+  abilities) now runs for *any* recognized non-mana ability: computes
+  `RulesEngine::planManaPayment()` whenever the cost isn't free; on failure, shows
+  `QMessageBox::information` (via a new `manaCostDescription()` `{2}{R}`-style formatter) and sends
+  nothing at all; on success, either proceeds into the existing `AbilityTargetPicker` flow (for
+  `TargetKind::AnyTarget`, payment plan threaded through the `targetChosen` lambda into
+  `actApplyTapWithTarget()`, which gained a `manaPayment` parameter) or sends directly via a new
+  `actApplyTapWithCost()` (the untargeted sibling). Both new/extended send-paths append the payment
+  via a new shared `appendManaPaymentCommands()` helper (negative `Command_IncCounter` per entry,
+  same counter-lookup-by-name idiom as the pre-existing `appendManaIncrement` lambda).
+  `actApplyTap()`'s own multi-select loop gained one guard (skip a card's ability entirely if
+  `!ability->cost.isFree()`) and is otherwise unchanged.
+- **Testing**: `tests/card_ability/activated_abilities_test.cpp` gained 7 cases (generic+colored
+  cost, pure generic, pure colored, colorless-symbol-maps-to-`x`, pre-existing-abilities-still-free,
+  `{X}`-cost not matched, hybrid-symbol not matched) — 18/18 pass, up from 11.
+  `tests/rules/rules_engine_test.cpp` gained 6 cases for `planManaPayment` (exact colored payment,
+  colored shortfall fails, generic drains leftover pool in fixed order, generic shortfall fails,
+  colored-then-generic-together, an all-free cost always succeeds with an empty plan) — 33/33 pass,
+  up from 27. Full suite: **21/21 executables pass**, zero regressions. `format.sh --cmake --branch
+  master` run and applied (cosmetic reformatting, including a 2-line trailing-comment realignment in
+  `command_activate_ability.proto` from a clang-format version difference, unrelated to this stage's
+  own changes but part of this fork's diff already); rebuilt and retested clean after.
+- **Verified live**, not just compiled: local servatrice + Xvfb + real client, a real solo Commander
+  game with two throwaway test cards added to `.uitest/sample_cards.xml` for this session and
+  removed afterward — "Test Costed Bolt Rock" (`{1}{R}, {T}: Deal 1 damage to any target.`) and
+  "Test Costed Draw Rock" (`{2}, {T}: Draw a card.`) — alongside Baleful Strix. Confirmed via
+  debug-log cross-reference:
+  - **Insufficient mana blocks the whole activation**: with an empty mana pool, right-clicking
+    Tap/Untap on the Bolt Rock produced a dialog reading "Not enough mana to pay this ability's cost
+    ({1}{R})." and sent **zero** commands (confirmed via `grep` — only `Command_Ping` in the log
+    around the click) — the card stayed untapped.
+  - **Sufficient mana pays and activates**: after setting Red to 1 and White to 1 (covering the
+    `{1}{R}` cost: colored `R` pip exact-matched, generic `{1}` drained from White), the same click
+    sent one batch — `Command_SetCardAttr` (tap) + `Command_IncCounter{counter_id:4 delta:-1}` (Red)
+    + `Command_IncCounter{counter_id:1 delta:-1}` (White) + `Command_ActivateAbility{effect_kind:3
+    amount:1 target_player_id:0}` (self-targeted via the existing `AbilityTargetPicker` drag) — and
+    the log showed "testuser activates an ability." with **no** `Event_SetCounter`/life change yet,
+    confirming the effect really is still deferred onto Stage 3's pending-ability stack, payment
+    notwithstanding.
+  - **LIFO resolution via Pass Priority still works exactly as Stage 3 built it**: passing priority
+    produced "Everyone has passed. No one has priority." → "testuser's ability resolves." →
+    `Event_SetCounter` on Life (40→39) — confirming Stage 4's payment layer is fully orthogonal to
+    Stage 3's resolution timing, no interaction bugs between the two.
+  - **Generic-only cost drains across multiple colors**: with Blue=1, Black=1 (White/Red/Green/
+    Colorless all 0), activating the Draw Rock (`{2}` pure generic) sent
+    `Command_IncCounter{counter_id:3 delta:-1}` (Black) and `Command_IncCounter{counter_id:2
+    delta:-1}` (Blue) — both fully drained to cover the `{2}`, confirming the multi-color generic
+    draining path really executes over real counter state (the strict w→u→b→r→g→x *ordering* claim
+    itself — draining a smaller amount from an earlier color while leaving a later color with
+    surplus untouched — is covered by the unit test `PlanManaPaymentDrainsGenericFromLeftoverPoolInFixedOrder`
+    directly, since this particular live pool happened to need both colors fully regardless of
+    order).
+  - This resolution's deferred `Event_DrawCards` correctly hit the by-then-empty library again,
+    re-firing the Phase 9 rule-104.3b SBA warning exactly as Stage 3's own original verification
+    found — re-confirming zero new code was needed for that interaction.
+- **Deliberately excluded**: mana-ability (`ManaAbilities`) costs; multi-select costed-ability
+  activation; player choice for which color pays a generic cost; a second, real cross-player
+  connected-client verification pass (same accepted-as-optional precedent as Stage 2). Stages 5–6
+  (triggered abilities, combat) remain their own future sign-offs.
+
+**Status: Stage 4 implemented, tested, and live-verified.**
+
 ## Phase 9: State-Based Actions (advisory warnings)
 
 Design doc §3 Phase 9 calls for full state-based-action checking. Real Magic re-checks
@@ -1538,15 +1660,18 @@ as needing a card-rules engine this fork doesn't have).
 5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
    see "Phase 7" section above. Increment 2 (mana abilities) also **done**.
 6. ~~Phase 7's real card-ability *execution* engine~~ — **staged roadmap
-   scoped, Stages 1–3 done (2026-07-16/17).** See "Phase 7 'real card-ability
+   scoped, Stages 1–4 done (2026-07-16/17/18).** See "Phase 7 'real card-ability
    execution engine'" section above for the full Stage 1–6 roadmap, Stage 1's
    implementation (narrow self-targeted activated abilities, zero protocol
    changes), Stage 2's implementation (board-click targeting, players and
-   permanents, a new `Command_ActivateTargetedEffect`), and Stage 3's
+   permanents, a new `Command_ActivateTargetedEffect`), Stage 3's
    implementation (a real resolvable pending-ability stack — activating an
    ability now defers its effect until priority exhausts, resolving in LIFO
    order, via a unified `Command_ActivateAbility` that retires Stage 2's
-   `Command_ActivateTargetedEffect`). Stages 4–6 (real mana payment, triggered
+   `Command_ActivateTargetedEffect`), and Stage 4's implementation (real mana
+   cost payment — a parsed cost prefix gates and pays against the mana pool,
+   the one place in this fork that actually blocks an action instead of just
+   warning about it, still zero new protocol messages). Stages 5–6 (triggered
    abilities, combat) remain scoped but not implemented — each needs its own
    explicit sign-off before implementation starts, not a blanket green light.
 

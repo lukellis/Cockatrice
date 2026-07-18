@@ -53,6 +53,77 @@ TEST(RulesEngineTest, ManaCounterNamesCoversTheFiveColorsPlusColorless)
     }
 }
 
+// ---- RulesEngine::planManaPayment (Phase 7 Stage 4, pure decision logic) ----
+
+TEST(RulesEngineTest, PlanManaPaymentPaysExactColoredPips)
+{
+    ManaCost cost;
+    cost.coloredPips = {{"r", 2}};
+    QMap<QString, int> pool{{"r", 3}, {"w", 1}};
+
+    auto plan = RulesEngine::planManaPayment(cost, pool);
+    ASSERT_TRUE(plan.has_value());
+    EXPECT_EQ(plan->value("r"), 2);
+    EXPECT_FALSE(plan->contains("w"));
+}
+
+TEST(RulesEngineTest, PlanManaPaymentFailsWhenColoredPipUnavailable)
+{
+    ManaCost cost;
+    cost.coloredPips = {{"u", 1}};
+    QMap<QString, int> pool{{"r", 5}};
+
+    EXPECT_FALSE(RulesEngine::planManaPayment(cost, pool).has_value());
+}
+
+TEST(RulesEngineTest, PlanManaPaymentDrainsGenericFromLeftoverPoolInFixedOrder)
+{
+    ManaCost cost;
+    cost.generic = 3;
+    QMap<QString, int> pool{{"w", 0}, {"u", 1}, {"b", 0}, {"r", 5}, {"g", 0}, {"x", 0}};
+
+    // manaCounterNames() order is w, u, b, r, g, x -- u has 1 available so it's drained first,
+    // then the remaining 2 comes from r.
+    auto plan = RulesEngine::planManaPayment(cost, pool);
+    ASSERT_TRUE(plan.has_value());
+    EXPECT_EQ(plan->value("u"), 1);
+    EXPECT_EQ(plan->value("r"), 2);
+    EXPECT_FALSE(plan->contains("w"));
+}
+
+TEST(RulesEngineTest, PlanManaPaymentFailsWhenGenericCannotBeFullyPaid)
+{
+    ManaCost cost;
+    cost.generic = 5;
+    QMap<QString, int> pool{{"r", 2}};
+
+    EXPECT_FALSE(RulesEngine::planManaPayment(cost, pool).has_value());
+}
+
+TEST(RulesEngineTest, PlanManaPaymentColoredThenGenericTogether)
+{
+    ManaCost cost;
+    cost.coloredPips = {{"r", 1}};
+    cost.generic = 1;
+    QMap<QString, int> pool{{"r", 1}, {"w", 1}};
+
+    // The colored pip consumes the only red, leaving white to cover the generic amount.
+    auto plan = RulesEngine::planManaPayment(cost, pool);
+    ASSERT_TRUE(plan.has_value());
+    EXPECT_EQ(plan->value("r"), 1);
+    EXPECT_EQ(plan->value("w"), 1);
+}
+
+TEST(RulesEngineTest, PlanManaPaymentFreeCostAlwaysSucceedsWithEmptyPlan)
+{
+    ManaCost cost;
+    QMap<QString, int> pool; // empty pool
+
+    auto plan = RulesEngine::planManaPayment(cost, pool);
+    ASSERT_TRUE(plan.has_value());
+    EXPECT_TRUE(plan->isEmpty());
+}
+
 // ---- RulesEngine::nextPriorityPlayer (pure decision logic) ----
 
 TEST(RulesEngineTest, NextPriorityPlayerAdvancesToNextInOrder)

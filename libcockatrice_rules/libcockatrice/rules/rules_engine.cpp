@@ -1,5 +1,7 @@
 #include "rules_engine.h"
 
+#include <algorithm>
+
 namespace Rules
 {
 
@@ -49,6 +51,41 @@ const QStringList &RulesEngine::manaCounterNames()
 {
     static const QStringList names{"w", "u", "b", "r", "g", "x"};
     return names;
+}
+
+std::optional<QMap<QString, int>> RulesEngine::planManaPayment(const ManaCost &cost, const QMap<QString, int> &pool)
+{
+    QMap<QString, int> remaining = pool;
+    QMap<QString, int> plan;
+
+    for (auto it = cost.coloredPips.constBegin(); it != cost.coloredPips.constEnd(); ++it) {
+        const int available = remaining.value(it.key(), 0);
+        if (available < it.value()) {
+            return std::nullopt;
+        }
+        remaining[it.key()] = available - it.value();
+        plan[it.key()] = plan.value(it.key(), 0) + it.value();
+    }
+
+    int genericRemaining = cost.generic;
+    for (const QString &name : manaCounterNames()) {
+        if (genericRemaining <= 0) {
+            break;
+        }
+        const int available = remaining.value(name, 0);
+        if (available <= 0) {
+            continue;
+        }
+        const int used = std::min(available, genericRemaining);
+        remaining[name] = available - used;
+        plan[name] = plan.value(name, 0) + used;
+        genericRemaining -= used;
+    }
+
+    if (genericRemaining > 0) {
+        return std::nullopt;
+    }
+    return plan;
 }
 
 int RulesEngine::startPriorityRound(int playerId)

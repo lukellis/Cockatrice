@@ -18,6 +18,6 @@ message Command_ActivateAbility {
     optional sint32 effect_kind = 1;
     optional sint32 amount = 2;
     optional sint32 target_player_id = 3 [default = -1]; // unused for non-targeted kinds
-    optional string target_zone = 4;      // absent => target is target_player_id themselves
-    optional sint32 target_card_id = 5 [default = -1]; // present only if target_zone is present
+    optional string target_zone = 4;                     // absent => target is target_player_id themselves
+    optional sint32 target_card_id = 5 [default = -1];   // present only if target_zone is present
 }

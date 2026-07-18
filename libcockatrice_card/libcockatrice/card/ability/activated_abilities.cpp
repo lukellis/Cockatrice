@@ -29,24 +29,67 @@ const QRegularExpression &wholeLineParensPattern()
     return re;
 }
 
+// Phase 7 Stage 4: every line pattern below is prefixed with the same optional mana-cost fragment,
+// "(?:((?:\{(?:[0-9]+|[WUBRGC])\})+),\s*)?", ahead of its existing "{T}:" -- e.g. "{2}{R}, {T}: Deal
+// 2 damage to any target." Each symbol must be a plain digit (generic) or one of W/U/B/R/G/C (a
+// colored or colorless pip), directly concatenated with no separator between symbols, followed by a
+// comma and "{T}:" -- {X}, hybrid ("{W/U}"), and Phyrexian ("{W/P}") symbols don't fit this token
+// shape at all, so a line using one of those simply fails to match and is skipped entirely, same
+// "exact shape or skip" conservatism as the rest of this parser. The fragment is copy-pasted into
+// each pattern below (not a shared regex object) so every pattern stays a single self-contained
+// literal, matching this file's existing one-pattern-per-shape convention.
+
+const QRegularExpression &costTokenPattern()
+{
+    static const QRegularExpression re(QStringLiteral(R"(\{([0-9]+|[WUBRGC])\})"),
+                                       QRegularExpression::CaseInsensitiveOption);
+    return re;
+}
+
+// Parses a captured cost-prefix string (e.g. "{2}{R}", or empty/null when there was no cost) into a
+// ManaCost: digit tokens accumulate into `generic`, letter tokens accumulate into `coloredPips`,
+// keyed by the mana-pool counter name convention (C -> "x", everything else lowercased -- same
+// mapping player_actions.cpp's manaCounterNameForSymbol() already uses).
+ManaCost parseManaCost(const QString &costTokens)
+{
+    ManaCost cost;
+    auto it = costTokenPattern().globalMatch(costTokens);
+    while (it.hasNext()) {
+        const QString token = it.next().captured(1);
+        bool isNumber = false;
+        const int value = token.toInt(&isNumber);
+        if (isNumber) {
+            cost.generic += value;
+            continue;
+        }
+        const QString symbol = token.toUpper();
+        const QString counterName = symbol == QLatin1String("C") ? QStringLiteral("x") : symbol.toLower();
+        cost.coloredPips[counterName] = cost.coloredPips.value(counterName, 0) + 1;
+    }
+    return cost;
+}
+
 const QRegularExpression &drawCardLinePattern()
 {
-    static const QRegularExpression re(QStringLiteral(R"(^\{T\}:\s*Draw a card\.$)"),
-                                       QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression re(
+        QStringLiteral(R"(^(?:((?:\{(?:[0-9]+|[WUBRGC])\})+),\s*)?\{T\}:\s*Draw a card\.$)"),
+        QRegularExpression::CaseInsensitiveOption);
     return re;
 }
 
 const QRegularExpression &gainLifeLinePattern()
 {
-    static const QRegularExpression re(QStringLiteral(R"(^\{T\}:\s*You gain (\d+) life\.$)"),
-                                       QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression re(
+        QStringLiteral(R"(^(?:((?:\{(?:[0-9]+|[WUBRGC])\})+),\s*)?\{T\}:\s*You gain (\d+) life\.$)"),
+        QRegularExpression::CaseInsensitiveOption);
     return re;
 }
 
 const QRegularExpression &loseLifeLinePattern()
 {
-    static const QRegularExpression re(QStringLiteral(R"(^\{T\}:\s*You lose (\d+) life\.$)"),
-                                       QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression re(
+        QStringLiteral(R"(^(?:((?:\{(?:[0-9]+|[WUBRGC])\})+),\s*)?\{T\}:\s*You lose (\d+) life\.$)"),
+        QRegularExpression::CaseInsensitiveOption);
     return re;
 }
 
@@ -58,8 +101,9 @@ const QRegularExpression &loseLifeLinePattern()
 // follow-up once this shape is proven, not attempted now.
 const QRegularExpression &dealDamageLinePattern()
 {
-    static const QRegularExpression re(QStringLiteral(R"(^\{T\}:\s*Deal (\d+) damage to any target\.$)"),
-                                       QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression re(
+        QStringLiteral(R"(^(?:((?:\{(?:[0-9]+|[WUBRGC])\})+),\s*)?\{T\}:\s*Deal (\d+) damage to any target\.$)"),
+        QRegularExpression::CaseInsensitiveOption);
     return re;
 }
 } // namespace
@@ -81,27 +125,32 @@ QList<ActivatedAbility> parse(const CardInfo &card)
             continue;
         }
 
-        if (drawCardLinePattern().match(line).hasMatch()) {
-            found.append(ActivatedAbility{true, CardEffect{EffectKind::DrawCards, 1}});
+        const QRegularExpressionMatch drawMatch = drawCardLinePattern().match(line);
+        if (drawMatch.hasMatch()) {
+            found.append(
+                ActivatedAbility{true, CardEffect{EffectKind::DrawCards, 1}, parseManaCost(drawMatch.captured(1))});
             continue;
         }
 
         const QRegularExpressionMatch gainMatch = gainLifeLinePattern().match(line);
         if (gainMatch.hasMatch()) {
-            found.append(ActivatedAbility{true, CardEffect{EffectKind::GainLife, gainMatch.captured(1).toInt()}});
+            found.append(ActivatedAbility{true, CardEffect{EffectKind::GainLife, gainMatch.captured(2).toInt()},
+                                          parseManaCost(gainMatch.captured(1))});
             continue;
         }
 
         const QRegularExpressionMatch loseMatch = loseLifeLinePattern().match(line);
         if (loseMatch.hasMatch()) {
-            found.append(ActivatedAbility{true, CardEffect{EffectKind::LoseLife, loseMatch.captured(1).toInt()}});
+            found.append(ActivatedAbility{true, CardEffect{EffectKind::LoseLife, loseMatch.captured(2).toInt()},
+                                          parseManaCost(loseMatch.captured(1))});
             continue;
         }
 
         const QRegularExpressionMatch damageMatch = dealDamageLinePattern().match(line);
         if (damageMatch.hasMatch()) {
             found.append(ActivatedAbility{
-                true, CardEffect{EffectKind::DealDamage, damageMatch.captured(1).toInt(), TargetKind::AnyTarget}});
+                true, CardEffect{EffectKind::DealDamage, damageMatch.captured(2).toInt(), TargetKind::AnyTarget},
+                parseManaCost(damageMatch.captured(1))});
             continue;
         }
     }

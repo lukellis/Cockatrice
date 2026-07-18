@@ -1,6 +1,9 @@
 #ifndef COCKATRICE_CARD_EFFECTS_H
 #define COCKATRICE_CARD_EFFECTS_H
 
+#include <QMap>
+#include <QString>
+
 /**
  * @brief The tagged-effect vocabulary shared by this fork's card-ability parsers (see
  * ActivatedAbilities, and any future parser covering triggered/static abilities). Deliberately a
@@ -55,14 +58,39 @@ struct CardEffect
     }
 };
 
+// Phase 7 Stage 4: a mana-cost prefix on an activated ability (e.g. "{2}{R}" in "{2}{R}, {T}: Deal
+// 2 damage to any target."). coloredPips is keyed by the exact mana-pool counter name convention
+// ("w"/"u"/"b"/"r"/"g"/"x" -- see Server_Player::setupZones()/RulesEngine::manaCounterNames()), not
+// the printed symbol letter, so it's directly usable against a player's counter map with no further
+// translation. generic is payable with any leftover mana of any of those six colors, unlike a
+// colored pip (including the "x"/colorless pip) which requires an exact-color match. A
+// default-constructed ManaCost is free -- every activated ability recognized before Stage 4 stays
+// free by construction.
+struct ManaCost
+{
+    QMap<QString, int> coloredPips;
+    int generic = 0;
+
+    bool operator==(const ManaCost &other) const
+    {
+        return coloredPips == other.coloredPips && generic == other.generic;
+    }
+
+    [[nodiscard]] bool isFree() const
+    {
+        return coloredPips.isEmpty() && generic == 0;
+    }
+};
+
 struct ActivatedAbility
 {
     bool requiresTap = true; // Stage 1 only recognizes "{T}: ..." costs, same as ManaAbilities
     CardEffect effect;
+    ManaCost cost; // Stage 4: defaults free, same as every ability recognized before it
 
     bool operator==(const ActivatedAbility &other) const
     {
-        return requiresTap == other.requiresTap && effect == other.effect;
+        return requiresTap == other.requiresTap && effect == other.effect && cost == other.cost;
     }
 };
 
