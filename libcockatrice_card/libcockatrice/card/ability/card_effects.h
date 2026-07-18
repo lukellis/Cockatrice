@@ -94,4 +94,29 @@ struct ActivatedAbility
     }
 };
 
+/**
+ * @brief Phase 7 Stage 5: what zone-change condition fires a TriggeredAbility. Fires automatically
+ * (no player action, no cost) the moment the matching move is confirmed -- see
+ * PlayerEventHandler::eventMoveCard(), the single client-side chokepoint every card move funnels
+ * through, regardless of which of this codebase's ~20 client actions caused it.
+ */
+enum class TriggerKind
+{
+    EntersBattlefield, // "When/Whenever <CardName> enters the battlefield, ..."
+    Dies               // "When <CardName> dies, ..." (a card moving from the battlefield to a graveyard)
+};
+
+struct TriggeredAbility
+{
+    TriggerKind trigger;
+    CardEffect effect; // only DrawCards/GainLife/LoseLife kinds are ever produced this stage --
+                       // DealDamage/AnyTarget triggers are explicitly out of scope (see
+                       // TriggeredAbilities::parse()'s doc comment for why)
+
+    bool operator==(const TriggeredAbility &other) const
+    {
+        return trigger == other.trigger && effect == other.effect;
+    }
+};
+
 #endif // COCKATRICE_CARD_EFFECTS_H

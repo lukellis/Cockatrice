@@ -231,6 +231,7 @@ public slots:
                                AbilityTarget target,
                                const QMap<QString, int> &manaPayment = {});
     void actApplyTapWithCost(CardItem *card, CardEffect effect, const QMap<QString, int> &manaPayment);
+    void actCheckTrigger(CardItem *card, TriggerKind trigger);
     void actAttach();
     void actUnattach(QList<CardItem *> selectedCards);
     void actDrawArrow();

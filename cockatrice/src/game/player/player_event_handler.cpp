@@ -377,6 +377,21 @@ void PlayerEventHandler::eventMoveCard(const Event_MoveCard &event, const GameEv
         targetZone->getName() == ZoneNames::STACK) {
         player->getPlayerActions()->moveOneCardUntil(card);
     }
+
+    // Phase 7 Stage 5 (triggered abilities): this function is the single client-side chokepoint
+    // every card move funnels through, on every connected client, for every player's move -- so
+    // gate on the moved-into/moved-out-of zone's own player being local, otherwise every client
+    // (including spectators and opponents) would independently try to send the same trigger
+    // command. This also correctly handles a card entering/leaving a zone due to another player's
+    // action (e.g. a card put onto an opponent's battlefield), since each client runs this same
+    // check independently against its own local player.
+    if (startZoneString != ZoneNames::TABLE && targetZone->getName() == ZoneNames::TABLE &&
+        targetZone->getPlayer()->getPlayerInfo()->getLocal()) {
+        player->getPlayerActions()->actCheckTrigger(card, TriggerKind::EntersBattlefield);
+    } else if (startZoneString == ZoneNames::TABLE && targetZone->getName() == ZoneNames::GRAVE &&
+               startZone->getPlayer()->getPlayerInfo()->getLocal()) {
+        player->getPlayerActions()->actCheckTrigger(card, TriggerKind::Dies);
+    }
 }
 
 void PlayerEventHandler::eventFlipCard(const Event_FlipCard &event)

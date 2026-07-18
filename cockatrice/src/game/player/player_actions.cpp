@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <libcockatrice/card/ability/activated_abilities.h>
 #include <libcockatrice/card/ability/mana_abilities.h>
+#include <libcockatrice/card/ability/triggered_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
 #include <libcockatrice/protocol/pb/command_activate_ability.pb.h>
@@ -1930,6 +1931,40 @@ void PlayerActions::actApplyTapWithCost(CardItem *card, CardEffect effect, const
     commandList.append(abilityCmd);
 
     sendGameCommand(prepareGameCommand(commandList));
+}
+
+// Phase 7 Stage 5 (triggered abilities): called from PlayerEventHandler::eventMoveCard() -- the
+// single client-side chokepoint every card move funnels through -- whenever @p card just landed on
+// or left the local player's own battlefield in a way that could match an "enters the battlefield"
+// or "dies" trigger (see the call site for the exact zone-transition/ownership gating). Unlike
+// activated abilities, nothing here is conditional on a player action: any qualifying line found
+// fires unconditionally, no tap, no mana, no target -- so this is the simplest of the ability-check
+// helpers, a direct parse-then-send with no intermediate dialog or picker.
+void PlayerActions::actCheckTrigger(CardItem *card, TriggerKind trigger)
+{
+    if (!card) {
+        return;
+    }
+
+    ExactCard exactCard = card->getCard();
+    if (!exactCard) {
+        return;
+    }
+
+    QList<const ::google::protobuf::Message *> commandList;
+    for (const auto &ability : TriggeredAbilities::parse(exactCard.getInfo())) {
+        if (ability.trigger != trigger) {
+            continue;
+        }
+        auto *abilityCmd = new Command_ActivateAbility;
+        abilityCmd->set_effect_kind(static_cast<int>(ability.effect.kind));
+        abilityCmd->set_amount(ability.effect.amount);
+        commandList.append(abilityCmd);
+    }
+
+    if (!commandList.isEmpty()) {
+        sendGameCommand(prepareGameCommand(commandList));
+    }
 }
 
 /**

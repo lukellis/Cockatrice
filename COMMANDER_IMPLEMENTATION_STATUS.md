@@ -34,7 +34,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Narrow slice done (2026-07-16)** | Cost validation/auto-tap needs Phase 7 (out of reach) — still not implemented. The one in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) is implemented, tested, and live-verified; see "Phase 6" section below. |
-| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–4 done (2026-07-17/18)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`), and Stage 4 (real mana cost payment — parse a cost prefix, gate/pay it against the mana pool, zero new protocol messages) all implemented, tested, and live-verified. Stages 5–6 (triggered abilities, combat) are scoped but not implemented — each needs its own explicit sign-off. See "Phase 7" section below. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–5 done (2026-07-17/18)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`), Stage 4 (real mana cost payment — parse a cost prefix, gate/pay it against the mana pool, zero new protocol messages), and Stage 5 (triggered abilities — ETB/dies triggers firing automatically off a zone-change event, no menu click, still zero new protocol messages) all implemented, tested, and live-verified. Stage 6 (combat) is scoped but not implemented — needs its own explicit sign-off. See "Phase 7" section below. |
 | §3 Phase 8: Combat System | Not started | Out of current scope. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
@@ -1190,6 +1190,122 @@ shape or skip" conservatism**:
 
 **Status: Stage 4 implemented, tested, and live-verified.**
 
+### Stage 5 — triggered abilities (2026-07-18)
+
+Authorized by the user via a dedicated plan-mode design pass (same treatment Stages 1–4 got),
+picked explicitly as the next increment. Every effect through Stage 4 needed a deliberate player
+action (right-click → Tap). Stage 5 is ETB ("enters the battlefield") and "dies" triggers — the
+first effects in this fork that fire automatically off a zone-change event, no menu click at all.
+
+**Key architectural finding, from research before any code was written**: the server has zero
+access to card rules text (`Server_Card` stores only name/id/counters/tapped/pt — confirmed by
+reading `server_card.h`/`.cpp`), so a trigger can never be *detected* server-side; this is the same
+"servatrice has no card database" constraint every prior stage has already worked around, just hit
+from a new angle. The harder problem this stage actually had to solve was finding the right
+*client-side* hook: card moves have ~20+ different client-side entry points (drag-and-drop per zone
+type, `playCard`, a dozen bulk-move actions), so there's no single chokepoint on the *sending* side.
+There is one on the *receiving* side, though: `PlayerEventHandler::eventMoveCard()`
+(`cockatrice/src/game/player/player_event_handler.cpp`) processes every `Event_MoveCard` broadcast,
+for every player's move, on every connected client — already has a real `CardItem*`, and already
+contains a same-shaped precedent for "call straight into `PlayerActions` from here"
+(`player->getPlayerActions()->moveOneCardUntil(card)`, the pre-existing "move top card until"
+feature) — so no new signal wiring was needed at all, just one more call alongside that one.
+
+**Gating to avoid every client reacting**: since `eventMoveCard` fires identically on every
+connected client (players + spectators) for every move in the game, the new check is gated on
+`<zone>->getPlayer()->getPlayerInfo()->getLocal()` — the same "only react to my own player's data"
+shape already used elsewhere (`game_event_handler.cpp`'s Cleanup-phase hand-size warning). This
+also transparently handles a card entering/leaving a zone due to *another* player's action (e.g. a
+permanent put onto an opponent's battlefield by some other effect), since every client runs this
+same check independently against its own local player — whoever actually controls the resulting
+zone is always the one whose client reacts, regardless of who physically performed the move.
+
+**Scope decisions** (same "exact shape or skip" conservatism as every prior stage):
+- **Two trigger shapes**: `"When/Whenever <CardName> enters the battlefield, <effect>."` and
+  `"When <CardName> dies, <effect>."`, matched using the card's own literal printed name (real
+  Oracle text is self-referential by name, not a placeholder like `~`) — confirmed directly against
+  a real card already in this repo's fixture: Baleful Strix's actual printed text
+  (`.uitest/sample_cards.xml`) is `"Flying, deathtouch\nWhen Baleful Strix enters the battlefield,
+  draw a card."`, an exact match, so it doubled as the live-verification case with zero throwaway
+  card needed for the ETB half.
+- **Effect whitelist narrower than Stage 1's**: only `DrawCards`/`GainLife`/`LoseLife` —
+  `DealDamage`/`TargetKind::AnyTarget` triggers are explicitly out of scope. A targeted effect needs
+  `AbilityTargetPicker`, which today is only ever invoked from a deliberate context-menu click
+  (Stage 2's whole design); popping a targeting picker automatically, mid drag-and-drop, the instant
+  a trigger fires, is a real interaction-design problem this stage doesn't attempt to solve as a
+  side effect — same "left unhandled rather than guessed at" precedent as Stage 1's original
+  no-targeting boundary before Stage 2 addressed it separately.
+- **No card-type inspection needed** — only creature cards ever carry "dies" trigger text in the
+  first place, so the text-whitelist parse already self-scopes correctly by construction.
+- **No APNAP ordering logic**: real Magic's active-player/non-active-player trigger ordering only
+  matters when multiple *different* players have simultaneous triggers off one event; in this
+  fork's model each card move is its own separate `Command_MoveCard`/`Event_MoveCard`, so that
+  doesn't meaningfully arise here — a moot simplification, not an oversight.
+- **Zero new protocol messages.** An untargeted effect reuses `Command_ActivateAbility` exactly as
+  Stage 3 already built it — no target fields needed, no new command, no new event. The existing
+  generic "testuser activates an ability." log line reads the same for a triggered activation as a
+  tap-activated one (no source-distinguishing text) — a cheap cosmetic follow-up, not attempted here
+  to avoid a field that would exist purely for logging.
+
+**What's implemented**:
+- **IR extension** (`card_effects.h`): new `TriggerKind` enum (`EntersBattlefield`/`Dies`) and
+  `TriggeredAbility` struct (`trigger` + `effect`), alongside `CardEffect`/`ActivatedAbility`/
+  `ManaCost` — same "all ability wrapper IR lives here" convention already established.
+- **New parser** `libcockatrice_card/libcockatrice/card/ability/triggered_abilities.{h,cpp}`
+  (registered in `libcockatrice_card/CMakeLists.txt`), a structural sibling of
+  `ActivatedAbilities::parse()` (same line-by-line approach, same reminder-text handling). Unlike
+  every other parser in this family, its match patterns are built **per-card**, not as static
+  module-level singletons, since they embed `QRegularExpression::escape(card.getName())` — real
+  Oracle text is self-referential by literal printed name. The captured effect clause is then
+  matched against the same three effect-phrase shapes Stage 1 established (`"Draw a card"`, `"You
+  gain N life"`, `"You lose N life"`), just without the `{T}:` cost prefix (irrelevant — a trigger
+  fires unconditionally, no cost).
+- **Client hook**: `PlayerEventHandler::eventMoveCard()` gained a check (right after the existing
+  `moveOneCardUntil` call) — `targetZone == TABLE && startZone != TABLE` (+ `getLocal()`) fires
+  `PlayerActions::actCheckTrigger(card, TriggerKind::EntersBattlefield)`; `startZone == TABLE &&
+  targetZone == GRAVE` (+ `getLocal()`) fires it with `TriggerKind::Dies`. New
+  `PlayerActions::actCheckTrigger()` (`player_actions.{h,cpp}`) parses the card's `CardInfo` via
+  `TriggeredAbilities::parse()`, and for every returned ability matching the given `TriggerKind`,
+  batches an untargeted `Command_ActivateAbility` (`effect_kind`+`amount` only) — no tap, no mana,
+  no target, the simplest of the ability-check helpers in this file.
+- **Testing**: new `tests/card_ability/triggered_abilities_test.cpp` (11 cases, registered in
+  `tests/card_ability/CMakeLists.txt`): ETB draw recognized, a case using Baleful Strix's *real*
+  printed text verbatim, `"Whenever"` phrasing, dies lose-life/gain-life, a wrong-card-name line
+  correctly not matched (a different card's self-referential text doesn't false-positive), a
+  `DealDamage`-shaped trigger line correctly not matched (documents the scope boundary), no
+  qualifying lines, reminder text stripped, case-insensitivity, multiple qualifying lines both
+  returned. All 11/11 pass. `tests/rules/` needed no changes — `RulesEngine`/`PendingAbility` are
+  already fully generic over `CardEffect`. Full suite: **22/22 executables pass** (up from 21),
+  zero regressions. `format.sh --cmake --branch master` run and applied (cosmetic only); rebuilt
+  and retested clean after.
+- **Verified live**, not just compiled: local servatrice + Xvfb + real client, a real solo Commander
+  game with Baleful Strix (real card, already in `.uitest/sample_cards.xml`) and one throwaway "Test
+  Dies Creature" (`"When Test Dies Creature dies, you gain 2 life."`, added for this session and
+  removed afterward). Confirmed via debug-log cross-reference:
+  - **ETB, zero right-clicks**: dragging Baleful Strix from hand straight onto the battlefield sent
+    `Command_MoveCard` followed immediately by a separate, automatic
+    `Command_ActivateAbility{effect_kind:0 amount:1}` (DrawCards) — the log showed "testuser puts
+    Baleful Strix into play from their hand." → "testuser has priority." → "testuser activates an
+    ability.", with no menu interaction of any kind between the drag and the activation.
+  - **Resolution unaffected**: passing priority produced "Everyone has passed. No one has priority."
+    → "testuser's ability resolves." (the by-then-empty-library draw correctly re-fired the
+    pre-existing Phase 9 rule-104.3b SBA warning, same graceful handling every prior stage's
+    verification already found).
+  - **Dies, zero right-clicks**: playing Test Dies Creature (no ETB text, confirmed no spurious
+    activation on that move) then moving it to the graveyard via the "Move to → Graveyard" context
+    action sent `Command_MoveCard{target_zone:"grave"}` followed automatically by
+    `Command_ActivateAbility{effect_kind:1 amount:2}` (GainLife) — the log showed "testuser puts
+    Test Dies Creature from play into their graveyard." → "testuser activates an ability.", again
+    with no menu action for the ability itself. Passing priority resolved it: "testuser sets counter
+    Life to 42 (+2)." — the exact expected 40→42 change.
+- **Deliberately excluded**: `DealDamage`/targeted triggers (needs its own automatic-targeting UX
+  design); APNAP ordering (moot at this fork's scope, see above); any trigger source beyond
+  ETB/dies (leaves-the-battlefield-for-non-grave, attacks, end-step, etc. — not attempted, same
+  narrow-but-real precedent as every prior stage's first cut). Stage 6 (combat) remains its own
+  future sign-off.
+
+**Status: Stage 5 implemented, tested, and live-verified.**
+
 ## Phase 9: State-Based Actions (advisory warnings)
 
 Design doc §3 Phase 9 calls for full state-based-action checking. Real Magic re-checks
@@ -1660,7 +1776,7 @@ as needing a card-rules engine this fork doesn't have).
 5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
    see "Phase 7" section above. Increment 2 (mana abilities) also **done**.
 6. ~~Phase 7's real card-ability *execution* engine~~ — **staged roadmap
-   scoped, Stages 1–4 done (2026-07-16/17/18).** See "Phase 7 'real card-ability
+   scoped, Stages 1–5 done (2026-07-16/17/18).** See "Phase 7 'real card-ability
    execution engine'" section above for the full Stage 1–6 roadmap, Stage 1's
    implementation (narrow self-targeted activated abilities, zero protocol
    changes), Stage 2's implementation (board-click targeting, players and
@@ -1668,12 +1784,16 @@ as needing a card-rules engine this fork doesn't have).
    implementation (a real resolvable pending-ability stack — activating an
    ability now defers its effect until priority exhausts, resolving in LIFO
    order, via a unified `Command_ActivateAbility` that retires Stage 2's
-   `Command_ActivateTargetedEffect`), and Stage 4's implementation (real mana
+   `Command_ActivateTargetedEffect`), Stage 4's implementation (real mana
    cost payment — a parsed cost prefix gates and pays against the mana pool,
    the one place in this fork that actually blocks an action instead of just
-   warning about it, still zero new protocol messages). Stages 5–6 (triggered
-   abilities, combat) remain scoped but not implemented — each needs its own
-   explicit sign-off before implementation starts, not a blanket green light.
+   warning about it, still zero new protocol messages), and Stage 5's
+   implementation (triggered abilities — ETB/dies triggers fire automatically
+   off `PlayerEventHandler::eventMoveCard()`, the single client-side
+   chokepoint every card move funnels through, still zero new protocol
+   messages). Stage 6 (combat) remains scoped but not implemented — needs its
+   own explicit sign-off before implementation starts, not a blanket green
+   light.
 
 ## Design & Implementation Review — 2026-07-16
 

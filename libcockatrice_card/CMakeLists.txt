@@ -51,6 +51,8 @@ add_library(
   libcockatrice/card/ability/mana_abilities.h
   libcockatrice/card/ability/activated_abilities.cpp
   libcockatrice/card/ability/activated_abilities.h
+  libcockatrice/card/ability/triggered_abilities.cpp
+  libcockatrice/card/ability/triggered_abilities.h
   libcockatrice/card/ability/card_effects.h
 )
 
