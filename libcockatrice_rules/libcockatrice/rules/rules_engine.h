@@ -85,6 +85,15 @@ public:
     static PhaseAutomation phaseAutomationFor(int phase, int turnNumber, int playerCount);
 
     /**
+     * @brief Phase 8 Stage 6: whether @p phase (per cockatrice/src/game/phase.cpp's Phases::phases[]
+     * ordering) is one of the five combat phases (Beginning of Combat through End of Combat, indices
+     * 4-8 inclusive). Used to decide when to auto-clear the "attacking" attribute -- rule 506.4
+     * simplified as "left the combat-phase range" rather than one specific transition, since this
+     * fork's phases can be freely jumped in any order (see Server_Game::setActivePhase()'s caller).
+     */
+    static bool isCombatPhase(int phase);
+
+    /**
      * @brief Pure logic: the next player, in ascending-id turn order starting just after
      * @p currentPlayerId (wrapping around @p playerOrder), who is in neither @p passedPlayers nor
      * @p concededPlayers. Returns -1 if every eligible player has already passed.

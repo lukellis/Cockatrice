@@ -146,6 +146,22 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         painter->restore();
     }
 
+    // Phase 8 Stage 6 (combat, declare-attacker slice): same outline convention as getDoesntUntap()
+    // above, a distinct color so the two states remain visually unambiguous if both are ever true.
+    if (state->getAttacking()) {
+        painter->save();
+
+        painter->setRenderHint(QPainter::Antialiasing, false);
+
+        QPen pen;
+        pen.setColor(QColor(255, 60, 0)); // red-orange
+        pen.setWidth(0);                  // Cosmetic pen
+        painter->setPen(pen);
+        painter->drawPath(shape());
+
+        painter->restore();
+    }
+
     painter->restore();
 }
 

@@ -25,6 +25,15 @@ PhaseAutomation RulesEngine::phaseAutomationFor(int phase, int turnNumber, int p
     return PhaseAutomation::None;
 }
 
+bool RulesEngine::isCombatPhase(int phase)
+{
+    // Phase indices match the client's phase order (cockatrice/src/game/phase.cpp: Phases::phases[]):
+    // 4 Beginning of Combat, 5 Declare Attackers, 6 Declare Blockers, 7 Combat Damage, 8 End of Combat.
+    constexpr int FIRST_COMBAT_PHASE = 4;
+    constexpr int LAST_COMBAT_PHASE = 8;
+    return phase >= FIRST_COMBAT_PHASE && phase <= LAST_COMBAT_PHASE;
+}
+
 int RulesEngine::nextPriorityPlayer(const QList<int> &playerOrder,
                                     int currentPlayerId,
                                     const QSet<int> &passedPlayers,

@@ -53,6 +53,28 @@ TEST(RulesEngineTest, ManaCounterNamesCoversTheFiveColorsPlusColorless)
     }
 }
 
+// ---- RulesEngine::isCombatPhase (Phase 8 Stage 6, pure decision logic) ----
+
+TEST(RulesEngineTest, CombatPhasesAreRecognized)
+{
+    for (int phase : {4, 5, 6, 7, 8}) {
+        EXPECT_TRUE(RulesEngine::isCombatPhase(phase)) << phase;
+    }
+}
+
+TEST(RulesEngineTest, NonCombatPhasesAreNotRecognized)
+{
+    for (int phase : {0, 1, 2, 3, 9, 10}) {
+        EXPECT_FALSE(RulesEngine::isCombatPhase(phase)) << phase;
+    }
+}
+
+TEST(RulesEngineTest, OutOfRangePhasesAreNotCombatPhases)
+{
+    EXPECT_FALSE(RulesEngine::isCombatPhase(-1));
+    EXPECT_FALSE(RulesEngine::isCombatPhase(100));
+}
+
 // ---- RulesEngine::planManaPayment (Phase 7 Stage 4, pure decision logic) ----
 
 TEST(RulesEngineTest, PlanManaPaymentPaysExactColoredPips)

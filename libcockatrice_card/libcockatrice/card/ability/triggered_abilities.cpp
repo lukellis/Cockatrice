@@ -83,8 +83,8 @@ QList<TriggeredAbility> parse(const CardInfo &card)
     const QRegularExpression entersPattern(
         QStringLiteral(R"(^When(?:ever)?\s+%1\s+enters\s+the\s+battlefield,\s*(.+)\.$)").arg(escapedName),
         QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpression diesPattern(
-        QStringLiteral(R"(^When\s+%1\s+dies,\s*(.+)\.$)").arg(escapedName), QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpression diesPattern(QStringLiteral(R"(^When\s+%1\s+dies,\s*(.+)\.$)").arg(escapedName),
+                                         QRegularExpression::CaseInsensitiveOption);
 
     const QStringList rawLines = card.getText().split(QChar('\n'), Qt::SkipEmptyParts);
     for (const QString &rawLine : rawLines) {

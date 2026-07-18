@@ -34,8 +34,8 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 4: Turn Structure Enforcement | **Partial** | Automatic untap-all and automatic draw at the untap/draw steps, gated to Commander games only (`Server_Game::isCommanderGame()`). Deliberately **not** implemented: phase-order enforcement (doc's "phase advancement requires explicit action or timer" — players can still freely jump phases, matching Assisted Mode's non-blocking philosophy), discard-to-hand-size at end step. See "Phase 4" section below for full detail. |
 | §3 Phase 5: Priority & Stack System | **Partial (simplified)** | Real priority-passing (round-robin, protocol messages added) researched against XMage's `GameImpl.playPriority()`; no real stack (LIFO resolution of card effects) since that needs a card-rules engine this fork doesn't have. A round starts at one trigger (phase change, or a card moving onto the Stack zone) and simply stops when exhausted, rather than resolving a stack object or auto-advancing the phase. Full client UI: Pass Priority button, auto-pass toggle, cross-player priority highlight, log lines. See "Phase 5" section below. |
 | §3 Phase 6: Mana System | **Narrow slice done (2026-07-16)** | Cost validation/auto-tap needs Phase 7 (out of reach) — still not implemented. The one in-scope slice (auto-empty mana pool at phase end, rule 500.4, reusing existing counters/hooks) is implemented, tested, and live-verified; see "Phase 6" section below. |
-| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–5 done (2026-07-17/18)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`), Stage 4 (real mana cost payment — parse a cost prefix, gate/pay it against the mana pool, zero new protocol messages), and Stage 5 (triggered abilities — ETB/dies triggers firing automatically off a zone-change event, no menu click, still zero new protocol messages) all implemented, tested, and live-verified. Stage 6 (combat) is scoped but not implemented — needs its own explicit sign-off. See "Phase 7" section below. |
-| §3 Phase 8: Combat System | Not started | Out of current scope. |
+| §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–6 done (2026-07-17/18)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`), Stage 4 (real mana cost payment — parse a cost prefix, gate/pay it against the mana pool, zero new protocol messages), Stage 5 (triggered abilities — ETB/dies triggers firing automatically off a zone-change event, no menu click, still zero new protocol messages), and Stage 6 (combat — a declare-attacker slice finishing off the already-plumbed-but-dead `attacking` attribute, tap-unless-vigilance, zero new protocol messages) all implemented, tested, and live-verified. See "Phase 7" section below and the "Phase 8" row below for what Stage 6 deliberately excludes (blocking, damage, death). |
+| §3 Phase 8: Combat System | **Narrow slice done (2026-07-18) — see Phase 7's "Stage 6" section** | A real "declare as attacker" toggle (rule 508.1a/508.1f, tap unless vigilance) with a visual indicator, auto-clearing when combat ends — implemented, tested, and live-verified as Phase 7 Stage 6 (the roadmap's two efforts converge here; see that section for the full research/scoping writeup). Declaring/removing blockers, any combat-damage calculation, and any creature-death/graveyard automation remain explicitly out of scope — no reliable attacker→blocker link exists (arrows are untyped), no numeric P/T exists anywhere in this codebase, and this fork has never automated death even for the simpler life ≤ 0 case. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
 | §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
 
@@ -1306,6 +1306,116 @@ zone is always the one whose client reacts, regardless of who physically perform
 
 **Status: Stage 5 implemented, tested, and live-verified.**
 
+### Stage 6 — combat, declare-attacker slice (2026-07-18)
+
+Authorized by the user (auto-approving the plan-mode design pass, "I trust you"), picking up
+Phase 8 (Combat System) — the last unbuilt major phase, and the design doc's own biggest
+single-phase estimate. Researched before writing any code, same discipline every prior stage got.
+
+**What the research found — everything nameable "combat" in this codebase was dead or cosmetic**:
+- **Arrows are 100% untyped, generic pointers** (`Command_CreateArrow`/`ArrowData`) — no field
+  anywhere distinguishes a declared attack from a targeting arrow from a pointer drawn to discuss
+  the board. No reliable way exists to infer who's attacking whom from arrow data.
+- **`Server_Card::attacking` was fully wired through the protocol/attribute/event pipeline
+  (`AttrAttacking`, `Command_SetCardAttr`, `Event_SetCardAttr`) but had zero producer** (no menu
+  action anywhere ever set it) **and zero consumer** (`CardItem::getAttacking()` had no callers at
+  all, confirmed by exhaustive grep) — inert, preemptively-plumbed infrastructure nobody finished.
+- **Combat phase buttons were pure phase-index advancement**, same as any main phase — no
+  automation hook existed for phases 4–8.
+- **Power/toughness is a free-form string everywhere**, client and server — confirmed there is no
+  numeric P/T anywhere in this codebase to compute real combat damage against, and the one existing
+  int-extraction helper (`CardItem::parsePT()`) is a client-only display helper for `+N/-N`
+  modifiers, not a real base-P/T parser.
+- **The advisory marked-damage counter (`DAMAGE_CARD_COUNTER_ID`, Phase 7 Stage 2) has no
+  death/graveyard automation and no cleanup-step reset** — confirmed no `cleanup`/`endOfTurn`
+  handling exists in `Server_Game::setActivePhase()` at all.
+
+Given this, a real combat-damage-calculation system would need to be built from nothing: a new
+declare-attackers **and** declare-blockers interaction model (materially bigger than Stage 2's
+single-target picker, since a 4-player Commander game has multiple possible defending players),
+fragile new P/T-string parsing, and — if damage is to matter — some form of automatic creature
+death, a step this fork has never taken even for the simpler life ≤ 0 case (Phase 9 is
+advisory-only by deliberate design). That's the design doc's own 8–12-week estimate, not a
+one-session stage, and not attempted.
+
+**The actual scoped opportunity**: `attacking` was already fully wired end-to-end and just needed
+its last mile — a real producer and a real consumer. Same shape of "this was already 90% built,
+just needs finishing" discovery Phase 6 made for the mana-pool counters. Stage 6 is exactly that
+last mile: **a genuine way to declare an attacker, matching real rule 508.1a/508.1f (tap unless
+the creature has vigilance), with a real visual indicator, auto-clearing when combat ends** — using
+almost entirely pre-existing infrastructure and zero new protocol messages. Declaring/removing
+blockers, computing damage, and any death/graveyard automation remain explicitly out of scope.
+
+**What's implemented**:
+- **Menu action**: new `cmAttacking` in `CardMenuActionType` (`card_menu_action_type.h`), a
+  checkable toggle constructed in `card_menu.cpp` the same way `aDoesntUntap` already is (label
+  flips between "Declare as &attacker" / "&Remove from combat" depending on current state), added to
+  the table-zone menu right next to `aTap`/`aDoesntUntap` (inheriting the same table-zone-only
+  scoping, no new gating needed).
+- **Dispatch** (`player_actions.cpp`): `cmAttacking` is intercepted early in `cardMenuAction()`,
+  before the generic single-attribute-toggle loop `cmDoesntUntap` uses, since it needs per-card
+  keyword inspection that loop doesn't provide. Per selected card: toggles `AttrAttacking`; if being
+  *declared* (not removed) and not already tapped, looks up
+  `CardKeywords::parse(exactCard.getInfo())` (already-built Phase 7 Increment 1 infrastructure) and
+  appends an `AttrTapped=1` command too, unless the set contains `"Vigilance"` — rule 508.1f, the
+  exact mechanical payoff the roadmap called out ("now that keyword abilities can matter
+  mechanically"). Removing from combat never untaps (matches real rules). One batched
+  `Command_SetCardAttr` list per selection — zero new protocol.
+- **Visual indicator** (`card_item.cpp`): `CardItem::paint()` already had the exact precedent to
+  copy — `state->getDoesntUntap()` draws a magenta outline via `painter->drawPath(shape())`. Added
+  an analogous block for `state->getAttacking()` using a distinct red-orange color, same few lines,
+  no new rendering machinery.
+- **Auto-clear on leaving combat**: new pure static predicate `Rules::RulesEngine::isCombatPhase(int
+  phase)` (`rules_engine.{h,cpp}`, phases 4–8 per `cockatrice/src/game/phase.cpp`'s
+  `Phases::phases[]`), same "pure decision, testable without a live game" category as
+  `phaseAutomationFor`. `Server_Game::setActivePhase()` gained an independent block (same shape as
+  the existing mana-pool-empty block): whenever `!isCombatPhase(newPhase)`, clears `AttrAttacking`
+  for the **active player's** table-zone cards via the exact same
+  `activePlayerObj->setCardAttrHelper(ges, activePlayer, ZoneNames::TABLE, -1, AttrAttacking, "0")`
+  call Phase 4's untap-all already uses (`card_id: -1` = bulk zone-wide; `setCardAttrHelper` already
+  dedupes, so no event for cards that weren't attacking). Checking "not a combat phase" rather than
+  one specific transition, since this fork's phases can be freely jumped in any order (Phase 4's
+  standing design) — must be robust to a player skipping straight from Declare Blockers to next
+  turn's Untap without passing through Second Main. Active-player-only, matching untap/draw's
+  existing scoping.
+- **Testing**: `tests/rules/rules_engine_test.cpp` gained 3 cases for `isCombatPhase` (true for
+  4/5/6/7/8, false for 0/1/2/3/9/10, false for out-of-range values). No new GTest file — the
+  menu/rendering wiring isn't meaningfully unit-testable (matches this fork's precedent: UI wiring
+  gets live-verified, not unit tested). Full suite: **22/22 executables pass**, zero regressions.
+  `format.sh --cmake --branch master` run and applied (cosmetic only); rebuilt and retested clean.
+- **Verified live**, not just compiled: local servatrice + Xvfb + real client, a real solo Commander
+  game — no throwaway cards needed, both real fixture cards already demonstrate the two cases
+  (Baleful Strix has no Vigilance; Atraxa, Praetors' Voice has real printed Vigilance). Confirmed via
+  debug-log cross-reference:
+  - Declaring Baleful Strix as attacker sent one batch —
+    `Command_SetCardAttr{AttrAttacking:1}` + `Command_SetCardAttr{AttrTapped:1}` — and the client
+    rendered it tapped with the red-orange outline.
+  - Casting Atraxa and declaring it as attacker sent **only** `Command_SetCardAttr{AttrAttacking:1}`
+    — no tap command — confirmed visually still untapped with the outline present, matching
+    Vigilance.
+  - Right-clicking Atraxa again showed the label correctly flipped to "Remove from combat"
+    (checked); clicking it sent only `Command_SetCardAttr{AttrAttacking:0}` — no untap command,
+    matching real rules (ceasing to attack isn't itself an untap effect).
+  - A phase transition away from the combat range (into Draw, phase 2, reached during testing)
+    correctly and automatically fired `Event_SetCardAttr{AttrAttacking:"0"}` for the attacking
+    creature with **no user action** — confirming the leaving-combat auto-clear path end to end.
+    (The complementary "stays marked while cycling *within* phases 4–8" direction is covered by the
+    `isCombatPhase` unit tests plus the code's structural simplicity — a single-line guard around the
+    same already-verified `setCardAttrHelper` call — rather than a separate live pass, after this
+    session's UI-automation input queue made precise mid-combat-phase clicking unreliable; the same
+    "not required to prove the mechanism works" call Stage 2 already made once for its own optional
+    second verification pass.)
+- **Deliberately excluded**: declaring/removing blockers; any combat-damage calculation (no reliable
+  attacker→defender/blocker link exists, and P/T has no numeric representation anywhere in this
+  codebase); any creature-death/graveyard automation (this fork has never automated death, even for
+  the simpler life ≤ 0 case); APNAP-style attack-declaration ordering (not applicable — this slice
+  has no multi-step declaration sequence to order).
+
+**Status: Stage 6 implemented, tested, and live-verified. This closes the last item on the Phase 7/8
+staged roadmap that was in reach at this fork's scope** — real combat damage and death remain
+explicitly out of scope, for the reasons researched and documented above, not a gap to revisit
+without a real design discussion first.
+
 ## Phase 9: State-Based Actions (advisory warnings)
 
 Design doc §3 Phase 9 calls for full state-based-action checking. Real Magic re-checks
@@ -1776,7 +1886,7 @@ as needing a card-rules engine this fork doesn't have).
 5. Phase 7 Increment 1 (evergreen keyword recognition/display) — **done**,
    see "Phase 7" section above. Increment 2 (mana abilities) also **done**.
 6. ~~Phase 7's real card-ability *execution* engine~~ — **staged roadmap
-   scoped, Stages 1–5 done (2026-07-16/17/18).** See "Phase 7 'real card-ability
+   scoped, Stages 1–6 all done (2026-07-16/17/18).** See "Phase 7 'real card-ability
    execution engine'" section above for the full Stage 1–6 roadmap, Stage 1's
    implementation (narrow self-targeted activated abilities, zero protocol
    changes), Stage 2's implementation (board-click targeting, players and
@@ -1787,13 +1897,19 @@ as needing a card-rules engine this fork doesn't have).
    `Command_ActivateTargetedEffect`), Stage 4's implementation (real mana
    cost payment — a parsed cost prefix gates and pays against the mana pool,
    the one place in this fork that actually blocks an action instead of just
-   warning about it, still zero new protocol messages), and Stage 5's
+   warning about it, still zero new protocol messages), Stage 5's
    implementation (triggered abilities — ETB/dies triggers fire automatically
    off `PlayerEventHandler::eventMoveCard()`, the single client-side
    chokepoint every card move funnels through, still zero new protocol
-   messages). Stage 6 (combat) remains scoped but not implemented — needs its
-   own explicit sign-off before implementation starts, not a blanket green
-   light.
+   messages), and Stage 6's implementation (combat — a declare-attacker
+   slice finishing the already-plumbed-but-dead `attacking` attribute,
+   tap-unless-vigilance, still zero new protocol messages; declaring
+   blockers, damage calculation, and creature death remain explicitly out of
+   reach — no reliable attacker/blocker link exists and no numeric P/T
+   exists anywhere in this codebase). The staged roadmap is now fully
+   worked through at this fork's scope; any further combat depth (blocking,
+   damage, death) would be a new, separate, explicit design decision, not a
+   next stage of this one.
 
 ## Design & Implementation Review — 2026-07-16
 

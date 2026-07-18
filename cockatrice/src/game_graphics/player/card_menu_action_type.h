@@ -13,6 +13,8 @@ enum CardMenuActionType
     cmTap,
     cmUntap,
     cmDoesntUntap,
+    cmAttacking, // Phase 8 Stage 6: declare/remove as attacker, intercepted ahead of the generic
+                 // per-card dispatch loop below (see cardMenuAction())
     cmFlip,
     cmPeek,
     cmClone,

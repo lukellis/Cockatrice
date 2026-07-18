@@ -27,7 +27,8 @@ TEST(TriggeredAbilitiesTest, BalefulStrixRealPrintedTextIsRecognized)
 {
     // The real printed text of Baleful Strix (also used live in .uitest/sample_cards.xml) --
     // confirms the parser works against real card data, not just a synthetic fixture.
-    auto card = makeCard("Baleful Strix", "Flying, deathtouch\nWhen Baleful Strix enters the battlefield, draw a card.");
+    auto card =
+        makeCard("Baleful Strix", "Flying, deathtouch\nWhen Baleful Strix enters the battlefield, draw a card.");
     const QList<TriggeredAbility> expected = {{TriggerKind::EntersBattlefield, {EffectKind::DrawCards, 1}}};
     EXPECT_EQ(TriggeredAbilities::parse(*card), expected);
 }

@@ -14,6 +14,7 @@
 #include <QGraphicsScene>
 #include <QMessageBox>
 #include <libcockatrice/card/ability/activated_abilities.h>
+#include <libcockatrice/card/ability/card_keywords.h>
 #include <libcockatrice/card/ability/mana_abilities.h>
 #include <libcockatrice/card/ability/triggered_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
@@ -2108,6 +2109,50 @@ void PlayerActions::actRevealRandomGraveyardCard(int revealToPlayerId)
 void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActionType type)
 {
     QList<CardItem *> cardList = selectedCards;
+
+    // Phase 8 Stage 6 (combat, declare-attacker slice): checked ahead of everything else below,
+    // since it needs per-card keyword inspection the generic per-card attribute-toggle loop further
+    // down (cmDoesntUntap's shape) doesn't provide. Declaring a card as an attacker taps it unless
+    // it has Vigilance (rule 508.1f) -- the "keyword abilities can matter mechanically" payoff this
+    // stage was picked for; removing a card from combat never untaps it (matches real rules: ceasing
+    // to attack isn't itself an untap effect).
+    if (type == cmAttacking) {
+        QList<const ::google::protobuf::Message *> commandList;
+        for (const auto &card : cardList) {
+            if (!card || !card->getZone()) {
+                continue;
+            }
+
+            const bool wasAttacking = card->getAttacking();
+            auto *attackCmd = new Command_SetCardAttr;
+            attackCmd->set_zone(card->getZone()->getName().toStdString());
+            attackCmd->set_card_id(card->getId());
+            attackCmd->set_attribute(AttrAttacking);
+            attackCmd->set_attr_value(wasAttacking ? "0" : "1");
+            commandList.append(attackCmd);
+
+            if (wasAttacking || card->getTapped()) {
+                continue; // removing from combat, or already tapped -- nothing else to send
+            }
+
+            ExactCard exactCard = card->getCard();
+            const bool hasVigilance =
+                exactCard && CardKeywords::parse(exactCard.getInfo()).contains(QStringLiteral("Vigilance"));
+            if (!hasVigilance) {
+                auto *tapCmd = new Command_SetCardAttr;
+                tapCmd->set_zone(card->getZone()->getName().toStdString());
+                tapCmd->set_card_id(card->getId());
+                tapCmd->set_attribute(AttrTapped);
+                tapCmd->set_attr_value("1");
+                commandList.append(tapCmd);
+            }
+        }
+
+        if (!commandList.isEmpty()) {
+            sendGameCommand(prepareGameCommand(commandList));
+        }
+        return;
+    }
 
     // Phase 7 Stages 2/4 (targeting / mana cost): checked ahead of everything else below, and only
     // for a single selected card -- multi-select batch activation (each card needing its own

@@ -38,6 +38,7 @@ public:
     QAction *aSelectAll, *aSelectRow, *aSelectColumn;
     QAction *aDrawArrow;
     QAction *aTap, *aDoesntUntap;
+    QAction *aAttacking;
     QAction *aFlip, *aPeek;
     QAction *aAttach, *aUnattach;
     QAction *aSetAnnotation;
