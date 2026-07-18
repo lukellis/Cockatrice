@@ -42,6 +42,7 @@ class ZoneViewLayout;
 class ZoneViewWidget;
 class PhasesToolbar;
 class PlayerListWidget;
+class PendingAbilityWidget;
 class ReplayTimelineWidget;
 class CardZone;
 class AbstractCardItem;
@@ -67,6 +68,7 @@ private:
 
     CardInfoFrameWidget *cardInfoFrameWidget;
     PlayerListWidget *playerListWidget;
+    PendingAbilityWidget *pendingAbilityWidget;
     QLabel *timeElapsedLabel;
     MessageLogWidget *messageLog;
     QLabel *sayLabel;
@@ -77,7 +79,7 @@ private:
     QMap<int, TabbedDeckViewContainer *> deckViewContainers;
     QVBoxLayout *deckViewContainerLayout;
     QWidget *gamePlayAreaWidget, *deckViewContainerWidget;
-    QDockWidget *cardInfoDock, *messageLayoutDock, *playerListDock, *replayDock;
+    QDockWidget *cardInfoDock, *messageLayoutDock, *playerListDock, *pendingAbilityDock, *replayDock;
     QAction *playersSeparator;
     QMenu *gameMenu, *viewMenu;
     TearOffMenu *phasesMenu;
@@ -123,6 +125,7 @@ private:
     void registerDockWidget(QMenu *_viewMenu, QDockWidget *widget, const QSize &defaultSize);
     void createCardInfoDock(bool bReplay = false);
     void createPlayerListDock(bool bReplay = false);
+    void createPendingAbilityDock();
     void createMessageDock(bool bReplay = false);
     void createPlayAreaWidget(bool bReplay = false);
     void createDeckViewContainerWidget(bool bReplay = false);
@@ -182,6 +185,7 @@ public:
     void connectToGameEventHandler();
     void connectMessageLogToGameEventHandler();
     void connectPlayerListToGameEventHandler();
+    void connectPendingAbilityWidgetToGameEventHandler();
     TabGame(TabSupervisor *_tabSupervisor, GameReplay *replay);
     ~TabGame() override;
     void retranslateUi() override;

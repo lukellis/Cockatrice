@@ -143,6 +143,21 @@ signals:
     void logPriorityCleared();
     void logAbilityActivated(PlayerLogic *player);
     void logAbilityResolved(PlayerLogic *player);
+
+    // Pending-ability stack visualization: unlike the log* signals above (which only ever carry
+    // the controller, for a plain-text log line), these forward the full Event_AbilityActivated/
+    // Event_AbilityResolved payload the wire protocol already carries -- no new protocol messages,
+    // see COMMANDER_IMPLEMENTATION_STATUS.md. pendingAbilityPopped() carries no data: the server's
+    // pending-ability store is a real LIFO stack that always resolves exactly the top entry, so a
+    // client-side mirror that unconditionally pops its own top entry on any resolution stays
+    // correctly in sync without needing a unique ability id.
+    void pendingAbilityPushed(int controllerId,
+                              int effectKind,
+                              int amount,
+                              int targetPlayerId,
+                              QString targetZone,
+                              int targetCardId);
+    void pendingAbilityPopped();
 };
 
 #endif // COCKATRICE_GAME_EVENT_HANDLER_H

@@ -37,7 +37,7 @@ life default — not the full stack/priority/combat engine).
 | §3 Phase 7: Card Ability System | **Increments 1–2 done, plus follow-ups; real execution-engine Stages 1–6 done (2026-07-17/18)** | Evergreen keyword recognition + display (Increment 1) and mana ability recognition + one-click tap-and-add (Increment 2, [`doc/design-docs/phase7-increment2-mana-abilities-plan.md`](doc/design-docs/phase7-increment2-mana-abilities-plan.md)) — both implemented, tested, and live-verified. Two follow-ups since: basic lands' whole-line-reminder-text ability recognized (previously missed), and mana-ability activation folded into the generic multi-select Tap action. Beyond that: a real card-ability *execution* engine (not just display parsing) has a full staged roadmap (Stages 1–6) with Stage 1 (narrow self-targeted activated abilities), Stage 2 (targeting — board-click picker, players and permanents), Stage 3 (a real resolvable pending-ability stack — LIFO resolution on priority exhaustion, replacing Stage 2's `Command_ActivateTargetedEffect` with a unified `Command_ActivateAbility`), Stage 4 (real mana cost payment — parse a cost prefix, gate/pay it against the mana pool, zero new protocol messages), Stage 5 (triggered abilities — ETB/dies triggers firing automatically off a zone-change event, no menu click, still zero new protocol messages), and Stage 6 (combat — a declare-attacker slice finishing off the already-plumbed-but-dead `attacking` attribute, tap-unless-vigilance, zero new protocol messages) all implemented, tested, and live-verified. See "Phase 7" section below and the "Phase 8" row below for what Stage 6 deliberately excludes (blocking, damage, death). |
 | §3 Phase 8: Combat System | **Narrow slice done (2026-07-18) — see Phase 7's "Stage 6" section** | A real "declare as attacker" toggle (rule 508.1a/508.1f, tap unless vigilance) with a visual indicator, auto-clearing when combat ends — implemented, tested, and live-verified as Phase 7 Stage 6 (the roadmap's two efforts converge here; see that section for the full research/scoping writeup). Declaring/removing blockers, any combat-damage calculation, and any creature-death/graveyard automation remain explicitly out of scope — no reliable attacker→blocker link exists (arrows are untyped), no numeric P/T exists anywhere in this codebase, and this fork has never automated death even for the simpler life ≤ 0 case. |
 | §3 Phase 9: State-Based Actions | **Partial** | Advisory (non-blocking) warnings, matching the existing commander-damage pattern, for the three other most common causes of loss: life ≤ 0 (rule 104.3a), drawing from an empty library (rule 104.3b), and ≥10 poison counters (rule 104.3c). See "Phase 9" section below. Not covered: any SBA that isn't a simple counter/zone threshold (e.g. legend rule, no-commander-in-any-zone edge cases). |
-| §12: UI Design & Enhancements | Not started | No 4-player grid layout, stack/priority visualization, mana pool widget, or combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
+| §12: UI Design & Enhancements | **Partial** | Stack/priority visualization done (2026-07-18) — a new "Pending Abilities" dock panel showing the live pending-ability stack (LIFO) and current priority holder, purely a client-side mirror of already-broadcast wire data, zero new protocol messages; see "UI: pending-ability / priority visualization panel" section below. Still not started: 4-player grid layout, mana pool widget, combat UI. Command zone has a basic panel (§12.6) but not the full commander-tax/partner display proposed. |
 
 This fork's scope corresponds almost exactly to the design doc's own **§8
 "Recommended Starting Point"** (deck validation, commander damage tracking via the
@@ -1415,6 +1415,85 @@ blockers, computing damage, and any death/graveyard automation remain explicitly
 staged roadmap that was in reach at this fork's scope** — real combat damage and death remain
 explicitly out of scope, for the reasons researched and documented above, not a gap to revisit
 without a real design discussion first.
+
+## UI: pending-ability / priority visualization panel (2026-07-18)
+
+Picked by the user as the next increment once the Phase 7/8 staged roadmap (Stages 1–6) was fully
+worked through. Phase 7 Stage 3 built a real, server-authoritative pending-ability stack (LIFO
+resolution on priority exhaustion) and Phase 5 built real priority-passing — but neither was ever
+visible to players as *state*, only as transient message-log lines ("X activates an ability." /
+"X's ability resolves.", "X has priority." / "Everyone has passed. No one has priority."). Stage 3's
+own writeup had explicitly flagged this ("a visible stack-contents UI beyond log lines") as
+deliberately excluded at the time; this closes that gap.
+
+**Key finding that kept this small**: the server already broadcasts everything needed to every
+client — `Event_AbilityActivated`/`Event_AbilityResolved` (full `PendingAbility` data: controller,
+effect kind, amount, target) and `Event_PriorityChanged` are all sent unconditionally to every
+connected client already. This is purely a **client-side visualization of state the wire protocol
+already carries — zero new protocol messages.** The one real gap was that
+`GameEventHandler::eventAbilityActivated`/`eventAbilityResolved` discarded the effect/target payload
+before it ever reached a signal, resolving only the controller `PlayerLogic*` for the existing
+dataless `logAbilityActivated`/`logAbilityResolved` log signals.
+
+**LIFO correctness without a unique ability id**: neither event carries a stable identifier for
+"which pending entry." That's fine — the server's pending-ability store is a genuine LIFO stack that
+always resolves exactly the top entry, so a client-side mirror that pushes on
+`Event_AbilityActivated` (append) and unconditionally pops its own top entry on any
+`Event_AbilityResolved` stays correctly in sync by construction, no id needed.
+
+**What's implemented**:
+- **`GameEventHandler`** (`game_event_handler.{h,cpp}`) gained two new signals alongside the
+  existing, untouched `logAbilityActivated`/`logAbilityResolved`: `pendingAbilityPushed(int
+  controllerId, int effectKind, int amount, int targetPlayerId, QString targetZone, int
+  targetCardId)` and `pendingAbilityPopped()` (no data — see the LIFO argument above).
+  `eventAbilityActivated`/`eventAbilityResolved` each gained one more `emit` forwarding fields
+  already present on the wire.
+- **New `PendingAbilityWidget`** (`cockatrice/src/game_graphics/stack/pending_ability_widget.{h,cpp}`,
+  a new per-widget-family directory alongside this codebase's existing `log/`/`player/`/`tally/`
+  convention): a `QLabel` header ("Priority: <Player>" / "Priority: no one", driven by the existing
+  `GameEventHandler::priorityChanged` signal — the same one already driving the Phase 5 button-pulse/
+  avatar-highlight) above a `QListWidget` (`pushAbility()` inserts at index 0 = newest-on-top =
+  top-of-stack; `popAbility()` removes index 0). A small local `describeEffect()` helper turns
+  `DrawCards`/`GainLife`/`LoseLife`/`DealDamage` into readable text (e.g. `"Draw 1 card(s)"`, `"Deal
+  3 damage to <player>"` / `"Deal 3 damage to a permanent"` — deliberately generic for a card-zone
+  target rather than resolving the exact card name on every observing client, which isn't reliably
+  possible for a hidden/opponent's card and isn't worth the complexity for a display label).
+- **Registered as a new dock** in `tab_game.{h,cpp}` (`createPendingAbilityDock()` /
+  `connectPendingAbilityWidgetToGameEventHandler()`), following `createPlayerListDock()`'s exact
+  shape — same dock features, added to both the live-game and replay constructors, registered in the
+  View menu (`registerDockWidget`) alongside Card Info/Messages/Player List, included in
+  `actResetLayout()`'s default layout.
+- **Testing**: no new GTest file — pure UI wiring (display text, dock registration, signal
+  plumbing), same "UI wiring gets live-verified, not unit tested" precedent Stage 6 already
+  established. Full suite: **22/22 executables pass**, zero regressions (confirms the
+  `game_event_handler.{h,cpp}` touch didn't break anything already depending on those events).
+  `format.sh --cmake --branch master` run and applied (cosmetic only); rebuilt and retested clean.
+- **Verified live**, not just compiled: local servatrice + Xvfb + real client, a real solo Commander
+  game, the same throwaway "Test Draw Rock"/"Test Bolt Rock" pair Stage 3's own verification used
+  (added to `.uitest/sample_cards.xml` for the session, removed afterward). Confirmed via screenshot:
+  - The panel appeared in the sidebar immediately on game start, correctly reading "Priority: no
+    one" before the game started and "Priority: testuser" once it did (no manual action needed —
+    driven entirely by the pre-existing `priorityChanged` signal).
+  - Activating both abilities without passing priority in between produced exactly two list entries,
+    newest on top: `"testuser: Deal 3 damage to testuser"` then, below it, `"testuser: Draw 1
+    card(s)"` — correct LIFO order and correct human-readable text, including the resolved target
+    player name for the targeted effect.
+  - The list correctly **persisted unchanged across a phase/turn transition** (advancing through
+    Untap) — confirming it's driven only by actual activation/resolution events, not incidentally
+    tied to phase changes.
+  - Passing priority resolved the top entry first (life 40→37 from the 3 damage, matching Stage 2/3's
+    already-proven resolution mechanism) and the list correctly dropped to showing only the
+    remaining `"Draw 1 card(s)"` entry; passing again resolved that one (the empty-library SBA
+    warning fired exactly as every prior stage's verification already found) and the list emptied
+    completely, with the header reopening to "Priority: testuser" for the fresh round.
+  - The dock appears in the View menu ("Pending Abilities") alongside Card Info/Messages/Player List,
+    toggleable the same way.
+- **Deliberately excluded**: resolving/displaying the exact target *card* name for a card-zone
+  target (kept generic — "a permanent" — for robustness across clients that may not have full
+  visibility into the target); any interaction affordances on the list itself (e.g. clicking an
+  entry to inspect the source card) — this is a read-only visualization, not a new control surface.
+
+**Status: implemented, tested, and live-verified.**
 
 ## Phase 9: State-Based Actions (advisory warnings)
 

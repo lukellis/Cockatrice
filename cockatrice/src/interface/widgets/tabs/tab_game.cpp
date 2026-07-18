@@ -16,6 +16,7 @@
 #include "../game_graphics/player/menu/player_menu.h"
 #include "../game_graphics/player/player_graphics_item.h"
 #include "../game_graphics/player/player_list_widget.h"
+#include "../game_graphics/stack/pending_ability_widget.h"
 #include "../interface/card_picture_loader/card_picture_loader.h"
 #include "../interface/widgets/cards/card_info_frame_widget.h"
 #include "../interface/widgets/dialogs/dlg_create_game.h"
@@ -54,6 +55,7 @@ TabGame::TabGame(TabSupervisor *_tabSupervisor, GameReplay *_replay)
 
     createCardInfoDock(true);
     createPlayerListDock(true);
+    createPendingAbilityDock();
     createMessageDock(true);
     createPlayAreaWidget(true);
     createDeckViewContainerWidget(true);
@@ -61,6 +63,7 @@ TabGame::TabGame(TabSupervisor *_tabSupervisor, GameReplay *_replay)
 
     addDockWidget(Qt::RightDockWidgetArea, cardInfoDock);
     addDockWidget(Qt::RightDockWidgetArea, playerListDock);
+    addDockWidget(Qt::RightDockWidgetArea, pendingAbilityDock);
     addDockWidget(Qt::RightDockWidgetArea, messageLayoutDock);
     addDockWidget(Qt::BottomDockWidgetArea, replayDock);
 
@@ -76,6 +79,7 @@ TabGame::TabGame(TabSupervisor *_tabSupervisor, GameReplay *_replay)
     connectToPlayerManager();
     connectToGameEventHandler();
     connectPlayerListToGameEventHandler();
+    connectPendingAbilityWidgetToGameEventHandler();
     connectMessageLogToGameEventHandler();
 
     retranslateUi();
@@ -98,6 +102,7 @@ TabGame::TabGame(TabSupervisor *_tabSupervisor,
 
     createCardInfoDock();
     createPlayerListDock();
+    createPendingAbilityDock();
     createMessageDock();
     createPlayAreaWidget();
     createDeckViewContainerWidget();
@@ -105,6 +110,7 @@ TabGame::TabGame(TabSupervisor *_tabSupervisor,
 
     addDockWidget(Qt::RightDockWidgetArea, cardInfoDock);
     addDockWidget(Qt::RightDockWidgetArea, playerListDock);
+    addDockWidget(Qt::RightDockWidgetArea, pendingAbilityDock);
     addDockWidget(Qt::RightDockWidgetArea, messageLayoutDock);
 
     mainWidget = new QStackedWidget(this);
@@ -120,6 +126,7 @@ TabGame::TabGame(TabSupervisor *_tabSupervisor,
     connectToPlayerManager();
     connectToGameEventHandler();
     connectPlayerListToGameEventHandler();
+    connectPendingAbilityWidgetToGameEventHandler();
     connectMessageLogToGameEventHandler();
 
     retranslateUi();
@@ -236,6 +243,16 @@ void TabGame::connectPlayerListToGameEventHandler()
             &PlayerListWidget::removePlayer);
     connect(game->getGameEventHandler(), &GameEventHandler::playerPropertiesChanged, playerListWidget,
             &PlayerListWidget::updatePlayerProperties);
+}
+
+void TabGame::connectPendingAbilityWidgetToGameEventHandler()
+{
+    connect(game->getGameEventHandler(), &GameEventHandler::pendingAbilityPushed, pendingAbilityWidget,
+            &PendingAbilityWidget::pushAbility);
+    connect(game->getGameEventHandler(), &GameEventHandler::pendingAbilityPopped, pendingAbilityWidget,
+            &PendingAbilityWidget::popAbility);
+    connect(game->getGameEventHandler(), &GameEventHandler::priorityChanged, pendingAbilityWidget,
+            &PendingAbilityWidget::setPriorityPlayer);
 }
 
 void TabGame::addMentionTag(const QString &value)
@@ -361,6 +378,7 @@ void TabGame::retranslateUi()
     dockToActions[cardInfoDock].menu->setTitle(tr("Card Info"));
     dockToActions[messageLayoutDock].menu->setTitle(tr("Messages"));
     dockToActions[playerListDock].menu->setTitle(tr("Player List"));
+    dockToActions[pendingAbilityDock].menu->setTitle(tr("Pending Abilities"));
 
     if (replayDock) {
         dockToActions[replayDock].menu->setTitle(tr("Replay Timeline"));
@@ -1077,6 +1095,7 @@ void TabGame::createViewMenuItems()
     registerDockWidget(viewMenu, cardInfoDock, {250, 360});
     registerDockWidget(viewMenu, messageLayoutDock, {250, 200});
     registerDockWidget(viewMenu, playerListDock, {250, 50});
+    registerDockWidget(viewMenu, pendingAbilityDock, {250, 100});
 
     if (replayDock) {
         registerDockWidget(viewMenu, replayDock, {900, 100});
@@ -1137,14 +1156,17 @@ void TabGame::actResetLayout()
 {
     cardInfoDock->setVisible(true);
     playerListDock->setVisible(true);
+    pendingAbilityDock->setVisible(true);
     messageLayoutDock->setVisible(true);
 
     cardInfoDock->setFloating(false);
     playerListDock->setFloating(false);
+    pendingAbilityDock->setFloating(false);
     messageLayoutDock->setFloating(false);
 
     addDockWidget(Qt::RightDockWidgetArea, cardInfoDock);
     addDockWidget(Qt::RightDockWidgetArea, playerListDock);
+    addDockWidget(Qt::RightDockWidgetArea, pendingAbilityDock);
     addDockWidget(Qt::RightDockWidgetArea, messageLayoutDock);
 
     if (replayDock) {
@@ -1155,11 +1177,13 @@ void TabGame::actResetLayout()
         cardInfoDock->resize(250, 360);
         messageLayoutDock->resize(250, 200);
         playerListDock->resize(250, 50);
+        pendingAbilityDock->resize(250, 100);
         replayDock->resize(900, 100);
     } else {
         cardInfoDock->resize(250, 360);
         messageLayoutDock->resize(250, 250);
         playerListDock->resize(250, 50);
+        pendingAbilityDock->resize(250, 100);
     }
 }
 
@@ -1259,6 +1283,22 @@ void TabGame::createPlayerListDock(bool bReplay)
                                 QDockWidget::DockWidgetMovable);
     playerListDock->setWidget(playerListWidget);
     playerListDock->setFloating(false);
+}
+
+// Pending-ability/priority visualization panel: a client-side mirror of state Phase 7 Stage 3 (a
+// real resolvable pending-ability stack) and Phase 5 (priority passing) already track server-side,
+// previously only ever visible via transient message-log lines. See COMMANDER_IMPLEMENTATION_STATUS.md.
+void TabGame::createPendingAbilityDock()
+{
+    pendingAbilityWidget = new PendingAbilityWidget(game);
+    pendingAbilityWidget->setFocusPolicy(Qt::NoFocus);
+
+    pendingAbilityDock = new QDockWidget(this);
+    pendingAbilityDock->setObjectName("pendingAbilityDock");
+    pendingAbilityDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetFloatable |
+                                    QDockWidget::DockWidgetMovable);
+    pendingAbilityDock->setWidget(pendingAbilityWidget);
+    pendingAbilityDock->setFloating(false);
 }
 
 void TabGame::createMessageDock(bool bReplay)

@@ -99,6 +99,7 @@ set(cockatrice_SOURCES
     src/game_graphics/player/menu/say_menu.cpp
     src/game_graphics/player/menu/sideboard_menu.cpp
     src/game_graphics/player/menu/utility_menu.cpp
+    src/game_graphics/stack/pending_ability_widget.cpp
     src/game_graphics/tally/subtype_tally.cpp
     src/game_graphics/tally/tally.cpp
     src/game/player/player_actions.cpp

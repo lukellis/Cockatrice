@@ -536,6 +536,9 @@ void GameEventHandler::eventAbilityActivated(const Event_AbilityActivated &event
     if (player) {
         emit logAbilityActivated(player);
     }
+    emit pendingAbilityPushed(
+        event.controller_player_id(), event.effect_kind(), event.amount(), event.target_player_id(),
+        event.has_target_zone() ? QString::fromStdString(event.target_zone()) : QString(), event.target_card_id());
 }
 
 void GameEventHandler::eventAbilityResolved(const Event_AbilityResolved &event,
@@ -546,6 +549,7 @@ void GameEventHandler::eventAbilityResolved(const Event_AbilityResolved &event,
     if (player) {
         emit logAbilityResolved(player);
     }
+    emit pendingAbilityPopped();
 }
 
 void GameEventHandler::eventGameHostChanged(const Event_GameHostChanged & /*event*/,
