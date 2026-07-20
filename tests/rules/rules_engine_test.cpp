@@ -100,6 +100,112 @@ TEST(RulesEngineTest, AttackingCreatureCannotAlsoBeDeclaredAsBlocker)
     EXPECT_FALSE(RulesEngine::canDeclareBlocker(RulesEngine::DECLARE_BLOCKERS_PHASE, false, true));
 }
 
+// ---- RulesEngine::parseNumericPT (Phase 8 combat automation Stage B, pure decision logic) ----
+
+TEST(RulesEngineTest, ParseNumericPTParsesPlainIntegers)
+{
+    auto pt = RulesEngine::parseNumericPT("3/4");
+    ASSERT_TRUE(pt.has_value());
+    EXPECT_EQ(pt->first, 3);
+    EXPECT_EQ(pt->second, 4);
+}
+
+TEST(RulesEngineTest, ParseNumericPTRejectsCharacteristicDefiningPT)
+{
+    EXPECT_FALSE(RulesEngine::parseNumericPT("*/1+*").has_value());
+    EXPECT_FALSE(RulesEngine::parseNumericPT("X/X").has_value());
+}
+
+TEST(RulesEngineTest, ParseNumericPTRejectsMalformedStrings)
+{
+    EXPECT_FALSE(RulesEngine::parseNumericPT("").has_value());
+    EXPECT_FALSE(RulesEngine::parseNumericPT("3").has_value());
+    EXPECT_FALSE(RulesEngine::parseNumericPT("3/4/5").has_value());
+}
+
+// ---- RulesEngine::calculateCombatDamage (Phase 8 combat automation Stage B, pure decision logic) ----
+
+using CombatAttack = RulesEngine::CombatAttack;
+using CombatCreature = RulesEngine::CombatCreature;
+
+TEST(RulesEngineTest, UnblockedAttackerWithTargetDealsDamageToPlayer)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 3};
+    attack.targetPlayerId = 2;
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_EQ(result.playerLifeLoss.value(2), 3);
+    EXPECT_TRUE(result.cardDamageMarked.isEmpty());
+}
+
+TEST(RulesEngineTest, UnblockedAttackerWithNoTargetDealsNoDamage)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 3};
+    attack.targetPlayerId = -1;
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_TRUE(result.playerLifeLoss.isEmpty());
+}
+
+TEST(RulesEngineTest, MultipleUnblockedAttackersOnSamePlayerAccumulate)
+{
+    CombatAttack attackA;
+    attackA.attacker = CombatCreature{1, 100, 3, 3};
+    attackA.targetPlayerId = 2;
+    CombatAttack attackB;
+    attackB.attacker = CombatCreature{1, 101, 2, 2};
+    attackB.targetPlayerId = 2;
+
+    auto result = RulesEngine::calculateCombatDamage({attackA, attackB});
+    EXPECT_EQ(result.playerLifeLoss.value(2), 5);
+}
+
+TEST(RulesEngineTest, SingleBlockerExchangesDamageWithAttacker)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 4};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 2, 3}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_TRUE(result.playerLifeLoss.isEmpty());
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 3); // blocker takes attacker's full power
+    EXPECT_EQ(result.cardDamageMarked.value(1).value(100), 2); // attacker takes blocker's power
+}
+
+TEST(RulesEngineTest, MultipleBlockersSplitDamageInDeclarationOrderNoTrample)
+{
+    // A 5-power attacker blocked by two 2-toughness creatures: each blocker in declaration order
+    // is assigned exactly its own toughness (2 each, rule 510.1c simplified to "assign lethal,
+    // move on") -- the 1 leftover power (5 - 2 - 2) is simply wasted, not trampled through to the
+    // player, since trample isn't modeled.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 5, 4};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 1, 2}, CombatCreature{2, 201, 1, 2}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_TRUE(result.playerLifeLoss.isEmpty());
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 2);
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(201), 2);
+    EXPECT_EQ(result.cardDamageMarked.value(1).value(100), 2); // sum of both blockers' power
+}
+
+TEST(RulesEngineTest, BlockerPowerLessThanAttackerLeavesRemainderUnassigned)
+{
+    // A 2-power attacker blocked by a single 5-toughness creature: only 2 damage is assigned (no
+    // more than the attacker's power), nothing wasted or overflowed elsewhere.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 2, 4};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 1, 5}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 2);
+}
+
 // ---- RulesEngine::planManaPayment (Phase 7 Stage 4, pure decision logic) ----
 
 TEST(RulesEngineTest, PlanManaPaymentPaysExactColoredPips)

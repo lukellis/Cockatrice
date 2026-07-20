@@ -97,6 +97,13 @@ private:
     // lookup-by-name, Server_Card::incrementCounter(DAMAGE_CARD_COUNTER_ID, ...)). Called from
     // advancePriority() when a priority round exhausts with something pending.
     void applyPendingAbility(const Rules::PendingAbility &ability, GameEventStorage &ges);
+    // Phase 8 combat automation, Stage B: gathers every attacking creature (with a numerically
+    // parseable P/T) and its declared blockers across all players, runs
+    // Rules::RulesEngine::calculateCombatDamage(), and applies the result -- defending players'
+    // life loss, damage marked via the same DAMAGE_CARD_COUNTER_ID counter applyPendingAbility()
+    // already uses, and a state-based check moving anything now lethal to its owner's graveyard.
+    // Called from setActivePhase() on entering RulesEngine::COMBAT_DAMAGE_PHASE.
+    void resolveCombatDamage(GameEventStorage &ges);
 signals:
     void sigStartGameIfReady(bool override);
     void gameInfoChanged(ServerInfo_Game gameInfo);

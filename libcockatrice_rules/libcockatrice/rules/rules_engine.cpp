@@ -41,6 +41,53 @@ bool RulesEngine::canDeclareBlocker(int phase, bool blockerTapped, bool blockerA
     return phase == DECLARE_BLOCKERS_PHASE && !blockerTapped && !blockerAttacking;
 }
 
+RulesEngine::CombatDamageResult RulesEngine::calculateCombatDamage(const QList<CombatAttack> &attacks)
+{
+    CombatDamageResult result;
+
+    for (const CombatAttack &attack : attacks) {
+        if (attack.blockers.isEmpty()) {
+            if (attack.targetPlayerId != -1) {
+                result.playerLifeLoss[attack.targetPlayerId] += attack.attacker.power;
+            }
+            continue;
+        }
+
+        int remainingPower = attack.attacker.power;
+        int totalBlockerPower = 0;
+        for (const CombatCreature &blocker : attack.blockers) {
+            totalBlockerPower += blocker.power;
+            if (remainingPower <= 0) {
+                continue;
+            }
+            const int assigned = std::min(remainingPower, blocker.toughness);
+            result.cardDamageMarked[blocker.playerId][blocker.cardId] += assigned;
+            remainingPower -= assigned;
+        }
+        result.cardDamageMarked[attack.attacker.playerId][attack.attacker.cardId] += totalBlockerPower;
+    }
+
+    return result;
+}
+
+std::optional<std::pair<int, int>> RulesEngine::parseNumericPT(const QString &pt)
+{
+    const QStringList parts = pt.split(QLatin1Char('/'));
+    if (parts.size() != 2) {
+        return std::nullopt;
+    }
+
+    bool powerOk = false;
+    bool toughnessOk = false;
+    const int power = parts.at(0).toInt(&powerOk);
+    const int toughness = parts.at(1).toInt(&toughnessOk);
+    if (!powerOk || !toughnessOk) {
+        return std::nullopt;
+    }
+
+    return std::make_pair(power, toughness);
+}
+
 int RulesEngine::nextPriorityPlayer(const QList<int> &playerOrder,
                                     int currentPlayerId,
                                     const QSet<int> &passedPlayers,

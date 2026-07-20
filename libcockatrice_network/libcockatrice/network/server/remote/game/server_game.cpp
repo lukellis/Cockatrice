@@ -35,6 +35,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QTimer>
+#include <algorithm>
 #include <google/protobuf/descriptor.h>
 #include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/deck_list/deck_list.h>
@@ -769,9 +770,172 @@ void Server_Game::setActivePhase(int newPhase)
     }
     manaGes.sendToGame(this);
 
+    // Phase 8 combat automation, Stage B: rule 510, resolved automatically on entering the
+    // Combat Damage step -- see resolveCombatDamage()'s own doc comment for exactly what this
+    // does and doesn't cover.
+    if (newPhase == Rules::RulesEngine::COMBAT_DAMAGE_PHASE) {
+        GameEventStorage damageGes;
+        resolveCombatDamage(damageGes);
+        damageGes.sendToGame(this);
+    }
+
+    // Rule 514.2: damage marked on permanents is removed at the End/Cleanup step, not when
+    // combat itself ends (see RulesEngine::CLEANUP_PHASE's doc comment for why this is separate
+    // from the attacking-clear block above). Every player's creatures, not just the active
+    // player's, same as the mana-pool sweep above.
+    if (newPhase == Rules::RulesEngine::CLEANUP_PHASE) {
+        GameEventStorage cleanupGes;
+        for (auto *anyPlayer : getPlayers().values()) {
+            Server_CardZone *table = anyPlayer->getZones().value(ZoneNames::TABLE);
+            if (!table) {
+                continue;
+            }
+            for (Server_Card *card : table->getCards()) {
+                if (card->getCounter(DAMAGE_CARD_COUNTER_ID) == 0) {
+                    continue;
+                }
+                Event_SetCardCounter event;
+                event.set_zone_name(table->getName().toStdString());
+                event.set_card_id(card->getId());
+                if (card->setCounter(DAMAGE_CARD_COUNTER_ID, 0, &event)) {
+                    cleanupGes.enqueueGameEvent(event, anyPlayer->getPlayerId());
+                }
+            }
+        }
+        cleanupGes.sendToGame(this);
+    }
+
     // Priority resets to the active player at the start of every phase (rule 117.3b/117.3c
     // simplified — see advancePriority() docs for what this doesn't model).
     broadcastPriorityChange(activePlayer);
+}
+
+void Server_Game::resolveCombatDamage(GameEventStorage &ges)
+{
+    QMap<int, Server_AbstractPlayer *> allPlayers = getPlayers();
+
+    // Gather every attacking creature with a numerically parseable P/T (see parseNumericPT()'s
+    // doc comment -- a non-numeric P/T like "*/1+*" is left out entirely, for manual resolution,
+    // rather than silently mis-calculated as 0/0) and its declared blockers.
+    QList<Rules::RulesEngine::CombatAttack> attacks;
+    for (auto it = allPlayers.constBegin(); it != allPlayers.constEnd(); ++it) {
+        Server_CardZone *table = it.value()->getZones().value(ZoneNames::TABLE);
+        if (!table) {
+            continue;
+        }
+        for (Server_Card *card : table->getCards()) {
+            if (!card->getAttacking()) {
+                continue;
+            }
+            auto attackerPT = Rules::RulesEngine::parseNumericPT(card->getPT());
+            if (!attackerPT) {
+                continue;
+            }
+
+            Rules::RulesEngine::CombatAttack attack;
+            attack.attacker = {it.key(), card->getId(), attackerPT->first, attackerPT->second};
+            attack.targetPlayerId = card->getAttackTargetPlayerId();
+
+            // This attacker's declared blockers, across every player's table zone. Order is an
+            // arbitrary but deterministic stand-in (ascending card id) for the real player-chosen
+            // damage-assignment order -- see CombatAttack's doc comment.
+            QList<Rules::RulesEngine::CombatCreature> blockers;
+            for (auto blockerIt = allPlayers.constBegin(); blockerIt != allPlayers.constEnd(); ++blockerIt) {
+                Server_CardZone *blockerTable = blockerIt.value()->getZones().value(ZoneNames::TABLE);
+                if (!blockerTable) {
+                    continue;
+                }
+                for (Server_Card *blockerCard : blockerTable->getCards()) {
+                    if (blockerCard->getBlockedPlayerId() != it.key() ||
+                        blockerCard->getBlockedCardId() != card->getId()) {
+                        continue;
+                    }
+                    auto blockerPT = Rules::RulesEngine::parseNumericPT(blockerCard->getPT());
+                    if (!blockerPT) {
+                        continue;
+                    }
+                    blockers.append({blockerIt.key(), blockerCard->getId(), blockerPT->first, blockerPT->second});
+                }
+            }
+            std::sort(blockers.begin(), blockers.end(),
+                      [](const auto &a, const auto &b) { return a.cardId < b.cardId; });
+            attack.blockers = blockers;
+
+            attacks.append(attack);
+        }
+    }
+
+    if (attacks.isEmpty()) {
+        return;
+    }
+
+    Rules::RulesEngine::CombatDamageResult result = Rules::RulesEngine::calculateCombatDamage(attacks);
+
+    for (auto it = result.playerLifeLoss.constBegin(); it != result.playerLifeLoss.constEnd(); ++it) {
+        auto *targetPlayer = dynamic_cast<Server_Player *>(allPlayers.value(it.key()));
+        if (!targetPlayer) {
+            continue;
+        }
+        const QMap<int, Server_Counter *> &counters = targetPlayer->getCounters();
+        for (auto counterIt = counters.constBegin(); counterIt != counters.constEnd(); ++counterIt) {
+            if (counterIt.value()->getName() == QStringLiteral("life")) {
+                if (counterIt.value()->incrementCount(-it.value())) {
+                    Event_SetCounter event;
+                    event.set_counter_id(counterIt.value()->getId());
+                    event.set_value(counterIt.value()->getCount());
+                    ges.enqueueGameEvent(event, targetPlayer->getPlayerId());
+                }
+                break;
+            }
+        }
+    }
+
+    // Mark damage via the same DAMAGE_CARD_COUNTER_ID counter applyPendingAbility()'s targeted
+    // damage effect already uses, and collect anything now lethal for the state-based death check
+    // below (rule 704.5g, simplified to just lethal combat damage -- this stage's explicit scope,
+    // see doc/commander-status/phase8-combat.md).
+    QList<QPair<int, int>> lethalCards; // (owner player id, card id)
+    for (auto ownerIt = result.cardDamageMarked.constBegin(); ownerIt != result.cardDamageMarked.constEnd();
+         ++ownerIt) {
+        Server_AbstractPlayer *owner = allPlayers.value(ownerIt.key());
+        Server_CardZone *table = owner ? owner->getZones().value(ZoneNames::TABLE) : nullptr;
+        if (!table) {
+            continue;
+        }
+        for (auto cardIt = ownerIt.value().constBegin(); cardIt != ownerIt.value().constEnd(); ++cardIt) {
+            Server_Card *card = table->getCard(cardIt.key());
+            if (!card) {
+                continue;
+            }
+            Event_SetCardCounter event;
+            event.set_zone_name(table->getName().toStdString());
+            event.set_card_id(card->getId());
+            if (card->incrementCounter(DAMAGE_CARD_COUNTER_ID, cardIt.value(), &event)) {
+                ges.enqueueGameEvent(event, owner->getPlayerId());
+            }
+
+            auto pt = Rules::RulesEngine::parseNumericPT(card->getPT());
+            if (pt && card->getCounter(DAMAGE_CARD_COUNTER_ID) >= pt->second) {
+                lethalCards.append({ownerIt.key(), card->getId()});
+            }
+        }
+    }
+
+    for (const auto &lethal : lethalCards) {
+        Server_AbstractPlayer *owner = allPlayers.value(lethal.first);
+        if (!owner) {
+            continue;
+        }
+        Server_CardZone *table = owner->getZones().value(ZoneNames::TABLE);
+        Server_CardZone *grave = owner->getZones().value(ZoneNames::GRAVE);
+        if (!table || !grave) {
+            continue;
+        }
+        CardToMove cardToMove;
+        cardToMove.set_card_id(lethal.second);
+        cardToMove.set_face_down(false);
+        owner->moveCard(ges, table, {&cardToMove}, grave, -1, -1, true, false, false);
+    }
 }
 
 void Server_Game::resetPriorityTo(int playerId)

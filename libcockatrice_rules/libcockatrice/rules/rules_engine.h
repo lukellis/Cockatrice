@@ -108,6 +108,83 @@ public:
      */
     static bool canDeclareBlocker(int phase, bool blockerTapped, bool blockerAttacking);
 
+    /** @brief Phase index for the Combat Damage step (see isCombatPhase()'s phase-index doc). */
+    static constexpr int COMBAT_DAMAGE_PHASE = 7;
+
+    /**
+     * @brief Phase index for the (combined, in this fork's simplified turn structure) End Step /
+     * Cleanup step. Rule 514.2: damage marked on permanents is removed here, not when combat
+     * itself ends -- a creature that survived combat still remembers its damage through Second
+     * Main, which is why the DAMAGE_CARD_COUNTER_ID counter (see card_effects.h; already reused
+     * from Phase 7 Stage 5's targeted damage effect) is cleared on this specific phase, not (like
+     * AttrAttacking) whenever the game leaves isCombatPhase()'s range.
+     */
+    static constexpr int CLEANUP_PHASE = 10;
+
+    /**
+     * @brief A creature's controller + card id + numeric power/toughness, the minimal shape
+     * calculateCombatDamage() needs -- deliberately decoupled from Server_Card so the damage math
+     * stays unit-testable without a live server (see rules_engine_test.cpp).
+     */
+    struct CombatCreature
+    {
+        int playerId = -1;
+        int cardId = -1;
+        int power = 0;
+        int toughness = 0;
+    };
+
+    /**
+     * @brief One attacking creature's combat, from RulesEngine's point of view: who it's
+     * attacking (targetPlayerId, -1 if no target was ever set -- see Stage A) and, if any, the
+     * creatures blocking it, in declaration order (rule 509's damage-assignment order is a player
+     * choice this fork doesn't model; declaration order is the deterministic stand-in -- see
+     * COMMANDER_IMPLEMENTATION_STATUS.md's Phase 8 doc).
+     */
+    struct CombatAttack
+    {
+        CombatCreature attacker;
+        int targetPlayerId = -1;
+        QList<CombatCreature> blockers;
+    };
+
+    /**
+     * @brief The result of resolving a set of CombatAttack%s: life lost per defending player, and
+     * damage marked per card (both attackers hit by blockers and blockers hit by their attacker),
+     * keyed by the card's controller id then its card id (card ids are only unique within one
+     * player's zones, not game-wide -- see Stage A's AttrBlocking doc comment).
+     */
+    struct CombatDamageResult
+    {
+        QMap<int, int> playerLifeLoss;
+        QMap<int, QMap<int, int>> cardDamageMarked;
+    };
+
+    /**
+     * @brief Rule 510, simplified: an unblocked attacker with a target deals its power to that
+     * player; a blocked attacker splits its power across its blockers in declaration order,
+     * assigning each blocker's full toughness (rule 510.1c's "lethal damage" simplified to exact
+     * toughness, since this fork doesn't model deathtouch) before moving to the next, with any
+     * leftover power wasted (no trample); all of an attacker's blockers simultaneously deal their
+     * combined power back to the attacker (rule 510.1a). Explicitly out of scope, same as the
+     * rest of this fork's combat depth: first/double strike (no separate combat-damage steps),
+     * deathtouch, trample, indestructible, protection, damage prevention/replacement effects, and
+     * planeswalker/battle damage. An attacker with no target (targetPlayerId == -1) deals no
+     * damage at all if unblocked.
+     */
+    static CombatDamageResult calculateCombatDamage(const QList<CombatAttack> &attacks);
+
+    /**
+     * @brief Parses a P/T string (Server_Card::getPT(), already "effective" -- counters are baked
+     * into it by the client's existing +1/+1-counter menu, see CardItem::parsePT()) into
+     * (power, toughness), or std::nullopt if either half isn't a plain integer. Real Magic P/T is
+     * sometimes non-numeric (characteristic-defining "*", "X/X", etc.); this deliberately returns
+     * nullopt rather than defaulting to 0 like the delta-parser's own, different, purpose does, so
+     * callers can leave such a creature out of automatic combat-damage calculation entirely
+     * instead of silently mis-calculating it as a 0-power/0-toughness creature.
+     */
+    static std::optional<std::pair<int, int>> parseNumericPT(const QString &pt);
+
     /**
      * @brief Pure logic: the next player, in ascending-id turn order starting just after
      * @p currentPlayerId (wrapping around @p playerOrder), who is in neither @p passedPlayers nor
