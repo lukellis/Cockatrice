@@ -236,6 +236,17 @@ void PlayerEventHandler::setCardAttrHelper(const GameEventContext &context,
             card->setPT(avalue);
             break;
         }
+        case AttrAttackTarget: {
+            card->setAttackTargetPlayerId(avalue.toInt());
+            break;
+        }
+        case AttrBlocking: {
+            const QStringList parts = avalue.split(QLatin1Char(':'));
+            const int blockedPlayerId = parts.size() == 2 ? parts.at(0).toInt() : -1;
+            const int blockedCardId = parts.size() == 2 ? parts.at(1).toInt() : -1;
+            card->setBlocked(blockedPlayerId, blockedCardId);
+            break;
+        }
     }
 }
 

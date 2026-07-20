@@ -39,6 +39,7 @@ public:
     QAction *aDrawArrow;
     QAction *aTap, *aDoesntUntap;
     QAction *aAttacking;
+    QAction *aBlocking;
     QAction *aFlip, *aPeek;
     QAction *aAttach, *aUnattach;
     QAction *aSetAnnotation;
@@ -55,6 +56,8 @@ private:
     void addRelatedCardActions();
     void retranslateUi();
     void initContextualPlayersMenu(QMenu *menu, QAction *allPlayersAction);
+    void initAttackTargetMenu(QMenu *menu);
+    void initBlockerMenu(QMenu *menu);
     void setShortcutsActive();
     void addRelatedCardView();
 };

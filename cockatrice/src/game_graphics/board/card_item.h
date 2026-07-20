@@ -89,6 +89,24 @@ public:
         return state->getAttacking();
     }
     void setAttacking(bool _attacking);
+    [[nodiscard]] int getAttackTargetPlayerId() const
+    {
+        return state->getAttackTargetPlayerId();
+    }
+    void setAttackTargetPlayerId(int _playerId);
+    [[nodiscard]] int getBlockedPlayerId() const
+    {
+        return state->getBlockedPlayerId();
+    }
+    [[nodiscard]] int getBlockedCardId() const
+    {
+        return state->getBlockedCardId();
+    }
+    [[nodiscard]] bool getBlocking() const
+    {
+        return state->getBlocking();
+    }
+    void setBlocked(int _playerId, int _cardId);
     [[nodiscard]] const QMap<int, int> &getCounters() const
     {
         return state->getCounters();

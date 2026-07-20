@@ -2412,6 +2412,133 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
     }
 }
 
+// Phase 8 combat automation, Stage A: declares each selected card as an attacker targeting
+// @p targetPlayerId, mirroring cmAttacking's vigilance-aware tap logic above -- the one addition
+// is also sending AttrAttackTarget, which is what makes the attack automatable in Stage B (unlike
+// the bare cmAttacking toggle, which never recorded who was being attacked).
+void PlayerActions::actDeclareAttacker(QList<CardItem *> selectedCards, int targetPlayerId)
+{
+    QList<const ::google::protobuf::Message *> commandList;
+    for (const auto &card : selectedCards) {
+        if (!card || !card->getZone()) {
+            continue;
+        }
+
+        const bool wasAttacking = card->getAttacking();
+
+        auto *attackCmd = new Command_SetCardAttr;
+        attackCmd->set_zone(card->getZone()->getName().toStdString());
+        attackCmd->set_card_id(card->getId());
+        attackCmd->set_attribute(AttrAttacking);
+        attackCmd->set_attr_value("1");
+        commandList.append(attackCmd);
+
+        auto *targetCmd = new Command_SetCardAttr;
+        targetCmd->set_zone(card->getZone()->getName().toStdString());
+        targetCmd->set_card_id(card->getId());
+        targetCmd->set_attribute(AttrAttackTarget);
+        targetCmd->set_attr_value(QString::number(targetPlayerId).toStdString());
+        commandList.append(targetCmd);
+
+        if (wasAttacking || card->getTapped()) {
+            continue; // already attacking (just (re)targeting), or already tapped
+        }
+
+        ExactCard exactCard = card->getCard();
+        const bool hasVigilance =
+            exactCard && CardKeywords::parse(exactCard.getInfo()).contains(QStringLiteral("Vigilance"));
+        if (!hasVigilance) {
+            auto *tapCmd = new Command_SetCardAttr;
+            tapCmd->set_zone(card->getZone()->getName().toStdString());
+            tapCmd->set_card_id(card->getId());
+            tapCmd->set_attribute(AttrTapped);
+            tapCmd->set_attr_value("1");
+            commandList.append(tapCmd);
+        }
+    }
+
+    if (!commandList.isEmpty()) {
+        sendGameCommand(prepareGameCommand(commandList));
+    }
+}
+
+// Phase 8 combat automation, Stage A: removes each selected card from combat, clearing both
+// AttrAttacking and AttrAttackTarget (cmAttacking's own toggle-off path only clears the former,
+// left untouched above for backward compatibility with its existing keyboard shortcut).
+void PlayerActions::actRemoveFromCombat(QList<CardItem *> selectedCards)
+{
+    QList<const ::google::protobuf::Message *> commandList;
+    for (const auto &card : selectedCards) {
+        if (!card || !card->getZone() || !card->getAttacking()) {
+            continue;
+        }
+
+        auto *attackCmd = new Command_SetCardAttr;
+        attackCmd->set_zone(card->getZone()->getName().toStdString());
+        attackCmd->set_card_id(card->getId());
+        attackCmd->set_attribute(AttrAttacking);
+        attackCmd->set_attr_value("0");
+        commandList.append(attackCmd);
+
+        auto *targetCmd = new Command_SetCardAttr;
+        targetCmd->set_zone(card->getZone()->getName().toStdString());
+        targetCmd->set_card_id(card->getId());
+        targetCmd->set_attribute(AttrAttackTarget);
+        targetCmd->set_attr_value("-1");
+        commandList.append(targetCmd);
+    }
+
+    if (!commandList.isEmpty()) {
+        sendGameCommand(prepareGameCommand(commandList));
+    }
+}
+
+// Phase 8 combat automation, Stage A: declares each selected card as blocking the attacker
+// identified by (attackerPlayerId, attackerCardId), packed into AttrBlocking's single string
+// value the same way AttrPT already packs "power/toughness" (see card_attributes.proto).
+void PlayerActions::actDeclareBlocker(QList<CardItem *> selectedCards, int attackerPlayerId, int attackerCardId)
+{
+    QList<const ::google::protobuf::Message *> commandList;
+    for (const auto &card : selectedCards) {
+        if (!card || !card->getZone()) {
+            continue;
+        }
+
+        auto *cmd = new Command_SetCardAttr;
+        cmd->set_zone(card->getZone()->getName().toStdString());
+        cmd->set_card_id(card->getId());
+        cmd->set_attribute(AttrBlocking);
+        cmd->set_attr_value(QStringLiteral("%1:%2").arg(attackerPlayerId).arg(attackerCardId).toStdString());
+        commandList.append(cmd);
+    }
+
+    if (!commandList.isEmpty()) {
+        sendGameCommand(prepareGameCommand(commandList));
+    }
+}
+
+// Phase 8 combat automation, Stage A: clears a previously declared block.
+void PlayerActions::actRemoveBlocker(QList<CardItem *> selectedCards)
+{
+    QList<const ::google::protobuf::Message *> commandList;
+    for (const auto &card : selectedCards) {
+        if (!card || !card->getZone() || !card->getBlocking()) {
+            continue;
+        }
+
+        auto *cmd = new Command_SetCardAttr;
+        cmd->set_zone(card->getZone()->getName().toStdString());
+        cmd->set_card_id(card->getId());
+        cmd->set_attribute(AttrBlocking);
+        cmd->set_attr_value("-1:-1");
+        commandList.append(cmd);
+    }
+
+    if (!commandList.isEmpty()) {
+        sendGameCommand(prepareGameCommand(commandList));
+    }
+}
+
 PendingCommand *PlayerActions::prepareGameCommand(const google::protobuf::Message &cmd)
 {
 

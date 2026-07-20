@@ -43,6 +43,9 @@ private:
     QMap<int, int> counters;
     bool tapped;
     bool attacking;
+    int attackTargetPlayerId;
+    int blockedPlayerId;
+    int blockedCardId;
     bool facedown;
     QString color;
     QString ptString;
@@ -106,6 +109,22 @@ public:
     bool getAttacking() const
     {
         return attacking;
+    }
+    int getAttackTargetPlayerId() const
+    {
+        return attackTargetPlayerId;
+    }
+    int getBlockedPlayerId() const
+    {
+        return blockedPlayerId;
+    }
+    int getBlockedCardId() const
+    {
+        return blockedCardId;
+    }
+    bool getBlocking() const
+    {
+        return blockedCardId != -1;
     }
     bool getFaceDown() const
     {
@@ -178,6 +197,15 @@ public:
     void setAttacking(bool _attacking)
     {
         attacking = _attacking;
+    }
+    void setAttackTargetPlayerId(int _playerId)
+    {
+        attackTargetPlayerId = _playerId;
+    }
+    void setBlocked(int _playerId, int _cardId)
+    {
+        blockedPlayerId = _playerId;
+        blockedCardId = _cardId;
     }
     void setFaceDown(bool _facedown)
     {

@@ -53,4 +53,16 @@ message ServerInfo_Card {
 
     // unique id of this kind of card, extends the name to specify a specific printing of a card
     optional string provider_id = 17;
+
+    // Phase 8 combat automation: the owning player of the attacking creature this card is
+    // declared as blocking, or -1 if it isn't blocking anything.
+    optional sint32 blocked_player_id = 18 [default = -1];
+
+    // Phase 8 combat automation: the card id (in the blocked player's table zone) of the
+    // attacking creature this card is declared as blocking, or -1 if it isn't blocking anything.
+    optional sint32 blocked_card_id = 19 [default = -1];
+
+    // Phase 8 combat automation: the player this attacking creature is attacking, or -1 if it
+    // isn't attacking or has no target yet.
+    optional sint32 attack_target_player_id = 20 [default = -1];
 }

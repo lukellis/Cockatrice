@@ -94,6 +94,21 @@ public:
     static bool isCombatPhase(int phase);
 
     /**
+     * @brief Phase index for the Declare Blockers step (see isCombatPhase()'s phase-index doc:
+     * cockatrice/src/game/phase.cpp's Phases::phases[] ordering).
+     */
+    static constexpr int DECLARE_BLOCKERS_PHASE = 6;
+
+    /**
+     * @brief Rule 509.1a, simplified: a blocker may only be declared during the Declare Blockers
+     * step, and must itself be untapped and not already attacking. Ownership/identity checks (a
+     * blocker can't block its own controller's creature, and the target must actually be
+     * attacking) are the server's job -- this is deliberately just the pure phase/state part, kept
+     * unit-testable the same way isCombatPhase() is.
+     */
+    static bool canDeclareBlocker(int phase, bool blockerTapped, bool blockerAttacking);
+
+    /**
      * @brief Pure logic: the next player, in ascending-id turn order starting just after
      * @p currentPlayerId (wrapping around @p playerOrder), who is in neither @p passedPlayers nor
      * @p concededPlayers. Returns -1 if every eligible player has already passed.

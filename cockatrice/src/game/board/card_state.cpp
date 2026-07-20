@@ -3,6 +3,9 @@
 void CardState::resetState(bool keepAnnotations)
 {
     attacking = false;
+    attackTargetPlayerId = -1;
+    blockedPlayerId = -1;
+    blockedCardId = -1;
     counters.clear();
     pt.clear();
     if (!keepAnnotations) {
@@ -29,6 +32,25 @@ void CardState::setAttacking(bool _attacking)
     }
     attacking = _attacking;
     emit attackingChanged(_attacking);
+    emit stateChanged();
+}
+
+void CardState::setAttackTargetPlayerId(int _playerId)
+{
+    if (attackTargetPlayerId == _playerId) {
+        return;
+    }
+    attackTargetPlayerId = _playerId;
+    emit stateChanged();
+}
+
+void CardState::setBlocked(int _playerId, int _cardId)
+{
+    if (blockedPlayerId == _playerId && blockedCardId == _cardId) {
+        return;
+    }
+    blockedPlayerId = _playerId;
+    blockedCardId = _cardId;
     emit stateChanged();
 }
 

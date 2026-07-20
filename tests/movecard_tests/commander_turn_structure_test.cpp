@@ -12,6 +12,7 @@
 #include <libcockatrice/protocol/pb/card_attributes.pb.h>
 #include <libcockatrice/protocol/pb/command_activate_ability.pb.h>
 #include <libcockatrice/protocol/pb/command_pass_priority.pb.h>
+#include <libcockatrice/protocol/pb/command_set_card_attr.pb.h>
 #include <libcockatrice/protocol/pb/serverinfo_user.pb.h>
 #include <libcockatrice/rng/rng_abstract.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -148,6 +149,67 @@ TEST(CommanderTurnStructureTest, DrawCardsMovesTopOfDeckToHand)
     EXPECT_EQ(response, Response::RespOk);
     EXPECT_EQ(handZone.getCards().size(), 1);
     EXPECT_EQ(deckZone.getCards().size(), 1);
+}
+
+// ---- Server_Card::setAttribute / Server_AbstractPlayer::cmdSetCardAttr (Phase 8 combat
+// automation, Stage A: AttrAttackTarget / AttrBlocking) ----
+// The phase/tapped/attacking legality RulesEngine::canDeclareBlocker() enforces is covered
+// without a server dependency in tests/rules/rules_engine_test.cpp; this covers the two new
+// attributes' own string (de)serialization on Server_Card, plus the same "before game starts"
+// gating precedent as cmdPassPriority/cmdActivateAbility above.
+
+TEST(CommanderTurnStructureTest, AttackTargetAttributeParsesPlayerId)
+{
+    Server_Game &game = makeGame(1, 40);
+    ServerInfo_User user;
+    user.set_name("test-user");
+    Server_Player player(&game, 1, user, false, nullptr);
+    Server_CardZone table(&player, ZoneNames::TABLE, true, ServerInfo_Zone::PublicZone);
+    player.addZone(&table);
+
+    auto *attacker = new Server_Card({"Attacker", "attacker"}, player.newCardId(), 0, 0, &table);
+    table.insertCard(attacker, 0, 0);
+
+    attacker->setAttribute(AttrAttackTarget, "2");
+    EXPECT_EQ(attacker->getAttackTargetPlayerId(), 2);
+}
+
+TEST(CommanderTurnStructureTest, BlockingAttributeParsesPlayerAndCardIdAndClears)
+{
+    Server_Game &game = makeGame(1, 40);
+    ServerInfo_User user;
+    user.set_name("test-user");
+    Server_Player player(&game, 1, user, false, nullptr);
+    Server_CardZone table(&player, ZoneNames::TABLE, true, ServerInfo_Zone::PublicZone);
+    player.addZone(&table);
+
+    auto *blocker = new Server_Card({"Blocker", "blocker"}, player.newCardId(), 0, 0, &table);
+    table.insertCard(blocker, 0, 0);
+
+    blocker->setAttribute(AttrBlocking, "2:7");
+    EXPECT_EQ(blocker->getBlockedPlayerId(), 2);
+    EXPECT_EQ(blocker->getBlockedCardId(), 7);
+    EXPECT_TRUE(blocker->getBlocking());
+
+    blocker->setAttribute(AttrBlocking, "-1:-1");
+    EXPECT_FALSE(blocker->getBlocking());
+}
+
+TEST(CommanderTurnStructureTest, SetCardAttrForCombatTargetingRejectedBeforeGameStarts)
+{
+    Server_Game &game = makeGame(4, 40);
+    ServerInfo_User user;
+    user.set_name("test-user");
+    Server_Player player(&game, 1, user, false, nullptr);
+
+    Command_SetCardAttr cmd;
+    cmd.set_zone(ZoneNames::TABLE);
+    cmd.set_card_id(0);
+    cmd.set_attribute(AttrAttackTarget);
+    cmd.set_attr_value("2");
+    ResponseContainer rc(0);
+    GameEventStorage ges;
+    EXPECT_EQ(player.cmdSetCardAttr(cmd, rc, ges), Response::RespGameNotStarted);
 }
 
 } // namespace

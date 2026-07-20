@@ -162,12 +162,40 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         painter->restore();
     }
 
+    // Phase 8 combat automation, Stage A: a declared blocker, same outline convention, a third
+    // distinct color.
+    if (state->getBlocking()) {
+        painter->save();
+
+        painter->setRenderHint(QPainter::Antialiasing, false);
+
+        QPen pen;
+        pen.setColor(QColor(30, 120, 255)); // blue
+        pen.setWidth(0);                    // Cosmetic pen
+        painter->setPen(pen);
+        painter->drawPath(shape());
+
+        painter->restore();
+    }
+
     painter->restore();
 }
 
 void CardItem::setAttacking(bool _attacking)
 {
     state->setAttacking(_attacking);
+    update();
+}
+
+void CardItem::setAttackTargetPlayerId(int _playerId)
+{
+    state->setAttackTargetPlayerId(_playerId);
+    update();
+}
+
+void CardItem::setBlocked(int _playerId, int _cardId)
+{
+    state->setBlocked(_playerId, _cardId);
     update();
 }
 
@@ -257,6 +285,8 @@ void CardItem::processCardInfo(const ServerInfo_Card &_info)
     setId(_info.id());
     setCardRef({QString::fromStdString(_info.name()), QString::fromStdString(_info.provider_id())});
     setAttacking(_info.attacking());
+    setAttackTargetPlayerId(_info.attack_target_player_id());
+    setBlocked(_info.blocked_player_id(), _info.blocked_card_id());
     setFaceDown(_info.face_down());
     setPT(QString::fromStdString(_info.pt()));
     setAnnotation(QString::fromStdString(_info.annotation()));

@@ -261,6 +261,12 @@ public slots:
 
     void cardMenuAction(QList<CardItem *> selectedCards, CardMenuActionType type);
 
+    // Phase 8 combat automation, Stage A: attack-target selection + blocker declaration.
+    void actDeclareAttacker(QList<CardItem *> selectedCards, int targetPlayerId);
+    void actRemoveFromCombat(QList<CardItem *> selectedCards);
+    void actDeclareBlocker(QList<CardItem *> selectedCards, int attackerPlayerId, int attackerCardId);
+    void actRemoveBlocker(QList<CardItem *> selectedCards);
+
 private:
     PlayerLogic *player;
 

@@ -6,6 +6,7 @@
 #include "../../game/board/counter_state.h"
 #include "../../game/player/player_actions.h"
 #include "../../game/player/player_logic.h"
+#include "../../game/zones/table_zone_logic.h"
 #include "../../game/zones/view_zone_logic.h"
 #include "../card_menu_action_type.h"
 #include "../player_graphics_item.h"
@@ -75,6 +76,7 @@ CardMenu::CardMenu(PlayerGraphicsItem *_player, const CardItem *_card, bool _sho
     aTap = makeAction(this, invoke(cmTap));
     aDoesntUntap = makeAction(this, invoke(cmDoesntUntap), /*checkable=*/true, card && card->getDoesntUntap());
     aAttacking = makeAction(this, invoke(cmAttacking), /*checkable=*/true, card && card->getAttacking());
+    aBlocking = makeAction(this, [actions, sel]() { actions->actRemoveBlocker(sel()); });
     aFlip = makeAction(this, invoke(cmFlip));
     aPeek = makeAction(this, invoke(cmPeek));
     aClone = makeAction(this, invoke(cmClone));
@@ -199,6 +201,22 @@ void CardMenu::createTableMenu(bool canModifyCard)
     addAction(aTap);
     addAction(aDoesntUntap);
     addAction(aAttacking);
+    if (!card->getAttacking()) {
+        // Phase 8 combat automation, Stage A: aAttacking alone (above) still works exactly as it
+        // did in Stage 6 -- a target-less toggle, kept for backward compatibility with its
+        // keyboard shortcut -- but a real defending player is what Stage B's damage automation
+        // needs, so offer it as the primary path here.
+        QMenu *attackMenu = addMenu(tr("Declare as attacker, &targeting..."));
+        initAttackTargetMenu(attackMenu);
+        attackMenu->setEnabled(!playersInfo.isEmpty());
+    }
+    if (card->getBlocking()) {
+        addAction(aBlocking);
+    } else {
+        QMenu *blockMenu = addMenu(tr("Declare as &blocker..."));
+        initBlockerMenu(blockMenu);
+        blockMenu->setEnabled(!blockMenu->isEmpty());
+    }
     addAction(aFlip);
     if (card->getFaceDown()) {
         addAction(aPeek);
@@ -370,6 +388,56 @@ void CardMenu::initContextualPlayersMenu(QMenu *menu, QAction *allPlayersAction)
     }
 }
 
+/**
+ * @brief Phase 8 combat automation, Stage A: populates @p menu with one action per opponent,
+ * each declaring the current selection as an attacker targeting that player.
+ */
+void CardMenu::initAttackTargetMenu(QMenu *menu)
+{
+    auto *actions = player->getLogic()->getPlayerActions();
+    auto *gameScene = player->getGameScene();
+
+    for (const auto &playerInfo : playersInfo) {
+        QAction *action = menu->addAction(playerInfo.first);
+        const int targetPlayerId = playerInfo.second;
+        connect(action, &QAction::triggered, this, [actions, gameScene, targetPlayerId]() {
+            actions->actDeclareAttacker(gameScene->selectedCards(), targetPlayerId);
+        });
+    }
+}
+
+/**
+ * @brief Phase 8 combat automation, Stage A: populates @p menu with one action per
+ * currently-attacking opponent creature, each declaring the current selection as blocking it.
+ */
+void CardMenu::initBlockerMenu(QMenu *menu)
+{
+    auto *actions = player->getLogic()->getPlayerActions();
+    auto *gameScene = player->getGameScene();
+    const QList<PlayerLogic *> &players = player->getLogic()->getGame()->getPlayerManager()->getPlayers().values();
+
+    for (auto *opponent : players) {
+        if (opponent == player->getLogic()) {
+            continue;
+        }
+        TableZoneLogic *table = opponent->getTableZone();
+        if (!table) {
+            continue;
+        }
+        const int attackerPlayerId = opponent->getPlayerInfo()->getId();
+        for (CardItem *attacker : table->getCards()) {
+            if (!attacker->getAttacking()) {
+                continue;
+            }
+            const int attackerCardId = attacker->getId();
+            QAction *action = menu->addAction(attacker->getName());
+            connect(action, &QAction::triggered, this, [actions, gameScene, attackerPlayerId, attackerCardId]() {
+                actions->actDeclareBlocker(gameScene->selectedCards(), attackerPlayerId, attackerCardId);
+            });
+        }
+    }
+}
+
 void CardMenu::addRelatedCardView()
 {
     if (!card) {
@@ -495,6 +563,7 @@ void CardMenu::retranslateUi()
     aTap->setText(tr("&Tap / Untap"));
     aDoesntUntap->setText(tr("Skip &untapping"));
     aAttacking->setText(card && card->getAttacking() ? tr("&Remove from combat") : tr("Declare as &attacker"));
+    aBlocking->setText(tr("Remove as &blocker"));
     //: Turn face up/face down
     aFlip->setText(tr("T&urn Over")); // Only the user facing names in client got renamed to "turn over"
     // All code and proto bits are still unchanged (flip) for compatibility reasons

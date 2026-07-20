@@ -7,4 +7,10 @@ enum CardAttribute {
     AttrPT = 5;
     AttrAnnotation = 6;
     AttrDoesntUntap = 7;
+    // Phase 8 combat automation: which attacking creature (by owner+card id, packed as
+    // "playerId:cardId") this creature is declared as blocking; "-1:-1" clears it.
+    AttrBlocking = 8;
+    // Phase 8 combat automation: which opposing player an attacking creature is attacking; the
+    // player id as a string, "-1" clears it.
+    AttrAttackTarget = 9;
 }

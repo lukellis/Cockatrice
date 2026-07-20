@@ -12,6 +12,9 @@ class CardState : public QObject
 
 private:
     bool attacking = false;
+    int attackTargetPlayerId = -1;
+    int blockedPlayerId = -1;
+    int blockedCardId = -1;
     QMap<int, int> counters;
     QString annotation;
     QString pt;
@@ -52,6 +55,26 @@ public:
         return attacking;
     }
     void setAttacking(bool _attacking);
+
+    int getAttackTargetPlayerId() const
+    {
+        return attackTargetPlayerId;
+    }
+    void setAttackTargetPlayerId(int _playerId);
+
+    int getBlockedPlayerId() const
+    {
+        return blockedPlayerId;
+    }
+    int getBlockedCardId() const
+    {
+        return blockedCardId;
+    }
+    bool getBlocking() const
+    {
+        return blockedCardId != -1;
+    }
+    void setBlocked(int _playerId, int _cardId);
 
     const QMap<int, int> &getCounters() const
     {

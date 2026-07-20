@@ -47,6 +47,7 @@
 #include <libcockatrice/protocol/pb/serverinfo_player.pb.h>
 #include <libcockatrice/protocol/pb/serverinfo_user.pb.h>
 #include <libcockatrice/rng/rng_abstract.h>
+#include <libcockatrice/rules/rules_engine.h>
 #include <libcockatrice/utility/dice_limits.h>
 #include <libcockatrice/utility/string_limits.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -1309,8 +1310,51 @@ Server_AbstractPlayer::cmdSetCardAttr(const Command_SetCardAttr &cmd, ResponseCo
         return Response::RespContextError;
     }
 
-    return setCardAttrHelper(ges, playerId, nameFromStdString(cmd.zone()), cmd.card_id(), cmd.attribute(),
-                             nameFromStdString(cmd.attr_value()));
+    const CardAttribute attribute = cmd.attribute();
+    const QString zoneName = nameFromStdString(cmd.zone());
+    const QString attrValue = nameFromStdString(cmd.attr_value());
+
+    // Phase 8 combat automation: real enforcement (not just the physical-simulator-style
+    // pass-through the rest of this generic attribute path still gives everything else -- see
+    // CLAUDE.md's Design principles for why that changed). Attacking itself (AttrAttacking) is
+    // deliberately left as unrestricted as it always was; only the *new* target-tracking
+    // attributes get validated here, since they're what makes combat damage automatable.
+    if (attribute == AttrAttackTarget) {
+        Server_CardZone *zone = getZones().value(zoneName);
+        Server_Card *card = zone ? zone->getCard(cmd.card_id()) : nullptr;
+        if (!card) {
+            return Response::RespNameNotFound;
+        }
+        const int targetPlayerId = attrValue.toInt();
+        if (targetPlayerId != -1) {
+            if (!card->getAttacking() || targetPlayerId == playerId || !game->getPlayers().contains(targetPlayerId)) {
+                return Response::RespContextError;
+            }
+        }
+    } else if (attribute == AttrBlocking) {
+        Server_CardZone *zone = getZones().value(zoneName);
+        Server_Card *blocker = zone ? zone->getCard(cmd.card_id()) : nullptr;
+        if (!blocker) {
+            return Response::RespNameNotFound;
+        }
+        const QStringList parts = attrValue.split(QLatin1Char(':'));
+        const int attackerPlayerId = parts.size() == 2 ? parts.at(0).toInt() : -1;
+        const int attackerCardId = parts.size() == 2 ? parts.at(1).toInt() : -1;
+        if (attackerCardId != -1) {
+            if (!Rules::RulesEngine::canDeclareBlocker(game->getActivePhase(), blocker->getTapped(),
+                                                       blocker->getAttacking())) {
+                return Response::RespContextError;
+            }
+            Server_AbstractPlayer *attackerOwner = game->getPlayer(attackerPlayerId);
+            Server_CardZone *attackerZone = attackerOwner ? attackerOwner->getZones().value(ZoneNames::TABLE) : nullptr;
+            Server_Card *attackerCard = attackerZone ? attackerZone->getCard(attackerCardId) : nullptr;
+            if (attackerPlayerId == playerId || !attackerCard || !attackerCard->getAttacking()) {
+                return Response::RespContextError;
+            }
+        }
+    }
+
+    return setCardAttrHelper(ges, playerId, zoneName, cmd.card_id(), attribute, attrValue);
 }
 
 Response::ResponseCode Server_AbstractPlayer::cmdSetCardCounter(const Command_SetCardCounter &cmd,

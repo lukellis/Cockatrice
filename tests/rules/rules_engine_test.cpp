@@ -76,6 +76,30 @@ TEST(RulesEngineTest, OutOfRangePhasesAreNotCombatPhases)
     EXPECT_FALSE(RulesEngine::isCombatPhase(100));
 }
 
+// ---- RulesEngine::canDeclareBlocker (Phase 8 combat automation Stage A, pure decision logic) ----
+
+TEST(RulesEngineTest, BlockerCanBeDeclaredInDeclareBlockersPhaseWhenUntappedAndNotAttacking)
+{
+    EXPECT_TRUE(RulesEngine::canDeclareBlocker(RulesEngine::DECLARE_BLOCKERS_PHASE, false, false));
+}
+
+TEST(RulesEngineTest, BlockerCannotBeDeclaredOutsideDeclareBlockersPhase)
+{
+    for (int phase : {0, 1, 2, 3, 4, 5, 7, 8, 9}) {
+        EXPECT_FALSE(RulesEngine::canDeclareBlocker(phase, false, false)) << phase;
+    }
+}
+
+TEST(RulesEngineTest, TappedCreatureCannotBeDeclaredAsBlocker)
+{
+    EXPECT_FALSE(RulesEngine::canDeclareBlocker(RulesEngine::DECLARE_BLOCKERS_PHASE, true, false));
+}
+
+TEST(RulesEngineTest, AttackingCreatureCannotAlsoBeDeclaredAsBlocker)
+{
+    EXPECT_FALSE(RulesEngine::canDeclareBlocker(RulesEngine::DECLARE_BLOCKERS_PHASE, false, true));
+}
+
 // ---- RulesEngine::planManaPayment (Phase 7 Stage 4, pure decision logic) ----
 
 TEST(RulesEngineTest, PlanManaPaymentPaysExactColoredPips)

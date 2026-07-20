@@ -36,6 +36,11 @@ bool RulesEngine::isCombatPhase(int phase)
     return phase >= FIRST_COMBAT_PHASE && phase <= LAST_COMBAT_PHASE;
 }
 
+bool RulesEngine::canDeclareBlocker(int phase, bool blockerTapped, bool blockerAttacking)
+{
+    return phase == DECLARE_BLOCKERS_PHASE && !blockerTapped && !blockerAttacking;
+}
+
 int RulesEngine::nextPriorityPlayer(const QList<int> &playerOrder,
                                     int currentPlayerId,
                                     const QSet<int> &passedPlayers,

@@ -32,7 +32,8 @@
 
 Server_Card::Server_Card(const CardRef &cardRef, int _id, int _coord_x, int _coord_y, Server_CardZone *_zone)
     : zone(_zone), id(_id), coord_x(_coord_x), coord_y(_coord_y), cardRef(cardRef), tapped(false), attacking(false),
-      facedown(false), destroyOnZoneChange(false), doesntUntap(false), parentCard(0), stashedCard(nullptr)
+      attackTargetPlayerId(-1), blockedPlayerId(-1), blockedCardId(-1), facedown(false), destroyOnZoneChange(false),
+      doesntUntap(false), parentCard(0), stashedCard(nullptr)
 {
 }
 
@@ -58,6 +59,8 @@ void Server_Card::resetState(bool keepAnnotations)
     counters.clear();
     setTapped(false);
     setAttacking(false);
+    setAttackTargetPlayerId(-1);
+    setBlocked(-1, -1);
     setPT(QString());
     if (!keepAnnotations) {
         setAnnotation(QString());
@@ -106,6 +109,19 @@ QString Server_Card::setAttribute(CardAttribute attribute, const QString &avalue
         case AttrDoesntUntap:
             setDoesntUntap(avalue == "1");
             break;
+        case AttrAttackTarget:
+            setAttackTargetPlayerId(avalue.toInt());
+            break;
+        case AttrBlocking: {
+            // Packed as "playerId:cardId" (same single-string-attribute idiom AttrPT already uses
+            // for "power/toughness") since a blocked attacker can belong to any other player, not
+            // just the sender -- see card_attributes.proto.
+            const QStringList parts = avalue.split(QLatin1Char(':'));
+            const int blockedPlayer = parts.size() == 2 ? parts.at(0).toInt() : -1;
+            const int blockedCard = parts.size() == 2 ? parts.at(1).toInt() : -1;
+            setBlocked(blockedPlayer, blockedCard);
+            break;
+        }
     }
     if (event) {
         event->set_attr_value(avalue.toStdString());
@@ -187,6 +203,13 @@ void Server_Card::getInfo(ServerInfo_Card *info)
     info->set_tapped(tapped);
     if (attacking) {
         info->set_attacking(true);
+    }
+    if (attackTargetPlayerId != -1) {
+        info->set_attack_target_player_id(attackTargetPlayerId);
+    }
+    if (blockedCardId != -1) {
+        info->set_blocked_player_id(blockedPlayerId);
+        info->set_blocked_card_id(blockedCardId);
     }
     if (!color.isEmpty()) {
         info->set_color(color.toStdString());

@@ -233,10 +233,19 @@ gitignored. Recipe:
 
 ## Design principles for Commander-rules changes
 
-- Cockatrice is a manual "physical simulator" (no automated mana/combat/turn
-  enforcement, not even life ≤ 0 detection). New Commander mechanics (tax, damage)
-  follow that pattern: auto-created counters, manually incremented, advisory
-  (non-blocking) warnings — not hard auto-loss.
+- **As of 2026-07-20, by explicit user direction, this fork no longer holds to
+  "advisory/manual-only, never hard automation."** Through Phase 9, every
+  Commander mechanic here treated Cockatrice as a manual "physical simulator"
+  (no automated mana/combat/turn enforcement, not even life ≤ 0 detection) and
+  used auto-created counters with advisory, non-blocking warnings instead of
+  real enforcement. That was a deliberate scope choice, not a hard constraint
+  of the codebase — it has been lifted. Commander-rules mechanics may now
+  implement genuine automated enforcement (real combat damage calculation,
+  automatic creature death, etc.) where a feature calls for it; advisory/manual
+  is one option to weigh per-feature, not the default. Phase 9's already-shipped
+  advisory warnings are not retroactively rewritten by this change — revisiting
+  them to become hard automation is a separate, explicit decision, same as any
+  other new phase of work.
 - Reuse existing generic mechanisms (Zone/Counter serialization, per-card legality
   flags) instead of adding new protocol messages where possible — most of this
   fork's diff is `.proto`-free by design. Phase 5 (priority passing) was the
