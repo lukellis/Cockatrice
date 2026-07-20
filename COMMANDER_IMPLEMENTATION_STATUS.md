@@ -1495,6 +1495,73 @@ always resolves exactly the top entry, so a client-side mirror that pushes on
 
 **Status: implemented, tested, and live-verified.**
 
+## RulesEngine cleanup: command-zone/tax decisions migrated out of server_player.cpp (2026-07-20)
+
+Picked by the user from three offered next-increment options (the others: Partner/Background
+commander support, DFC-back-face color identity) once the Phase 7/8/UI-panel roadmap was fully
+worked through — a pure organizational follow-up flagged back in Increment 1 of the
+`libcockatrice_rules` reorg ("Command-zone/tax/counter *decisions* still live inline in
+`server_player.cpp` for now (a clean follow-up can migrate them into the engine)") and never
+actually done. No behavior change — same category as the original Increment 1/2 work (see the
+"Architecture decision: reorganize, don't re-architect" section above).
+
+**What moved**: the two genuine *decisions* (as opposed to the I/O of actually creating/finding/
+incrementing a `Server_Counter`, which necessarily stays in `Server_Player` — it needs live server
+objects) that were previously inline conditionals in `server_player.cpp`:
+- `Rules::RulesEngine::isCommanderCard(cardName, commanderName)` — whether a card being placed into
+  a player's zones at setup is the deck's designated commander (rule 903.3), replacing the inline
+  `!commanderRef.isEmpty() && card->getName() == commanderRef.name` check in `setupZones()`'s
+  `insertCardsIntoZone` lambda. (Technically a hair looser than the original —
+  `commanderRef.isEmpty()` also checked `providerId`, the new helper only checks `commanderName`
+  i.e. `.name` — but harmless: a real card's name is never empty, so when `name` is empty the
+  equality check on the next line would already fail either way. No behavioral difference for any
+  real deck.)
+- `Rules::RulesEngine::commanderTaxCounterNameForMove(startZoneName, targetZoneName, cardName)` —
+  whether a card's move constitutes a commander cast that should bump its tax counter (rule 903.9),
+  returning the exact counter name to increment (`std::optional<QString>`, `std::nullopt` if not
+  applicable) instead of `onCardBeingMoved()` inlining the `startzone/targetzone` zone-name
+  comparison and calling `CommanderCounterNames::tax()` directly.
+
+Both are pure, static, stateless functions taking only primitives/strings — same shape and same
+motivation as `phaseAutomationFor()`/`nextPriorityPlayer()` from Increment 1: unit-testable without
+any live `Server_Game`/`Server_Player`/`Server_CardZone` object, closing a sliver of the
+long-standing "automation logic can only be tested via extracted pure helpers, not end-to-end"
+gap this doc's Design Review first flagged.
+
+**Deliberately left in place, and why**: the counter *creation* loops in `setupZones()` (the
+per-commander tax counter, the poison counter) and in `Server_Game::doStartGameIfReady()` (the
+cross-player commander-damage counters) were **not** migrated — they're loops over live
+`Server_CardZone`/`Server_Counter` objects performing real allocation/I/O, not decisions, so
+pulling them into the (deliberately I/O-free) `RulesEngine` would violate the engine's own
+pure-decision/no-I/O design principle for no unit-testability gain (there's no meaningful "decision"
+left to extract once you strip out `CommanderCounterNames::tax()`/`damage()`, which are already
+pure naming helpers reused as-is).
+
+**Testing**: 6 new cases in `tests/rules/rules_engine_test.cpp`
+(`IsCommanderCardMatchesTheBannerCardByName`, `IsCommanderCardRejectsANonMatchingCard`,
+`IsCommanderCardRejectsEverythingWhenNoCommanderIsSet`,
+`CommanderTaxCounterNameForMoveFiresWhenLeavingTheCommandZone`,
+`CommanderTaxCounterNameForMoveIsNulloptWhenNotLeavingTheCommandZone`,
+`CommanderTaxCounterNameForMoveIsNulloptForAMoveBackIntoTheCommandZone`) — full suite now
+**42/42 pass** in that one binary. Full `ctest`: **22/22 executables pass, zero regressions**
+(confirms `server_player.cpp`'s two call-site swaps didn't change observable behavior).
+`format.sh --cmake --branch master` run clean for the actual diff (see the Docker build-environment
+note below for an unrelated formatting-churn false alarm it surfaced and how that was handled).
+No live UI/servatrice re-verification this session — this is a pure internal refactor with identical
+inputs/outputs to the code it replaced, and the existing live-verified Increment 1/2 coverage
+already exercises both code paths (commander starting in the command zone, tax incrementing on
+cast) through the *callers*, which are unchanged.
+
+**Also discovered/fixed this session, unrelated to the refactor itself but necessary to build at
+all**: this host turned out to have no build toolchain on the bare host (no `cmake`/`ninja`/Qt6/
+`pip3`, and `sudo` needs a password not available to the agent) — a materially different situation
+from the small-sandbox notes in `CLAUDE.md`. The actual toolchain was found already set up inside a
+pre-existing `cockatrice-build` Docker container that bind-mounts this working directory at
+`/repo`; see `CLAUDE.md`'s new "Build environment — this host builds via Docker" section for the
+full recipe. All of this increment's build/test verification above was done through that container.
+
+**Status: implemented, tested (42/42 + 22/22 full suite), pushed.**
+
 ## Phase 9: State-Based Actions (advisory warnings)
 
 Design doc §3 Phase 9 calls for full state-based-action checking. Real Magic re-checks
@@ -1989,6 +2056,16 @@ as needing a card-rules engine this fork doesn't have).
    worked through at this fork's scope; any further combat depth (blocking,
    damage, death) would be a new, separate, explicit design decision, not a
    next stage of this one.
+7. ~~UI: pending-ability / priority visualization panel~~ — **done (2026-07-18).**
+   See that section above.
+8. ~~RulesEngine cleanup: migrate command-zone/tax decisions out of
+   `server_player.cpp`~~ — **done (2026-07-20).** See "RulesEngine cleanup"
+   section above. With this, every previously-flagged organizational deferral
+   from the Increment 1/2 reorg is closed. Remaining candidates, not yet
+   picked: Partner/Background commander support and double-faced-card color
+   identity (both known limitations, see the README/"Known limitations"
+   section), or any further Phase 6–8 depth (all need their own explicit
+   design sign-off per this fork's standing rule).
 
 ## Design & Implementation Review — 2026-07-16
 

@@ -1,6 +1,8 @@
 #include "rules_engine.h"
 
 #include <algorithm>
+#include <libcockatrice/rules/commander_counter_names.h>
+#include <libcockatrice/utility/zone_names.h>
 
 namespace Rules
 {
@@ -95,6 +97,21 @@ std::optional<QMap<QString, int>> RulesEngine::planManaPayment(const ManaCost &c
         return std::nullopt;
     }
     return plan;
+}
+
+bool RulesEngine::isCommanderCard(const QString &cardName, const QString &commanderName)
+{
+    return !commanderName.isEmpty() && cardName == commanderName;
+}
+
+std::optional<QString> RulesEngine::commanderTaxCounterNameForMove(const QString &startZoneName,
+                                                                   const QString &targetZoneName,
+                                                                   const QString &cardName)
+{
+    if (startZoneName == ZoneNames::COMMAND && targetZoneName != ZoneNames::COMMAND) {
+        return CommanderCounterNames::tax(cardName);
+    }
+    return std::nullopt;
 }
 
 int RulesEngine::startPriorityRound(int playerId)

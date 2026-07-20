@@ -22,20 +22,79 @@ silently fill without discussing size/risk first.
 
 ## Git remotes — read before pushing
 
-- `origin` = the real upstream `Cockatrice/Cockatrice` repo. **Not owned by this
-  user — never push to `origin`.**
-- `fork` = `github.com/lukellis/Cockatrice`, the user's own fork. All work happens
-  on the `commander-rules` branch there. Push with `git push fork commander-rules`.
-- Commit and push to `fork` at logical stopping points (a task completed, a build
-  stage verified, before attempting something risky) — not just at the very end.
-  This is deliberate: the sandbox has previously been OOM-killed mid-session, and a
-  pushed commit plus an up-to-date status doc is what let a later session recover
-  cleanly instead of re-deriving everything from scratch.
+- **Current state (2026-07-20): only one remote, `origin` = `github.com/lukellis/Cockatrice`
+  (the user's own fork) — this *is* the user's repo, pushing to it is fine.** There
+  is no `fork` remote and no upstream-`Cockatrice/Cockatrice`-as-`origin` set up on
+  this host. All work happens on the `commander-rules` branch: `git push origin
+  commander-rules`. (Older text below/elsewhere in this file may still say `origin`
+  = real upstream / `fork` = the user's remote — that described an earlier host's
+  remote setup, not this one. Always run `git remote -v` at the start of a session
+  to confirm current reality before trusting either description.)
+- Commit and push at logical stopping points (a task completed, a build stage
+  verified, before attempting something risky) — not just at the very end. This is
+  deliberate: sessions have previously been interrupted mid-work (OOM on an older,
+  smaller sandbox), and a pushed commit plus an up-to-date status doc is what let a
+  later session recover cleanly instead of re-deriving everything from scratch.
 
-## Sandbox / build environment gotchas
+## Build environment — this host builds via Docker (read this first)
 
-This sandbox is small: **2 vCPUs, ~1.9 GiB RAM**. Take this seriously when building
-C++/Qt — a naive full build has OOM-killed the session before.
+**As of 2026-07-20, this host (15 GiB RAM, 6 vCPUs, 196 GiB disk free) has no
+build toolchain on the bare host at all** — no `cmake`, `ninja`, `pip3`, or Qt6,
+and `sudo` requires a password the agent doesn't have. Discovered mid-session
+after the "Sandbox / build environment gotchas" section below (written for a
+different, much smaller sandbox) turned out not to apply here. **The actual
+toolchain lives in a pre-existing, already-populated Docker container**, found via
+`docker ps -a`:
+
+- Container name: **`cockatrice-build`** (image `debian:trixie`), usually
+  `Exited` between sessions — start it with `docker start cockatrice-build`
+  (idempotent if already running).
+- It **bind-mounts this exact working directory** (`/home/luke/projects/Cockatrice`
+  on the host) at **`/repo`** inside the container — editing files on the host via
+  normal tools (Read/Edit/Write) and then building inside the container Just
+  Works, no copying/syncing needed.
+- Already has, pre-installed: `cmake` 3.31.6, `ninja` 1.12.1, a full Qt6 (via
+  `Qt6_DIR=/usr/lib/x86_64-linux-gnu/cmake/Qt6`, all the modules
+  `cmake/FindQtRuntime.cmake` needs for `WITH_SERVER`+`WITH_CLIENT`+`TEST`),
+  `protoc`/`libprotobuf` 3.21.12, `clang-format` 19.1.7, `cmake-format` 0.6.13,
+  gtest, and a pre-configured `/repo/build/` (Ninja generator, `TEST=ON`,
+  `WITH_SERVER=ON`, `WITH_CLIENT=ON`, `CMAKE_BUILD_TYPE=Release`) — an incremental
+  build/test cycle needs no setup at all, just:
+  `docker exec cockatrice-build bash -c "cd /repo/build && ninja <target> && ctest --output-on-failure"`
+  (omit `<target>` to build everything; running specific targets like
+  `rules_engine_test`/`servatrice`/`cockatrice` first is faster feedback for a
+  narrow change, matching this file's "build one target at a time" habit from the
+  old small-sandbox days — less load-bearing here given the RAM/CPU headroom, but
+  still cheap and still worth doing).
+- `./format.sh` also needs running **inside the container** (`docker exec
+  cockatrice-build bash -c "cd /repo && ./format.sh --cmake --branch master"`) —
+  the host has no `clang-format`/`cmake-format` either. **Caveat found live**: this
+  container's clang-format (19.1.7) wraps a couple of borderline-length lines
+  differently than whatever version an earlier session used (confirmed unrelated
+  to any real edit — `git diff --stat` after a format pass showed two files this
+  session never touched). Check `git diff --stat` after every `format.sh` run and
+  `git checkout --` any file outside your actual change before committing, so
+  cross-version reformatting churn doesn't leak into an unrelated diff.
+- Git/GitHub auth for pushing still happens from the **host** shell (the container
+  has no SSH agent forwarded) — build/test/format inside Docker, `git commit`/`git
+  push` on the host, same repo either way since it's one bind-mounted working tree.
+- The Xvfb/UI-testing recipe below (`.uitest/`) has **not yet been re-verified
+  against this container** — it may need the same Xvfb/xcb dependency packages
+  installed inside the container (or run instead from the host if the host ever
+  gets `Xvfb`/`python-xlib`). Confirm which side can actually drive a GUI before
+  relying on the section below in a from-Docker session.
+
+## Sandbox / build environment gotchas (an older, smaller host — not this one)
+
+The rest of this section describes a **different, much smaller sandbox** (2
+vCPUs, ~1.9 GiB RAM) this fork was originally developed on, kept here in case a
+future session runs on a host like that again. **It does not apply to the
+Docker-based host above** — don't reach for `aqtinstall`/manual Qt6 SDK
+provisioning/swap-file setup unless `docker ps -a` genuinely shows no
+`cockatrice-build` container and the bare host also has no toolchain.
+
+Take this seriously when building C++/Qt on a box like that — a naive full build
+has OOM-killed a session before.
 
 - `/tmp` is **tmpfs** (RAM-backed, ~955 MiB). Never install large things (like a Qt6
   SDK) there — it directly eats system RAM. Use a disk-backed path instead, e.g.

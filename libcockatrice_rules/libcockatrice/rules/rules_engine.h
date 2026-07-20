@@ -126,6 +126,28 @@ public:
      */
     static std::optional<QMap<QString, int>> planManaPayment(const ManaCost &cost, const QMap<QString, int> &pool);
 
+    /**
+     * @brief Rule 903.3: whether @p cardName is the deck's designated commander and should be
+     * routed to the command zone instead of the deck/sideboard at setup. @p commanderName is the
+     * deck's banner-card name (DeckList::getBannerCard().name); empty means the deck has no
+     * commander, so nothing matches. Migrated verbatim from the inline check in
+     * Server_Player::setupZones()'s insertCardsIntoZone lambda.
+     */
+    static bool isCommanderCard(const QString &cardName, const QString &commanderName);
+
+    /**
+     * @brief Rule 903.9: casting a commander from the command zone bumps its tax counter by one
+     * (displayed count * 2 == the additional generic mana cost). Returns the counter name to
+     * increment (CommanderCounterNames::tax(cardName)) if moving @p cardName from
+     * @p startZoneName to @p targetZoneName is such a cast -- i.e. leaving the command zone to
+     * somewhere that isn't the command zone again (a move straight back, e.g. an undo, isn't a
+     * cast and doesn't count) -- or std::nullopt if this move isn't a commander cast. Migrated
+     * verbatim from the inline zone-name check in Server_Player::onCardBeingMoved().
+     */
+    static std::optional<QString> commanderTaxCounterNameForMove(const QString &startZoneName,
+                                                                 const QString &targetZoneName,
+                                                                 const QString &cardName);
+
     // ---- Priority round state ----
 
     /** @brief The current priority holder, or -1 if no one holds priority. */

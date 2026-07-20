@@ -1,6 +1,7 @@
 #include "libcockatrice/rules/rules_engine.h"
 
 #include <gtest/gtest.h>
+#include <libcockatrice/rules/commander_counter_names.h>
 
 using Rules::PendingAbility;
 using Rules::PhaseAutomation;
@@ -144,6 +145,42 @@ TEST(RulesEngineTest, PlanManaPaymentFreeCostAlwaysSucceedsWithEmptyPlan)
     auto plan = RulesEngine::planManaPayment(cost, pool);
     ASSERT_TRUE(plan.has_value());
     EXPECT_TRUE(plan->isEmpty());
+}
+
+// ---- RulesEngine::isCommanderCard / commanderTaxCounterNameForMove (command-zone decisions) ----
+
+TEST(RulesEngineTest, IsCommanderCardMatchesTheBannerCardByName)
+{
+    EXPECT_TRUE(RulesEngine::isCommanderCard("Atraxa, Praetors' Voice", "Atraxa, Praetors' Voice"));
+}
+
+TEST(RulesEngineTest, IsCommanderCardRejectsANonMatchingCard)
+{
+    EXPECT_FALSE(RulesEngine::isCommanderCard("Sol Ring", "Atraxa, Praetors' Voice"));
+}
+
+TEST(RulesEngineTest, IsCommanderCardRejectsEverythingWhenNoCommanderIsSet)
+{
+    EXPECT_FALSE(RulesEngine::isCommanderCard("Sol Ring", ""));
+    EXPECT_FALSE(RulesEngine::isCommanderCard("", ""));
+}
+
+TEST(RulesEngineTest, CommanderTaxCounterNameForMoveFiresWhenLeavingTheCommandZone)
+{
+    auto name = RulesEngine::commanderTaxCounterNameForMove("command", "table", "Atraxa, Praetors' Voice");
+    ASSERT_TRUE(name.has_value());
+    EXPECT_EQ(*name, CommanderCounterNames::tax("Atraxa, Praetors' Voice"));
+}
+
+TEST(RulesEngineTest, CommanderTaxCounterNameForMoveIsNulloptWhenNotLeavingTheCommandZone)
+{
+    EXPECT_FALSE(RulesEngine::commanderTaxCounterNameForMove("hand", "table", "Sol Ring").has_value());
+}
+
+TEST(RulesEngineTest, CommanderTaxCounterNameForMoveIsNulloptForAMoveBackIntoTheCommandZone)
+{
+    // e.g. an undo -- moving straight back to the command zone isn't a cast.
+    EXPECT_FALSE(RulesEngine::commanderTaxCounterNameForMove("command", "command", "Atraxa").has_value());
 }
 
 // ---- RulesEngine::nextPriorityPlayer (pure decision logic) ----

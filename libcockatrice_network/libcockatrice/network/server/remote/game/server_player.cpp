@@ -122,7 +122,7 @@ void Server_Player::setupZones()
     auto insertCardsIntoZone = [this, &commanderRef, commandZone](auto cards, auto *zone) {
         for (auto card : cards) {
             Server_CardZone *targetZone =
-                (!commanderRef.isEmpty() && card->getName() == commanderRef.name) ? commandZone : zone;
+                Rules::RulesEngine::isCommanderCard(card->getName(), commanderRef.name) ? commandZone : zone;
             for (int k = 0; k < card->getNumber(); ++k) {
                 targetZone->insertCard(new Server_Card(card->toCardRef(), nextCardId++, 0, 0, targetZone), -1, 0);
             }
@@ -265,10 +265,11 @@ void Server_Player::onCardBeingMoved(GameEventStorage &ges,
     // Commander tax: leaving the command zone to be cast bumps that commander's tax counter,
     // per rule 903.9. (Moving straight back to the command zone, e.g. via an undo, isn't a
     // cast and doesn't count.)
-    if (startzone->getName() == ZoneNames::COMMAND && targetzone->getName() != ZoneNames::COMMAND) {
-        const QString counterName = CommanderCounterNames::tax(card->getName());
+    auto taxCounterName = Rules::RulesEngine::commanderTaxCounterNameForMove(startzone->getName(),
+                                                                             targetzone->getName(), card->getName());
+    if (taxCounterName.has_value()) {
         for (Server_Counter *counter : counters) {
-            if (counter->getName() == counterName) {
+            if (counter->getName() == *taxCounterName) {
                 if (counter->incrementCount(1)) {
                     Event_SetCounter event;
                     event.set_counter_id(counter->getId());
