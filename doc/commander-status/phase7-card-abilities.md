@@ -153,6 +153,11 @@ numeric P/T model and a real attacker↔blocker link, neither of which exist any
 this codebase. Any further combat depth is a new, separate design decision, not a next
 stage of this one.
 
+**Update, 2026-07-20**: that further decision was made — see
+[`phase8-combat.md`](phase8-combat.md) for Stages A/B, which build the numeric P/T
+model, attacker↔blocker link, and automated damage/death this paragraph said didn't
+exist yet, following CLAUDE.md's lifted advisory-only-automation restriction.
+
 ## Deliberately excluded across all of Phase 7
 
 Real spell casting from hand (instants/sorceries have no parser — only the narrow
