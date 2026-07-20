@@ -1,12 +1,15 @@
 # cockatrice-commander
 
 Fork of [Cockatrice/Cockatrice](https://github.com/Cockatrice/Cockatrice) that adds
-enforcement of official MTG Commander/EDH rules. Full design rationale, file-by-file
-change list, and **current implementation/build status** live in
-[`COMMANDER_IMPLEMENTATION_STATUS.md`](COMMANDER_IMPLEMENTATION_STATUS.md) — **read
-that file first** before resuming work; it's kept up to date as the source of truth
-across sessions (this repo's build has previously been interrupted by sandbox OOM,
-so don't assume anything in conversation memory is current — check the file).
+enforcement of official MTG Commander/EDH rules. **Current implementation status**
+lives in [`COMMANDER_IMPLEMENTATION_STATUS.md`](COMMANDER_IMPLEMENTATION_STATUS.md) —
+**read that file first** before resuming work; it's kept up to date as the source of
+truth across sessions (this repo's build has previously been interrupted mid-session,
+so don't assume anything in conversation memory is current — check the file). That
+file is just an index/tracker (scope, phase table, protocol-extension registry, known
+limitations) — each phase's actual implementation detail (what's built, what's
+deliberately excluded, why) lives in its own file under
+[`doc/commander-status/`](doc/commander-status/), linked from the tracker's table.
 
 The original design inspiration is
 [`doc/design-docs/mtg-commander-rules-engine.md`](doc/design-docs/mtg-commander-rules-engine.md)
@@ -131,8 +134,8 @@ real system each one exercises:
    (`tests/movecard_tests/commander_turn_structure_test.cpp`). Build with
    `-DTEST=ON`, run via `ctest --output-on-failure` from `build/`, or run
    individual binaries directly (e.g. `build/tests/commander/commander_rules_test`).
-   See `COMMANDER_IMPLEMENTATION_STATUS.md`'s "Testing" section for the full
-   current pass/fail count and what's covered.
+   See each phase's doc under `doc/commander-status/` for what it specifically
+   covers; run `ctest` for the current pass/fail count.
 2. **`./format.sh --cmake --branch master`** — clang-format + cmake-format
    lint, matching what CI's lint workflow checks. Always pass `--branch
    master` explicitly (see note in the UI-testing section's sibling "Lint"
@@ -238,6 +241,8 @@ gitignored. Recipe:
   flags) instead of adding new protocol messages where possible — most of this
   fork's diff is `.proto`-free by design. Phase 5 (priority passing) was the
   first exception, since real priority-passing genuinely has no existing
-  protocol hook to reuse; see `COMMANDER_IMPLEMENTATION_STATUS.md`'s Phase 5
-  section for why that one broke the streak and how it's still kept purely
-  additive.
+  protocol hook to reuse; see
+  [`doc/commander-status/phase5-priority-stack.md`](doc/commander-status/phase5-priority-stack.md)
+  for why that one broke the streak, and
+  [`COMMANDER_IMPLEMENTATION_STATUS.md`](COMMANDER_IMPLEMENTATION_STATUS.md)'s
+  protocol-extension registry for the full list of every `.proto` exception since.
