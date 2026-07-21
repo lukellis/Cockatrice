@@ -71,21 +71,62 @@ TEST(SpellManaCostTest, EmptyManaCostIsFree)
     EXPECT_TRUE(cost->isFree());
 }
 
-TEST(SpellManaCostTest, HybridSymbolIsNotParsed)
+TEST(SpellManaCostTest, HybridSymbolParsesAsHybridPip)
 {
     auto card = makeCard("{2}{R/G}");
-    EXPECT_FALSE(SpellManaCost::parse(*card).has_value());
+    const auto cost = SpellManaCost::parse(*card);
+    ASSERT_TRUE(cost.has_value());
+    EXPECT_EQ(cost->generic, 2);
+    EXPECT_TRUE(cost->coloredPips.isEmpty());
+    ASSERT_EQ(cost->hybridPips.size(), 1);
+    EXPECT_EQ(cost->hybridPips.at(0).first, "r");
+    EXPECT_EQ(cost->hybridPips.at(0).second, "g");
 }
 
-TEST(SpellManaCostTest, PhyrexianSymbolIsNotParsed)
+TEST(SpellManaCostTest, PhyrexianSymbolParsesAsPhyrexianPip)
 {
     auto card = makeCard("{R/P}");
-    EXPECT_FALSE(SpellManaCost::parse(*card).has_value());
+    const auto cost = SpellManaCost::parse(*card);
+    ASSERT_TRUE(cost.has_value());
+    EXPECT_EQ(cost->generic, 0);
+    ASSERT_EQ(cost->phyrexianPips.size(), 1);
+    EXPECT_EQ(cost->phyrexianPips.at(0), "r");
 }
 
-TEST(SpellManaCostTest, VariableXCostIsNotParsed)
+TEST(SpellManaCostTest, VariableXCostParsesXCount)
 {
     auto card = makeCard("{X}{R}");
+    const auto cost = SpellManaCost::parse(*card);
+    ASSERT_TRUE(cost.has_value());
+    EXPECT_EQ(cost->xCount, 1);
+    EXPECT_EQ(cost->coloredPips.value("r"), 1);
+}
+
+TEST(SpellManaCostTest, MultipleXSymbolsAccumulateXCount)
+{
+    auto card = makeCard("{X}{X}{R}");
+    const auto cost = SpellManaCost::parse(*card);
+    ASSERT_TRUE(cost.has_value());
+    EXPECT_EQ(cost->xCount, 2);
+    EXPECT_EQ(cost->coloredPips.value("r"), 1);
+}
+
+TEST(SpellManaCostTest, CombinedHybridPhyrexianAndGenericCost)
+{
+    auto card = makeCard("{2}{W/U}{R/P}");
+    const auto cost = SpellManaCost::parse(*card);
+    ASSERT_TRUE(cost.has_value());
+    EXPECT_EQ(cost->generic, 2);
+    ASSERT_EQ(cost->hybridPips.size(), 1);
+    EXPECT_EQ(cost->hybridPips.at(0).first, "w");
+    EXPECT_EQ(cost->hybridPips.at(0).second, "u");
+    ASSERT_EQ(cost->phyrexianPips.size(), 1);
+    EXPECT_EQ(cost->phyrexianPips.at(0), "r");
+}
+
+TEST(SpellManaCostTest, MonocoloredHybridSymbolIsStillNotParsed)
+{
+    auto card = makeCard("{2/W}");
     EXPECT_FALSE(SpellManaCost::parse(*card).has_value());
 }
 

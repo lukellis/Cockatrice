@@ -60,7 +60,8 @@ Xvfb/UI-testing infrastructure itself is fixed** (see `CLAUDE.md`'s updated UI-t
 prior sessions reached was actually a version-notification dialog silently swallowing every
 scripted click, not a fundamental limitation. The Phase 6 real-spell-casting-mana-payment
 addendum is now live-verified end to end using the fixed infrastructure
-(`.uitest/scenario.py run mana_gate`). The static/continuous abilities extension
+(`.uitest/scenario.py run mana_gate`), as is its follow-on hybrid/Phyrexian/`{X}`
+addendum (`.uitest/scenario.py run variable_mana_gate`). The static/continuous abilities extension
 (`phase8-static-abilities.md`) is the one row still GTest-only — its own live-verification
 attempt predates this fix and was never re-attempted against it, not a remaining infrastructure
 gap. All work is on the `commander-rules`
@@ -88,8 +89,9 @@ pick up unprompted:
 - Converting Phase 9's advisory life ≤ 0 / poison / commander-damage warnings into
   automatic loss — now possible given the lifted restriction, but not yet done.
 - Any further Phase 5/6 depth beyond what's documented (real general stack resolution;
-  flashback/alternate-cast-source costs; hybrid/Phyrexian/`{X}`/split-cost payment,
-  currently left ungated rather than partially enforced).
+  flashback/alternate-cast-source costs; monocolored hybrid/snow/split-cost payment,
+  currently left ungated rather than partially enforced — plain hybrid/Phyrexian/`{X}`
+  payment is now done, see `phase6-mana.md`'s second addendum).
 
 ## Protocol extensions used
 
@@ -123,8 +125,9 @@ future change doesn't collide with a retired or in-use extension number.
   single-line phrasing — see `phase8-static-abilities.md`.
 - Command zone has no dedicated context menu (graveyard/exile do).
 - Real mana payment for casting spells from hand only covers non-land cards with a
-  cleanly parseable printed cost (plain generic/colored symbols) actually leaving the
-  `HAND` zone via click-to-play or a single-card drag; hybrid/Phyrexian/`{X}`/split
-  costs, face-down plays, multi-card drags, and casting an Aura/Equipment via a
-  drag-attach arrow are all left ungated rather than partially enforced — see
-  `phase6-mana.md`'s addendum.
+  cleanly parseable printed cost actually leaving the `HAND` zone via click-to-play or a
+  single-card drag. Plain generic/colored symbols, two-color hybrid, Phyrexian, and
+  variable (`{X}`) costs are all gated (see `phase6-mana.md`'s two addenda); monocolored
+  hybrid, snow, and split-cost symbols are still unparseable and thus ungated, as are
+  face-down plays, multi-card drags, and casting an Aura/Equipment via a drag-attach
+  arrow.

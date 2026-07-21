@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cockatrice_deck version="1">
+    <lastLoadedTimestamp>Tue Jul 21 23:26:13 2026</lastLoadedTimestamp>
+    <deckname>variablemanatest</deckname>
+    <format></format>
+    <bannerCard providerId=""></bannerCard>
+    <comments>Fixture deck for scenario_variable_mana_gate (.uitest/scenario.py) -- exercises the
+    hybrid/Phyrexian/{X} mana-cost addendum to real-mana-payment-for-casting-from-hand (see
+    doc/commander-status/phase6-mana.md's addendum): Ghor-Clan Rampager ({2}{R/G}, hybrid,
+    already in .uitest/sample_cards.xml), Dismember ({1}{B/P}{B/P}, Phyrexian), and Fireball
+    ({X}{R}, variable). All three now exist in .uitest/sample_cards.xml.</comments>
+    <tags/>
+    <zone name="main">
+        <card number="1" name="Ghor-Clan Rampager" setShortName="GTC"/>
+        <card number="1" name="Dismember" setShortName="NPH"/>
+        <card number="1" name="Fireball" setShortName="CMD"/>
+    </zone>
+</cockatrice_deck>

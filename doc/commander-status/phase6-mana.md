@@ -2,7 +2,8 @@
 
 **Status: pool auto-empty (rule 500.4) done; Phase 7 Stage 4 later added real cost
 payment for activated abilities; this doc's own addendum below closes the original
-design-doc gap for real spells cast from hand.**
+design-doc gap for real spells cast from hand; a second addendum further down extends
+that gate to hybrid, Phyrexian, and variable ({X}) costs.**
 
 Design doc §3 Phase 6 (originally estimated 4–5 weeks) specs a full `ManaPool`/
 `ManaCost` pair that parses a printed cost and validates/auto-pays it. That was out of
@@ -93,9 +94,10 @@ parsed and enforced when it's actually cast from hand, reusing Phase 7 Stage 4's
 ### Deliberately excluded
 
 - **Lands** — free by rule 305.1, never gated regardless of cost string.
-- **Hybrid/Phyrexian/variable/snow/split-cost spells** — unparseable, so never gated;
-  same conservative fallback as every other unrecognized shape in this fork (e.g.
-  Ghor-Clan Rampager's `{2}{R/G}`, already in `.uitest/sample_cards.xml`).
+- **Monocolored hybrid, snow, and split-cost spells** — unparseable, so never gated; same
+  conservative fallback as every other unrecognized shape in this fork. Plain two-color hybrid
+  (`{R/G}`), Phyrexian (`{R/P}`), and variable (`{X}`) costs *are* gated — see the addendum
+  below.
 - **Face-down plays** (morph-style) — card identity is intentionally hidden, so no cost
   is even known to gate against.
 - **"Casting" from graveyard/exile/library-view via the click-to-play convenience** —
@@ -144,3 +146,68 @@ against a `W=2,U=2,B=1` pool). Card disambiguation in hand uses a background-col
 sample (Kaya's Wrath's WB colors render a distinct gold placeholder frame; Sol
 Ring/Plains share the same plain-gray one, told apart by whether casting them
 immediately succeeds) rather than OCR, since no text-recognition tooling is available.
+
+## Addendum (2026-07-21): hybrid, Phyrexian, and variable ({X}) mana costs
+
+Closes the previous addendum's own "Deliberately excluded" gap: a spell cast from hand
+with a two-color hybrid (`{R/G}`), Phyrexian (`{R/P}`), or variable (`{X}`) symbol in its
+printed cost was previously left entirely ungated (treated as unparseable). All three
+are now parsed and gated, chosen as the highest-value remaining gap from
+`COMMANDER_IMPLEMENTATION_STATUS.md`'s known-limitations list. Monocolored hybrid
+(`{2/W}`), snow (`{S}`), split-cost (`"3U // 4UU"`), and `ActivatedAbilities`' own
+separate Stage 4 cost parser remain untouched — each is its own separate scope
+boundary, not swept in by this change.
+
+- **Extended parser**: `SpellManaCost::parse()` now accepts `[WUBRG]/[WUBRG]` (hybrid),
+  `[WUBRG]/P` (Phyrexian), and a bare `X` token, in addition to the digit/single-letter
+  tokens it already recognized — same "whole string or nothing" conservatism as before.
+  `ManaCost` (`card_effects.h`) gained three new fields to hold them —
+  `hybridPips`/`phyrexianPips`/`xCount` — populated only by this parser;
+  `ActivatedAbilities`' own cost parser never touches them, so every activated ability
+  stays exactly as costed as before this addendum.
+- **New `RulesEngine` helpers**, reusing (not replacing) `planManaPayment()`:
+  `planManaCostChoices()` does one deterministic pass over a cost's hybrid/Phyrexian
+  pips (same "only ask when a genuine choice exists" spirit as
+  `isGenericPaymentAmbiguous()`, same "fixed order, not a solver" simplification as
+  `planManaPayment()`'s own generic draining), and `resolveManaCost()` mechanically
+  folds a caster's chosen X value/hybrid colors/Phyrexian mana-vs-life picks into a
+  plain `ManaCost` (hybrid/Phyrexian/X fields cleared) plus a separate life cost —
+  after which every pre-existing function (`planManaPayment`,
+  `isGenericPaymentAmbiguous`, `planManaPaymentWithGenericChoice`) runs completely
+  unchanged on the result.
+- **New dialog**: `DlgChooseVariableManaCost`
+  (`cockatrice/.../game_graphics/dialogs/dlg_choose_variable_mana_cost.{h,cpp}`) —
+  modeled on `DlgChooseGenericManaPayment`'s "instantiated/exec()'d directly by its
+  caller" pattern. One optional row per component: an X spinbox, one radio pair per
+  ambiguous hybrid pip, one radio pair per ambiguous Phyrexian pip (defaulting to "pay
+  mana," not life). A cost with hybrid/Phyrexian symbols but nothing actually ambiguous
+  (and no `{X}`) skips the dialog entirely — zero extra clicks, same precedent as the
+  existing generic-payment dialog. A sufficiently exotic cost can pop this dialog and
+  then still trigger the pre-existing generic-split dialog afterward — an accepted
+  two-dialogs-in-a-row UX tradeoff for keeping each dialog single-purpose.
+- **Wired into `gateManaCostForHandPlay()`** ahead of the pre-existing affordability
+  check: resolves hybrid/Phyrexian/X first, then falls straight into the unmodified
+  existing flow against the resolved cost. Life payment reuses
+  `appendManaPaymentCommands()` a second time against the `"life"` counter — no new
+  command-building code needed, since life is just another named per-player counter.
+
+### Testing
+
+`tests/card_ability/spell_mana_cost_test.cpp` (hybrid/Phyrexian/multi-X/combined
+parsing, monocolored-hybrid/snow/split-cost still rejected) and new cases in
+`tests/rules/rules_engine_test.cpp` (`planManaCostChoices`'s ambiguous/forced-default
+cases including two pips sharing a color, `resolveManaCost`'s folding into
+coloredPips/generic/lifeCost) — full suite (24/24 binaries) passes, `format.sh --cmake
+--branch master` clean.
+
+**Live-verified end to end** via a new `python3 .uitest/scenario.py run
+variable_mana_gate` scenario (`.uitest/variablemanatest.cod`: Ghor-Clan Rampager
+`{2}{R/G}`, Dismember `{1}{B/P}{B/P}`, Fireball `{X}{R}` — added to
+`.uitest/sample_cards.xml`), the same one-player local hotseat trick as `mana_gate`.
+Confirms, via the client's own debug log: Ghor-Clan Rampager casting through the hybrid
+dialog's default color choice; Dismember casting through both Phyrexian pips' default
+"pay mana" choice (no life spent); and Fireball casting after actually entering X=2 via
+the new spinbox (not just accepting a default) — each decrementing exactly the expected
+mana counters. `scenario.py` itself gained multi-deck support
+(`LOCAL_GAME_DECKS`/`ensure_local_game_profile(deck_path=...)`) since this scenario
+needs a different fixture deck than `mana_gate`'s.

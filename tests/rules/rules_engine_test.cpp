@@ -626,6 +626,116 @@ TEST(RulesEngineTest, PlanManaPaymentWithGenericChoiceRejectsWrongTotal)
     EXPECT_FALSE(RulesEngine::planManaPaymentWithGenericChoice(cost, pool, {{"w", 1}}).has_value());
 }
 
+// ---- RulesEngine::planManaCostChoices / resolveManaCost (phase6-mana.md hybrid/Phyrexian/X addendum) ----
+
+TEST(RulesEngineTest, HybridPipNotAmbiguousWhenOnlyOneColorAvailable)
+{
+    ManaCost cost;
+    cost.hybridPips = {{"r", "g"}};
+    QMap<QString, int> pool{{"r", 1}};
+
+    auto choices = RulesEngine::planManaCostChoices(cost, pool);
+    ASSERT_EQ(choices.hybridChoices.size(), 1);
+    EXPECT_FALSE(choices.hybridChoices.at(0).ambiguous);
+    EXPECT_EQ(choices.hybridChoices.at(0).defaultColor, "r");
+}
+
+TEST(RulesEngineTest, HybridPipAmbiguousWhenBothColorsAvailable)
+{
+    ManaCost cost;
+    cost.hybridPips = {{"r", "g"}};
+    QMap<QString, int> pool{{"r", 1}, {"g", 1}};
+
+    auto choices = RulesEngine::planManaCostChoices(cost, pool);
+    ASSERT_EQ(choices.hybridChoices.size(), 1);
+    EXPECT_TRUE(choices.hybridChoices.at(0).ambiguous);
+    // "r" precedes "g" in manaCounterNames() order.
+    EXPECT_EQ(choices.hybridChoices.at(0).defaultColor, "r");
+}
+
+TEST(RulesEngineTest, TwoHybridPipsSharingAColorSequenceTheirAvailability)
+{
+    ManaCost cost;
+    cost.hybridPips = {{"r", "g"}, {"r", "g"}};
+    // Only enough red for one of the two pips to default to it; after the first pip tentatively
+    // reserves "r", the second pip sees only "g" left and is no longer ambiguous.
+    QMap<QString, int> pool{{"r", 1}, {"g", 1}};
+
+    auto choices = RulesEngine::planManaCostChoices(cost, pool);
+    ASSERT_EQ(choices.hybridChoices.size(), 2);
+    EXPECT_TRUE(choices.hybridChoices.at(0).ambiguous);
+    EXPECT_EQ(choices.hybridChoices.at(0).defaultColor, "r");
+    EXPECT_FALSE(choices.hybridChoices.at(1).ambiguous);
+    EXPECT_EQ(choices.hybridChoices.at(1).defaultColor, "g");
+}
+
+TEST(RulesEngineTest, PhyrexianPipForcedToLifeWhenColorUnavailable)
+{
+    ManaCost cost;
+    cost.phyrexianPips = {"b"};
+    QMap<QString, int> pool{{"r", 5}};
+
+    auto choices = RulesEngine::planManaCostChoices(cost, pool);
+    ASSERT_EQ(choices.phyrexianChoices.size(), 1);
+    EXPECT_FALSE(choices.phyrexianChoices.at(0).ambiguous);
+    EXPECT_TRUE(choices.phyrexianChoices.at(0).defaultPayLife);
+}
+
+TEST(RulesEngineTest, PhyrexianPipAmbiguousWhenColorAvailableDefaultsToMana)
+{
+    ManaCost cost;
+    cost.phyrexianPips = {"b"};
+    QMap<QString, int> pool{{"b", 1}};
+
+    auto choices = RulesEngine::planManaCostChoices(cost, pool);
+    ASSERT_EQ(choices.phyrexianChoices.size(), 1);
+    EXPECT_TRUE(choices.phyrexianChoices.at(0).ambiguous);
+    EXPECT_FALSE(choices.phyrexianChoices.at(0).defaultPayLife);
+}
+
+TEST(RulesEngineTest, ResolveManaCostFoldsHybridChoiceIntoColoredPips)
+{
+    ManaCost cost;
+    cost.hybridPips = {{"r", "g"}};
+
+    auto resolved = RulesEngine::resolveManaCost(cost, 0, {"g"}, {});
+    EXPECT_EQ(resolved.cost.coloredPips.value("g"), 1);
+    EXPECT_FALSE(resolved.cost.coloredPips.contains("r"));
+    EXPECT_TRUE(resolved.cost.hybridPips.isEmpty());
+    EXPECT_EQ(resolved.lifeCost, 0);
+}
+
+TEST(RulesEngineTest, ResolveManaCostFoldsPhyrexianManaChoiceIntoColoredPips)
+{
+    ManaCost cost;
+    cost.phyrexianPips = {"b"};
+
+    auto resolved = RulesEngine::resolveManaCost(cost, 0, {}, {false});
+    EXPECT_EQ(resolved.cost.coloredPips.value("b"), 1);
+    EXPECT_EQ(resolved.lifeCost, 0);
+}
+
+TEST(RulesEngineTest, ResolveManaCostFoldsPhyrexianLifeChoiceIntoLifeCost)
+{
+    ManaCost cost;
+    cost.phyrexianPips = {"b", "b"};
+
+    auto resolved = RulesEngine::resolveManaCost(cost, 0, {}, {true, false});
+    EXPECT_EQ(resolved.cost.coloredPips.value("b"), 1); // only the second pip paid with mana
+    EXPECT_EQ(resolved.lifeCost, 2);
+}
+
+TEST(RulesEngineTest, ResolveManaCostFoldsXValueIntoGeneric)
+{
+    ManaCost cost;
+    cost.xCount = 2;
+    cost.generic = 1;
+
+    auto resolved = RulesEngine::resolveManaCost(cost, 3, {}, {});
+    EXPECT_EQ(resolved.cost.generic, 1 + 2 * 3);
+    EXPECT_EQ(resolved.cost.xCount, 0);
+}
+
 // ---- RulesEngine::isCommanderCard / commanderTaxCounterNameForMove (command-zone decisions) ----
 
 TEST(RulesEngineTest, IsCommanderCardMatchesTheBannerCardByName)

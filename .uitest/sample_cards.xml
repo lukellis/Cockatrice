@@ -254,5 +254,34 @@ Boros Swiftblade can't be blocked by more than one creature.</text>
                 <format-commander>legal</format-commander>
             </prop>
         </card>
+        <card>
+            <name>Dismember</name>
+            <set>NPH</set>
+            <tablerow>0</tablerow>
+            <text>Target creature gets -5/-5 until end of turn.</text>
+            <prop>
+                <colors>B</colors>
+                <manacost>{1}{B/P}{B/P}</manacost>
+                <cmc>3</cmc>
+                <type>Instant</type>
+                <maintype>Instant</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Fireball</name>
+            <set>CMD</set>
+            <tablerow>0</tablerow>
+            <text>This spell costs {1} more to cast for each target beyond the first.
+Fireball deals X damage divided evenly, rounded down, among any number of targets.</text>
+            <prop>
+                <colors>R</colors>
+                <manacost>{X}{R}</manacost>
+                <cmc>1</cmc>
+                <type>Sorcery</type>
+                <maintype>Sorcery</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
     </cards>
 </cockatrice_carddatabase>

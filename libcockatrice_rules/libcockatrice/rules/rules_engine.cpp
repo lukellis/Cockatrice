@@ -281,6 +281,80 @@ std::optional<QMap<QString, int>> RulesEngine::planManaPaymentWithGenericChoice(
     return plan;
 }
 
+RulesEngine::ManaCostChoices RulesEngine::planManaCostChoices(const ManaCost &cost, const QMap<QString, int> &pool)
+{
+    ManaCostChoices choices;
+    QMap<QString, int> remaining = remainingPoolAfterColoredPips(cost, pool).value_or(pool);
+
+    for (const auto &hybrid : cost.hybridPips) {
+        HybridPipChoice choice;
+        choice.colorA = hybrid.first;
+        choice.colorB = hybrid.second;
+        const int availableA = remaining.value(hybrid.first, 0);
+        const int availableB = remaining.value(hybrid.second, 0);
+        choice.ambiguous = availableA > 0 && availableB > 0;
+
+        // Prefer whichever color comes first in manaCounterNames() order when both are viable
+        // (matching planManaPayment()'s own deterministic tie-breaking); otherwise whichever one
+        // is actually available, defaulting to colorA if neither is (cost is unaffordable
+        // regardless of this choice -- see this function's doc comment).
+        QString defaultColor = hybrid.first;
+        if (choice.ambiguous) {
+            for (const QString &name : manaCounterNames()) {
+                if (name == hybrid.first || name == hybrid.second) {
+                    defaultColor = name;
+                    break;
+                }
+            }
+        } else if (availableB > 0) {
+            defaultColor = hybrid.second;
+        }
+        choice.defaultColor = defaultColor;
+
+        remaining[defaultColor] = remaining.value(defaultColor, 0) - 1;
+        choices.hybridChoices.append(choice);
+    }
+
+    for (const QString &color : cost.phyrexianPips) {
+        PhyrexianPipChoice choice;
+        choice.color = color;
+        const int available = remaining.value(color, 0);
+        choice.ambiguous = available > 0;
+        choice.defaultPayLife = available <= 0;
+        if (!choice.defaultPayLife) {
+            remaining[color] = available - 1;
+        }
+        choices.phyrexianChoices.append(choice);
+    }
+
+    return choices;
+}
+
+RulesEngine::ResolvedManaCost RulesEngine::resolveManaCost(const ManaCost &cost,
+                                                           int xValue,
+                                                           const QList<QString> &hybridColorChoices,
+                                                           const QList<bool> &phyrexianPayLifeChoices)
+{
+    ResolvedManaCost result;
+    result.cost.coloredPips = cost.coloredPips;
+    result.cost.generic = cost.generic + cost.xCount * xValue;
+
+    for (const QString &color : hybridColorChoices) {
+        result.cost.coloredPips[color] = result.cost.coloredPips.value(color, 0) + 1;
+    }
+
+    for (int i = 0; i < phyrexianPayLifeChoices.size(); ++i) {
+        if (phyrexianPayLifeChoices[i]) {
+            result.lifeCost += 2;
+        } else {
+            const QString &color = cost.phyrexianPips[i];
+            result.cost.coloredPips[color] = result.cost.coloredPips.value(color, 0) + 1;
+        }
+    }
+
+    return result;
+}
+
 bool RulesEngine::isCommanderCard(const QString &cardName, const QString &commanderName)
 {
     return !commanderName.isEmpty() && cardName == commanderName;

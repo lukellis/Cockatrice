@@ -1,7 +1,9 @@
 #ifndef COCKATRICE_CARD_EFFECTS_H
 #define COCKATRICE_CARD_EFFECTS_H
 
+#include <QList>
 #include <QMap>
+#include <QPair>
 #include <QString>
 
 /**
@@ -66,19 +68,33 @@ struct CardEffect
 // colored pip (including the "x"/colorless pip) which requires an exact-color match. A
 // default-constructed ManaCost is free -- every activated ability recognized before Stage 4 stays
 // free by construction.
+//
+// hybridPips/phyrexianPips/xCount (phase6-mana.md's addendum) are populated only by
+// SpellManaCost::parse() -- ActivatedAbilities' own cost parser never produces them, so every
+// activated ability stays exactly as free/costed as before this addendum. Each hybridPips entry is
+// one hybrid symbol's two acceptable colors (e.g. "{W/U}" -> ("w","u")), requiring exactly one mana
+// of either; each phyrexianPips entry is one Phyrexian symbol's single color (e.g. "{R/P}" -> "r"),
+// payable as either 1 of that color or 2 life; xCount is the number of "{X}" symbols, each
+// contributing a caster-chosen X to generic once announced. None of these three are resolved to a
+// plain coloredPips/generic amount until a caster's choices are folded in via
+// RulesEngine::resolveManaCost() -- see that function's doc comment.
 struct ManaCost
 {
     QMap<QString, int> coloredPips;
     int generic = 0;
+    QList<QPair<QString, QString>> hybridPips;
+    QList<QString> phyrexianPips;
+    int xCount = 0;
 
     bool operator==(const ManaCost &other) const
     {
-        return coloredPips == other.coloredPips && generic == other.generic;
+        return coloredPips == other.coloredPips && generic == other.generic && hybridPips == other.hybridPips &&
+               phyrexianPips == other.phyrexianPips && xCount == other.xCount;
     }
 
     [[nodiscard]] bool isFree() const
     {
-        return coloredPips.isEmpty() && generic == 0;
+        return coloredPips.isEmpty() && generic == 0 && hybridPips.isEmpty() && phyrexianPips.isEmpty() && xCount == 0;
     }
 };
 

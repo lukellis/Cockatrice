@@ -360,6 +360,80 @@ public:
                                                                               const QMap<QString, int> &genericChoice);
 
     /**
+     * @brief One hybrid symbol's (phase6-mana.md addendum) two acceptable colors, plus whether a
+     * real choice exists between them and which one a caller should default to if it doesn't ask.
+     * @p ambiguous is true iff, given the pool and every pip resolved so far (see
+     * planManaCostChoices()), both @p colorA and @p colorB currently have at least 1 mana
+     * remaining -- same "only ask when a genuine choice exists" spirit as
+     * isGenericPaymentAmbiguous(). @p defaultColor is always set (even when not ambiguous, where
+     * it's the forced/only-affordable side) to whichever of the two comes first in
+     * manaCounterNames() order when both are viable, matching planManaPayment()'s own deterministic
+     * w/u/b/r/g/x tie-breaking.
+     */
+    struct HybridPipChoice
+    {
+        QString colorA;
+        QString colorB;
+        bool ambiguous = false;
+        QString defaultColor;
+    };
+
+    /**
+     * @brief One Phyrexian symbol's (phase6-mana.md addendum) color, plus whether paying it with
+     * mana vs. 2 life is a real choice. @p ambiguous is true iff @p color still has at least 1 mana
+     * remaining at this point in planManaCostChoices()'s pass -- if none is left, life is the only
+     * option (@p defaultPayLife forced true), so there's nothing to ask. When ambiguous,
+     * @p defaultPayLife is false: paying mana is the suggested default, same "don't touch life
+     * unless needed" spirit as leaving it up to the caster to opt in.
+     */
+    struct PhyrexianPipChoice
+    {
+        QString color;
+        bool ambiguous = false;
+        bool defaultPayLife = false;
+    };
+
+    /** @brief planManaCostChoices()'s result: one entry per @p cost hybrid/Phyrexian pip, same order. */
+    struct ManaCostChoices
+    {
+        QList<HybridPipChoice> hybridChoices;
+        QList<PhyrexianPipChoice> phyrexianChoices;
+    };
+
+    /**
+     * @brief Phase6-mana.md addendum: a single deterministic pass (not a constraint solver, same
+     * simplification spirit as planManaPayment()'s own fixed-order generic draining) over
+     * @p cost.hybridPips then @p cost.phyrexianPips, starting from
+     * remainingPoolAfterColoredPips(cost, pool) and tentatively reserving each pip's default choice
+     * before moving to the next, so a later pip sharing a color with an earlier one sees accurate
+     * leftover availability. If @p cost is unaffordable regardless of choice, this still returns a
+     * result (with arbitrary defaults) rather than nullopt -- affordability is planManaPayment()'s
+     * job once resolveManaCost() folds the caller's actual choices in, not this function's.
+     */
+    static ManaCostChoices planManaCostChoices(const ManaCost &cost, const QMap<QString, int> &pool);
+
+    /**
+     * @brief Phase6-mana.md addendum: folds a caster's resolved choices for @p cost's hybrid/
+     * Phyrexian/X components into a plain ManaCost (hybridPips/phyrexianPips empty, xCount 0) plus
+     * a separate life cost that doesn't come from the mana pool at all -- purely mechanical, no
+     * availability checking (that's planManaPayment()'s job on the returned cost). @p xValue is the
+     * caster-announced X (folded into generic as `xCount * xValue`); @p hybridColorChoices and
+     * @p phyrexianPayLifeChoices must have exactly as many entries, in the same order, as
+     * @p cost.hybridPips / @p cost.phyrexianPips respectively -- each hybrid entry names the chosen
+     * color (added to coloredPips), each Phyrexian entry is true to pay 2 life (added to the
+     * returned lifeCost) or false to pay 1 of that pip's color (added to coloredPips).
+     */
+    struct ResolvedManaCost
+    {
+        ManaCost cost;
+        int lifeCost = 0;
+    };
+    static ResolvedManaCost resolveManaCost(const ManaCost &cost,
+                                            int xValue,
+                                            const QList<QString> &hybridColorChoices,
+                                            const QList<bool> &phyrexianPayLifeChoices);
+
+    /**
      * @brief Rule 903.3: whether @p cardName is the deck's designated commander and should be
      * routed to the command zone instead of the deck/sideboard at setup. @p commanderName is the
      * deck's banner-card name (DeckList::getBannerCard().name); empty means the deck has no

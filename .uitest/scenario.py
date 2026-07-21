@@ -29,12 +29,13 @@ fundamental Xvfb/no-window-manager limitation as earlier sessions suspected).
 --local-game (or running a scenario in LOCAL_GAME_SCENARIOS, e.g. "mana_gate") switches the
 client straight into a one-player hotseat game instead of the Home tab, for scenarios that
 need a real board/hand/mana-pool rather than a server connection -- see
-ensure_local_game_profile(). Switching between local-game and normal mode restarts an
+ensure_local_game_profile(). Switching between local-game and normal mode -- or between two
+local-game scenarios that use different decks (see LOCAL_GAME_DECKS) -- restarts an
 already-running client automatically (it's a startup-only setting).
 
 Add a new scenario by writing a function `scenario_<name>(ctx) -> bool`, registering it in
-SCENARIOS below, and adding its name to LOCAL_GAME_SCENARIOS too if it needs a local game
-rather than a Home-tab-fresh client.
+SCENARIOS below, and adding its name (with its fixture deck) to LOCAL_GAME_SCENARIOS/
+LOCAL_GAME_DECKS too if it needs a local game rather than a Home-tab-fresh client.
 """
 import re
 import subprocess
@@ -259,17 +260,21 @@ def ensure_test_card_database():
         print("[setup] card database already up to date")
 
 
-LOCAL_GAME_DECK = REPO_ROOT / ".uitest" / "manatest.cod"
+LOCAL_GAME_DECKS = {
+    "mana_gate": REPO_ROOT / ".uitest" / "manatest.cod",
+    "variable_mana_gate": REPO_ROOT / ".uitest" / "variablemanatest.cod",
+}
 
 
-def ensure_local_game_profile(enabled):
+def ensure_local_game_profile(enabled, deck_path=None):
     """Idempotently toggles this fork's [localgame] auto-start (debug.ini) -- scenarios that
     need a real board (mana pool counters, playing cards, casting spells) turn this on;
     scenarios that expect to land on the Home tab (e.g. "connect") need it off, since an
     auto-started local game switches the client straight to a Game tab instead. This is a
     startup-time-only setting -- see setup()'s mode-marker handling below for why switching
-    between the two requires restarting an already-running client rather than just rewriting
-    this file. Returns True if anything actually changed."""
+    between the two (or between two local-game scenarios with different @p deck_path, e.g.
+    "mana_gate" vs "variable_mana_gate") requires restarting an already-running client rather
+    than just rewriting this file. Returns True if anything actually changed."""
     import configparser
 
     settings_dir = Path.home() / ".local" / "share" / "Cockatrice" / "Cockatrice" / "settings"
@@ -289,9 +294,10 @@ def ensure_local_game_profile(enabled):
         "localgame": {
             "onStartup": "true" if enabled else "false",
             "playerCount": "1",
-            r"deck\Player 1": str(LOCAL_GAME_DECK),
         },
     }
+    if enabled:
+        desired["localgame"][r"deck\Player 1"] = str(deck_path)
     changed = False
     for section, keys in desired.items():
         for key, value in keys.items():
@@ -344,17 +350,19 @@ def ensure_client():
 MODE_MARKER = Path("/tmp/cockatrice_scenario_mode")
 
 
-def setup(local_game=False):
+def setup(local_game=False, deck_path=None):
     ensure_xvfb()
     ensure_servatrice()
-    ensure_local_game_profile(local_game)
+    ensure_local_game_profile(local_game, deck_path)
 
     # debug.ini's onStartup is only read at client launch, so an already-running client is
     # stale (and must be relaunched) whenever the requested mode differs from whichever mode
     # it was actually started in -- comparing debug.ini's *content* isn't enough on its own,
     # since a client already running from an earlier setup() call could predate the file's
-    # current content entirely.
-    requested_mode = "local_game" if local_game else "normal"
+    # current content entirely. The deck path is part of the mode key too: two local-game
+    # scenarios with different fixture decks (see LOCAL_GAME_DECKS) must still trigger a
+    # restart even though "local_game" itself didn't change.
+    requested_mode = f"local_game:{deck_path}" if local_game else "normal"
     current_mode = MODE_MARKER.read_text().strip() if MODE_MARKER.exists() else None
     if _running(str(CLIENT_BIN)) and current_mode != requested_mode:
         print(f"[setup] running client is in '{current_mode}' mode, need '{requested_mode}' -- restarting it")
@@ -575,14 +583,125 @@ def scenario_mana_gate(ctx):
                           label="Kaya's Wrath casts via the ambiguous-payment dialog's default split")
 
 
+# Mana-counter click targets (Server_Player::setupZones()'s ids 1-6 -- w,u,b,r,g,x), verified
+# live this session by clicking each and reading the resulting Command_IncCounter/
+# Event_SetCounter counter_id off the client's debug log: 1=w (68,192), 2=u (68,233),
+# 3=b (68,275), 4=r (68,316), 5=g (68,358). x (6) isn't needed by any scenario below.
+_MANA_COUNTER_XY = {"w": (68, 192), "u": (68, 233), "b": (68, 275), "r": (68, 316), "g": (68, 358)}
+
+# Placeholder card-art colors for the three DlgChooseVariableManaCost fixture cards (no real
+# card images exist in this sandbox -- WITH_ORACLE=OFF -- so Cockatrice paints a flat color
+# swatch instead), sampled the same way KAYAS_WRATH_COLOR was: Ghor-Clan Rampager (RG,
+# multicolor) renders the identical gold placeholder as any other multicolor card --
+# indistinguishable from KAYAS_WRATH_COLOR by color alone, but this deck has only one
+# multicolor card, so gold-vs-not is still enough to identify it here.
+_GHOR_CLAN_COLOR = KAYAS_WRATH_COLOR  # (250, 190, 30)
+_FIREBALL_COLOR = (230, 0, 0)
+_DISMEMBER_COLOR = (0, 0, 0)
+
+
+def scenario_variable_mana_gate(ctx):
+    """Live-verifies the hybrid/Phyrexian/{X} mana-cost addendum to real spell casting from
+    hand (phase6-mana.md's addendum's own addendum) end to end, the same one-player local
+    hotseat trick as scenario_mana_gate(). .uitest/variablemanatest.cod draws Ghor-Clan
+    Rampager ({2}{R/G}, hybrid), Dismember ({1}{B/P}{B/P}, Phyrexian), and Fireball ({X}{R},
+    variable) -- all three already in .uitest/sample_cards.xml.
+
+    Card disambiguation samples each hand slot's placeholder-art color (see
+    _GHOR_CLAN_COLOR/_FIREBALL_COLOR/_DISMEMBER_COLOR) -- three flat, distinct colors, no OCR
+    needed. DlgChooseVariableManaCost's OK button position depends on how many rows it has (1
+    hybrid row, 2 Phyrexian rows, or 1 X row respectively), so each of the three uses its own
+    empirically-found coordinate rather than one shared constant -- verified live this session
+    against the running client/server, same as every other coordinate in this file.
+    """
+    print("[variable_mana_gate] drawing the starting 3-card hand")
+    for _ in range(3):
+        ctx.click(23, 190)  # Draw button
+        ctx.sleep(0.5)
+    for _ in range(3):
+        ctx.key("Return")  # dismiss the empty-library QMessageBox, same as scenario_mana_gate
+        ctx.sleep(0.3)
+    ctx.sleep(0.5)
+
+    # Resampled after every card leaves hand, not computed once up front: casting a card
+    # reflows the remaining hand onto a *different* set of x-coordinates (_HAND_SLOT_CENTERS
+    # is keyed by remaining hand size), so a slot's x found while 3 cards are in hand is not
+    # valid once only 2 (or 1) remain.
+    def slot_for(color, hand_size):
+        for x, sampled in _hand_colors(hand_size):
+            if sampled == color:
+                return x
+        return None
+
+    samples = _hand_colors(3)
+    print(f"  sampled hand colors: {samples}")
+    ghor_clan_x = slot_for(_GHOR_CLAN_COLOR, 3)
+    if ghor_clan_x is None:
+        print(f"  [FAIL] could not find Ghor-Clan Rampager's hand slot, sampled {samples}")
+        ctx.ok = False
+        return False
+
+    print("[variable_mana_gate] hybrid: casting Ghor-Clan Rampager ({2}{R/G}) with R=2,G=1 in pool")
+    for color in ("r", "r", "g"):
+        ctx.click(*_MANA_COUNTER_XY[color])
+        ctx.sleep(0.3)
+    ctx.click(ghor_clan_x, HAND_ROW_Y)
+    ctx.sleep(1.0)
+    # Only one row (the hybrid R/G choice, defaulting to Red) is ambiguous here -- accept it.
+    ctx.click(787, 392)  # DlgChooseVariableManaCost's OK button with exactly 1 row shown
+    ctx.sleep(1.0)
+    if not ctx.assert_log(CLIENT_LOG, _moved_to_table_pattern("Ghor-Clan Rampager"), timeout=5,
+                          label="Ghor-Clan Rampager casts via the hybrid dialog's default color"):
+        return False
+
+    dismember_x = slot_for(_DISMEMBER_COLOR, 2)
+    if dismember_x is None:
+        print(f"  [FAIL] could not find Dismember's hand slot, sampled {_hand_colors(2)}")
+        ctx.ok = False
+        return False
+
+    print("[variable_mana_gate] Phyrexian: casting Dismember ({1}{B/P}{B/P}) with B=3 in pool")
+    for _ in range(3):
+        ctx.click(*_MANA_COUNTER_XY["b"])
+        ctx.sleep(0.3)
+    ctx.click(dismember_x, HAND_ROW_Y)
+    ctx.sleep(1.0)
+    # Two ambiguous Phyrexian rows, both defaulting to "pay mana" -- accept both.
+    ctx.click(787, 412)  # DlgChooseVariableManaCost's OK button with exactly 2 rows shown
+    ctx.sleep(1.0)
+    if not ctx.assert_log(CLIENT_LOG, _moved_to_table_pattern("Dismember"), timeout=5,
+                          label="Dismember casts via the Phyrexian dialog's default (pay mana)"):
+        return False
+
+    fireball_x = _HAND_SLOT_CENTERS[1][0]  # only Fireball remains in hand
+
+    print("[variable_mana_gate] X: casting Fireball ({X}{R}) with X=2, pool R=1,U=2")
+    ctx.click(*_MANA_COUNTER_XY["r"])  # covers the fixed {R} pip
+    ctx.sleep(0.3)
+    for _ in range(2):
+        ctx.click(*_MANA_COUNTER_XY["u"])  # covers X=2's generic amount
+        ctx.sleep(0.3)
+    ctx.click(fireball_x, HAND_ROW_Y)
+    ctx.sleep(1.0)
+    ctx.click(904, 351)  # X spinbox's up-arrow, clicked twice below to set X=2
+    ctx.click(904, 351)
+    ctx.sleep(0.3)
+    ctx.click(787, 384)  # DlgChooseVariableManaCost's OK button with exactly 1 row (X) shown
+    ctx.sleep(1.0)
+    return ctx.assert_log(CLIENT_LOG, _moved_to_table_pattern("Fireball"), timeout=5,
+                          label="Fireball casts after announcing X=2 via the new spinbox")
+
+
 SCENARIOS = {
     "connect": scenario_connect,
     "mana_gate": scenario_mana_gate,
+    "variable_mana_gate": scenario_variable_mana_gate,
 }
 
 # Scenarios needing a fresh local hotseat game (see ensure_local_game_profile()) rather than
-# the Home tab a plain client launch lands on.
-LOCAL_GAME_SCENARIOS = {"mana_gate"}
+# the Home tab a plain client launch lands on. Each needs its own fixture deck -- see
+# LOCAL_GAME_DECKS.
+LOCAL_GAME_SCENARIOS = {"mana_gate", "variable_mana_gate"}
 
 
 def main():
@@ -591,7 +710,11 @@ def main():
         sys.exit(1)
     cmd = sys.argv[1]
     if cmd == "setup":
-        setup(local_game="--local-game" in sys.argv[2:])
+        local_game = "--local-game" in sys.argv[2:]
+        # Optional trailing scenario name picks which LOCAL_GAME_DECKS entry to load --
+        # defaults to "mana_gate" for backward compatibility with the plain `--local-game` form.
+        deck_scenario = next((a for a in sys.argv[2:] if a in LOCAL_GAME_DECKS), "mana_gate")
+        setup(local_game=local_game, deck_path=LOCAL_GAME_DECKS[deck_scenario] if local_game else None)
     elif cmd == "teardown":
         teardown(kill_xvfb="--all" in sys.argv[2:])
     elif cmd == "list":
@@ -607,7 +730,8 @@ def main():
             print(f"unknown scenario(s): {', '.join(unknown)}")
             print(f"available: {', '.join(SCENARIOS)}")
             sys.exit(1)
-        setup(local_game=any(n in LOCAL_GAME_SCENARIOS for n in names))
+        local_names = [n for n in names if n in LOCAL_GAME_SCENARIOS]
+        setup(local_game=bool(local_names), deck_path=LOCAL_GAME_DECKS[local_names[0]] if local_names else None)
         overall_ok = True
         for name in names:
             print(f"[run] {name}")

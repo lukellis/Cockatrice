@@ -2,6 +2,7 @@
 
 #include "../../game_graphics/board/ability_target_picker.h"
 #include "../../game_graphics/dialogs/dlg_choose_generic_mana_payment.h"
+#include "../../game_graphics/dialogs/dlg_choose_variable_mana_cost.h"
 #include "../../game_graphics/dialogs/dlg_move_top_cards_until.h"
 #include "../../game_graphics/dialogs/dlg_roll_dice.h"
 #include "../../game_graphics/player/card_menu_action_type.h"
@@ -1737,21 +1738,37 @@ static QMap<QString, int> currentManaPool(PlayerLogic *player)
     return pool;
 }
 
-// Phase 7 Stage 4: a "{2}{R}"-style display string for a ManaCost, used only in the "can't afford"
-// dialog. Generic first, then colored pips in RulesEngine::manaCounterNames() order (matching the
-// deterministic payment order planManaPayment() itself uses).
+// Phase 7 Stage 4 (extended by phase6-mana.md's hybrid/Phyrexian/X addendum): a "{2}{R}"-style
+// display string for a ManaCost, used only in the "can't afford" dialog. {X} symbols first (as
+// real cards print them), then generic, then colored pips in RulesEngine::manaCounterNames() order
+// (matching the deterministic payment order planManaPayment() itself uses), then hybrid/Phyrexian
+// pips in parse order.
+static QString counterNameToSymbol(const QString &counterName)
+{
+    return counterName == QLatin1String("x") ? QStringLiteral("C") : counterName.toUpper();
+}
+
 static QString manaCostDescription(const ManaCost &cost)
 {
     QString description;
+    for (int i = 0; i < cost.xCount; ++i) {
+        description += QStringLiteral("{X}");
+    }
     if (cost.generic > 0) {
         description += QStringLiteral("{%1}").arg(cost.generic);
     }
     for (const QString &counterName : Rules::RulesEngine::manaCounterNames()) {
         const int count = cost.coloredPips.value(counterName, 0);
-        const QString symbol = counterName == QLatin1String("x") ? QStringLiteral("C") : counterName.toUpper();
         for (int i = 0; i < count; ++i) {
-            description += QStringLiteral("{%1}").arg(symbol);
+            description += QStringLiteral("{%1}").arg(counterNameToSymbol(counterName));
         }
+    }
+    for (const auto &hybrid : cost.hybridPips) {
+        description +=
+            QStringLiteral("{%1/%2}").arg(counterNameToSymbol(hybrid.first), counterNameToSymbol(hybrid.second));
+    }
+    for (const QString &color : cost.phyrexianPips) {
+        description += QStringLiteral("{%1/P}").arg(counterNameToSymbol(color));
     }
     return description;
 }
@@ -1807,40 +1824,74 @@ bool PlayerActions::gateManaCostForHandPlay(const CardItem *card,
         return true; // land drops are free, rule 305.1
     }
 
-    const std::optional<ManaCost> cost = SpellManaCost::parse(info);
-    if (!cost || cost->isFree()) {
-        // Unparseable (hybrid/Phyrexian/X/split cost) or genuinely free -- same conservative
-        // "don't guess" fallback as every other unrecognized shape in this fork.
+    const std::optional<ManaCost> parsedCost = SpellManaCost::parse(info);
+    if (!parsedCost || parsedCost->isFree()) {
+        // Unparseable (monocolored hybrid, snow, split cost) or genuinely free -- same
+        // conservative "don't guess" fallback as every other unrecognized shape in this fork.
         return true;
     }
 
     const QMap<QString, int> pool = currentManaPool(player);
-    const std::optional<QMap<QString, int>> plan = Rules::RulesEngine::planManaPayment(*cost, pool);
+
+    // Phase6-mana.md's hybrid/Phyrexian/X addendum: resolve those components (a real choice, or
+    // for {X} an announcement) into a plain payable ManaCost + separate life cost *before* running
+    // the pre-existing affordability/generic-choice flow below unchanged against the result.
+    ManaCost cost = *parsedCost;
+    int lifeCost = 0;
+    if (!cost.hybridPips.isEmpty() || !cost.phyrexianPips.isEmpty() || cost.xCount > 0) {
+        const Rules::RulesEngine::ManaCostChoices choices = Rules::RulesEngine::planManaCostChoices(cost, pool);
+
+        QList<QString> hybridColorChoices;
+        for (const auto &hybrid : choices.hybridChoices) {
+            hybridColorChoices.append(hybrid.defaultColor);
+        }
+        QList<bool> phyrexianPayLifeChoices;
+        for (const auto &phyrexian : choices.phyrexianChoices) {
+            phyrexianPayLifeChoices.append(phyrexian.defaultPayLife);
+        }
+        int xValue = 0;
+
+        DlgChooseVariableManaCost variableDialog(nullptr, cost, choices, pool);
+        if (variableDialog.hasAnythingToAsk()) {
+            if (variableDialog.exec() != QDialog::Accepted) {
+                return false; // atomic cancel -- nothing sent
+            }
+            xValue = variableDialog.chosenXValue();
+            hybridColorChoices = variableDialog.chosenHybridColors();
+            phyrexianPayLifeChoices = variableDialog.chosenPhyrexianPayLife();
+        }
+
+        const Rules::RulesEngine::ResolvedManaCost resolved =
+            Rules::RulesEngine::resolveManaCost(cost, xValue, hybridColorChoices, phyrexianPayLifeChoices);
+        cost = resolved.cost;
+        lifeCost = resolved.lifeCost;
+    }
+
+    const std::optional<QMap<QString, int>> plan = Rules::RulesEngine::planManaPayment(cost, pool);
     if (!plan) {
-        QMessageBox::information(
-            nullptr, tr("Cannot Cast"),
-            tr("Not enough mana to cast %1 (%2).").arg(info.getName(), manaCostDescription(*cost)));
+        QMessageBox::information(nullptr, tr("Cannot Cast"),
+                                 tr("Not enough mana to cast %1 (%2).").arg(info.getName(), manaCostDescription(cost)));
         return false;
     }
 
     QMap<QString, int> payment = *plan;
-    if (Rules::RulesEngine::isGenericPaymentAmbiguous(*cost, pool)) {
+    if (Rules::RulesEngine::isGenericPaymentAmbiguous(cost, pool)) {
         const std::optional<QMap<QString, int>> remaining =
-            Rules::RulesEngine::remainingPoolAfterColoredPips(*cost, pool);
+            Rules::RulesEngine::remainingPoolAfterColoredPips(cost, pool);
         QMap<QString, int> prefill;
         for (auto it = payment.constBegin(); it != payment.constEnd(); ++it) {
-            const int genericPortion = it.value() - cost->coloredPips.value(it.key(), 0);
+            const int genericPortion = it.value() - cost.coloredPips.value(it.key(), 0);
             if (genericPortion > 0) {
                 prefill[it.key()] = genericPortion;
             }
         }
 
-        DlgChooseGenericManaPayment dialog(nullptr, *cost, remaining.value_or(QMap<QString, int>{}), prefill);
+        DlgChooseGenericManaPayment dialog(nullptr, cost, remaining.value_or(QMap<QString, int>{}), prefill);
         if (dialog.exec() != QDialog::Accepted) {
             return false; // atomic cancel -- nothing sent
         }
         const std::optional<QMap<QString, int>> chosenPlan =
-            Rules::RulesEngine::planManaPaymentWithGenericChoice(*cost, pool, dialog.chosenGenericSplit());
+            Rules::RulesEngine::planManaPaymentWithGenericChoice(cost, pool, dialog.chosenGenericSplit());
         if (!chosenPlan) {
             return false; // the dialog only allows valid input -- defensive, shouldn't happen
         }
@@ -1848,6 +1899,11 @@ bool PlayerActions::gateManaCostForHandPlay(const CardItem *card,
     }
 
     appendManaPaymentCommands(extraCommands, player, payment);
+    if (lifeCost > 0) {
+        // Life is just another named per-player counter (Server_Player::setupZones()) -- reuse the
+        // same counter-lookup-by-name helper rather than a bespoke life-deduction code path.
+        appendManaPaymentCommands(extraCommands, player, {{QStringLiteral("life"), lifeCost}});
+    }
     return true;
 }
 

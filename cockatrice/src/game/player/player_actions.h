@@ -101,8 +101,9 @@ public:
     // or the player cancelled a color-choice dialog); nothing is sent either way on false, so
     // every caller is free to just `return` on false with no cleanup. A no-op (returns true, never
     // touches extraCommands) for anything other than a face-up, non-land, affordable-cost card
-    // actually leaving hand -- see the .cpp for the exact scope (lands, face-down plays, and
-    // hybrid/X/split-cost spells are deliberately never gated).
+    // actually leaving hand -- see the .cpp for the exact scope (lands, face-down plays, monocolored
+    // hybrid, snow, and split-cost spells are deliberately never gated; plain hybrid, Phyrexian, and
+    // {X} costs are, per phase6-mana.md's addendum).
     bool gateManaCostForHandPlay(const CardItem *card,
                                  bool faceDown,
                                  QList<const ::google::protobuf::Message *> &extraCommands);
