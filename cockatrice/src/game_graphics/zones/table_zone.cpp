@@ -131,6 +131,22 @@ void TableZone::handleDropEventByGrid(const QList<CardDragItem *> &dragItems,
                                       CardZoneLogic *startZone,
                                       const QPoint &gridPoint)
 {
+    PlayerActions *startPlayerActions = startZone->getPlayer()->getPlayerActions();
+
+    // Real spell casting from hand (doc/commander-status/phase6-mana.md): gated only for a
+    // single-card drag (a batch of simultaneously dragged cards each needing independent payment
+    // is deliberately out of scope, same boundary Phase 7 Stage 4 drew for costed-ability
+    // activation) -- gateManaCostForHandPlay() itself is a no-op for anything that isn't actually
+    // a face-up, non-land, affordable-cost card leaving the HAND zone.
+    QList<const ::google::protobuf::Message *> manaPaymentCommands;
+    if (dragItems.size() == 1) {
+        auto *singleCard = qgraphicsitem_cast<CardItem *>(dragItems.first()->getItem());
+        if (singleCard && !startPlayerActions->gateManaCostForHandPlay(singleCard, dragItems.first()->isForceFaceDown(),
+                                                                       manaPaymentCommands)) {
+            return; // unaffordable, or the player cancelled a color-choice dialog -- nothing sent
+        }
+    }
+
     Command_MoveCard cmd;
     cmd.set_start_player_id(startZone->getPlayer()->getPlayerInfo()->getId());
     cmd.set_start_zone(startZone->getName().toStdString());
@@ -153,7 +169,15 @@ void TableZone::handleDropEventByGrid(const QList<CardDragItem *> &dragItems,
         }
     }
 
-    startZone->getPlayer()->getPlayerActions()->sendGameCommand(cmd);
+    if (manaPaymentCommands.isEmpty()) {
+        startPlayerActions->sendGameCommand(cmd);
+    } else {
+        // prepareGameCommand(QList<const Message*>) deletes every pointer it's given, so this
+        // needs its own heap copy of cmd rather than &cmd (a stack object).
+        QList<const ::google::protobuf::Message *> allCommands{new Command_MoveCard(cmd)};
+        allCommands.append(manaPaymentCommands);
+        startPlayerActions->sendGameCommand(startPlayerActions->prepareGameCommand(allCommands));
+    }
 }
 
 void TableZone::reorganizeCards()

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cockatrice_deck version="1">
+    <lastLoadedTimestamp>Tue Jul 21 19:50:36 2026</lastLoadedTimestamp>
+    <deckname>manatest</deckname>
+    <format></format>
+    <bannerCard providerId=""></bannerCard>
+    <comments>Fixture deck for scenario_mana_gate (.uitest/scenario.py) -- exercises the
+    real-mana-payment-for-casting-from-hand gate (doc/commander-status/phase6-mana.md's
+    addendum): Plains (a free land, never gated), Sol Ring (a {1} generic-only cost, cheap
+    enough to hit the &quot;not enough mana&quot; block and the unambiguous auto-pay path with just one
+    color available), Kaya's Wrath ({2}{W}{B}, cheap enough to reach with counter clicks alone
+    but with enough generic cost to trigger the ambiguous-payment dialog once two spare colors
+    are available). All three already exist in .uitest/sample_cards.xml.</comments>
+    <tags/>
+    <zone name="main">
+        <card number="1" name="Sol Ring" setShortName="CMD"/>
+        <card number="1" name="Kaya's Wrath" setShortName="WAR"/>
+        <card number="1" name="Plains" setShortName="CMD"/>
+    </zone>
+</cockatrice_deck>

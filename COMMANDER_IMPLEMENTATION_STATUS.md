@@ -43,7 +43,7 @@ to silently fill in.
 | 3. Command zone & commander tracking | Done | [phase3-command-zone.md](doc/commander-status/phase3-command-zone.md) |
 | 4. Turn structure automation | Partial, by design | [phase4-turn-structure.md](doc/commander-status/phase4-turn-structure.md) |
 | 5. Priority passing (simplified stand-in for a full stack) | Partial, by design | [phase5-priority-stack.md](doc/commander-status/phase5-priority-stack.md) |
-| 6. Mana system (pool auto-empty only) | Narrow slice done | [phase6-mana.md](doc/commander-status/phase6-mana.md) |
+| 6. Mana system (pool auto-empty + real cost payment for casting from hand) | Narrow slice done | [phase6-mana.md](doc/commander-status/phase6-mana.md) |
 | 7. Card ability system (display parsing + a real execution engine) | Done at scope (Increments 1–2, Stages 1–6) | [phase7-card-abilities.md](doc/commander-status/phase7-card-abilities.md) |
 | 8. Combat system | Declare-attacker + Stages A/B/C/D (targeting, blocking, automated damage/death, deathtouch/trample/indestructible, first strike/double strike) done | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
 | 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects, combat-math consumers only | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
@@ -54,10 +54,16 @@ to silently fill in.
 
 Everything in the table above is implemented and GTest-covered per its own doc's "Testing"
 section; the full suite passes with zero known regressions and `format.sh --cmake --branch
-master` is clean. Most rows are also live-verified per their own doc — the static/continuous
-abilities extension is the one exception: its live-verification attempt hit a UI-testing
-infrastructure gap (see `phase8-static-abilities.md`'s "Testing" section) rather than
-completing, so it's currently GTest-verified only. All work is on the `commander-rules`
+master` is clean. Most rows are also live-verified per their own doc. **As of 2026-07-21, the
+Xvfb/UI-testing infrastructure itself is fixed** (see `CLAUDE.md`'s updated UI-testing note and
+`phase6-mana.md`'s "Testing" section) — the "card clicks/drags don't register" conclusion three
+prior sessions reached was actually a version-notification dialog silently swallowing every
+scripted click, not a fundamental limitation. The Phase 6 real-spell-casting-mana-payment
+addendum is now live-verified end to end using the fixed infrastructure
+(`.uitest/scenario.py run mana_gate`). The static/continuous abilities extension
+(`phase8-static-abilities.md`) is the one row still GTest-only — its own live-verification
+attempt predates this fix and was never re-attempted against it, not a remaining infrastructure
+gap. All work is on the `commander-rules`
 branch, pushed to `origin` (this host's only remote — see `CLAUDE.md`'s git-remotes
 note, since that setup has changed across hosts this fork has been developed on).
 
@@ -81,8 +87,9 @@ pick up unprompted:
   `phase8-combat.md`).
 - Converting Phase 9's advisory life ≤ 0 / poison / commander-damage warnings into
   automatic loss — now possible given the lifted restriction, but not yet done.
-- Any further Phase 5/6 depth beyond what's documented (real general stack resolution,
-  full mana cost validation outside Phase 7 Stage 4's narrow activated-ability case).
+- Any further Phase 5/6 depth beyond what's documented (real general stack resolution;
+  flashback/alternate-cast-source costs; hybrid/Phyrexian/`{X}`/split-cost payment,
+  currently left ungated rather than partially enforced).
 
 ## Protocol extensions used
 
@@ -115,3 +122,9 @@ future change doesn't collide with a retired or in-use extension number.
   math only — no client display of the boost, no creature-type restrictions, no combined
   single-line phrasing — see `phase8-static-abilities.md`.
 - Command zone has no dedicated context menu (graveyard/exile do).
+- Real mana payment for casting spells from hand only covers non-land cards with a
+  cleanly parseable printed cost (plain generic/colored symbols) actually leaving the
+  `HAND` zone via click-to-play or a single-card drag; hybrid/Phyrexian/`{X}`/split
+  costs, face-down plays, multi-card drags, and casting an Aura/Equipment via a
+  drag-attach arrow are all left ungated rather than partially enforced — see
+  `phase6-mana.md`'s addendum.

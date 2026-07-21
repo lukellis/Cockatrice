@@ -1,6 +1,7 @@
 #include "player_actions.h"
 
 #include "../../game_graphics/board/ability_target_picker.h"
+#include "../../game_graphics/dialogs/dlg_choose_generic_mana_payment.h"
 #include "../../game_graphics/dialogs/dlg_move_top_cards_until.h"
 #include "../../game_graphics/dialogs/dlg_roll_dice.h"
 #include "../../game_graphics/player/card_menu_action_type.h"
@@ -16,6 +17,7 @@
 #include <libcockatrice/card/ability/activated_abilities.h>
 #include <libcockatrice/card/ability/card_keywords.h>
 #include <libcockatrice/card/ability/mana_abilities.h>
+#include <libcockatrice/card/ability/spell_mana_cost.h>
 #include <libcockatrice/card/ability/static_abilities.h>
 #include <libcockatrice/card/ability/triggered_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
@@ -64,6 +66,11 @@ void PlayerActions::playCard(CardItem *card, bool faceDown)
         return;
     }
 
+    QList<const ::google::protobuf::Message *> manaPaymentCommands;
+    if (!gateManaCostForHandPlay(card, faceDown, manaPaymentCommands)) {
+        return; // unaffordable, or the player cancelled a color-choice dialog -- nothing sent
+    }
+
     Command_MoveCard cmd;
     cmd.set_start_player_id(card->getZone()->getPlayer()->getPlayerInfo()->getId());
     cmd.set_start_zone(card->getZone()->getName().toStdString());
@@ -107,7 +114,17 @@ void PlayerActions::playCard(CardItem *card, bool faceDown)
         cmd.set_x(gridPoint.x());
         cmd.set_y(gridPoint.y());
     }
-    sendGameCommand(cmd);
+    if (manaPaymentCommands.isEmpty()) {
+        sendGameCommand(cmd);
+    } else {
+        // prepareGameCommand(QList<const Message*>) deletes every pointer it's given, so the
+        // batched send needs its own heap copy of cmd rather than &cmd (a stack object) --
+        // sendGameCommand(cmd) above is fine as-is since that overload copies via CopyFrom and
+        // never takes ownership of the reference.
+        QList<const ::google::protobuf::Message *> allCommands{new Command_MoveCard(cmd)};
+        allCommands.append(manaPaymentCommands);
+        sendGameCommand(prepareGameCommand(allCommands));
+    }
 }
 
 /**
@@ -1765,6 +1782,73 @@ static void appendManaPaymentCommands(QList<const ::google::protobuf::Message *>
             }
         }
     }
+}
+
+// Real spell casting from hand (doc/commander-status/phase6-mana.md): the shared gate every "a
+// card left hand" call site funnels through -- PlayerActions::playCard() (click/double-click-play
+// and arrow-drag-from-hand), TableZone::handleDropEventByGrid(), and StackZone::handleDropEvent()
+// (both direct drag-and-drop). See gateManaCostForHandPlay()'s own doc comment in player_actions.h
+// for the return-value contract.
+bool PlayerActions::gateManaCostForHandPlay(const CardItem *card,
+                                            bool faceDown,
+                                            QList<const ::google::protobuf::Message *> &extraCommands)
+{
+    if (!card || faceDown || !card->getZone() || card->getZone()->getName() != ZoneNames::HAND) {
+        return true; // scoped strictly to casting from hand -- see the header doc for what's excluded
+    }
+
+    ExactCard exactCard = card->getCard();
+    if (!exactCard) {
+        return true;
+    }
+
+    const CardInfo &info = exactCard.getInfo();
+    if (info.getMainCardType() == QLatin1String("Land")) {
+        return true; // land drops are free, rule 305.1
+    }
+
+    const std::optional<ManaCost> cost = SpellManaCost::parse(info);
+    if (!cost || cost->isFree()) {
+        // Unparseable (hybrid/Phyrexian/X/split cost) or genuinely free -- same conservative
+        // "don't guess" fallback as every other unrecognized shape in this fork.
+        return true;
+    }
+
+    const QMap<QString, int> pool = currentManaPool(player);
+    const std::optional<QMap<QString, int>> plan = Rules::RulesEngine::planManaPayment(*cost, pool);
+    if (!plan) {
+        QMessageBox::information(
+            nullptr, tr("Cannot Cast"),
+            tr("Not enough mana to cast %1 (%2).").arg(info.getName(), manaCostDescription(*cost)));
+        return false;
+    }
+
+    QMap<QString, int> payment = *plan;
+    if (Rules::RulesEngine::isGenericPaymentAmbiguous(*cost, pool)) {
+        const std::optional<QMap<QString, int>> remaining =
+            Rules::RulesEngine::remainingPoolAfterColoredPips(*cost, pool);
+        QMap<QString, int> prefill;
+        for (auto it = payment.constBegin(); it != payment.constEnd(); ++it) {
+            const int genericPortion = it.value() - cost->coloredPips.value(it.key(), 0);
+            if (genericPortion > 0) {
+                prefill[it.key()] = genericPortion;
+            }
+        }
+
+        DlgChooseGenericManaPayment dialog(nullptr, *cost, remaining.value_or(QMap<QString, int>{}), prefill);
+        if (dialog.exec() != QDialog::Accepted) {
+            return false; // atomic cancel -- nothing sent
+        }
+        const std::optional<QMap<QString, int>> chosenPlan =
+            Rules::RulesEngine::planManaPaymentWithGenericChoice(*cost, pool, dialog.chosenGenericSplit());
+        if (!chosenPlan) {
+            return false; // the dialog only allows valid input -- defensive, shouldn't happen
+        }
+        payment = *chosenPlan;
+    }
+
+    appendManaPaymentCommands(extraCommands, player, payment);
+    return true;
 }
 
 QList<ManaTapChoice> PlayerActions::computeManaTapChoices(const QList<CardItem *> &cardList) const

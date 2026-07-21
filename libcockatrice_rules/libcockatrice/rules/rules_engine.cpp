@@ -213,6 +213,74 @@ std::optional<QMap<QString, int>> RulesEngine::planManaPayment(const ManaCost &c
     return plan;
 }
 
+std::optional<QMap<QString, int>> RulesEngine::remainingPoolAfterColoredPips(const ManaCost &cost,
+                                                                             const QMap<QString, int> &pool)
+{
+    QMap<QString, int> remaining = pool;
+    for (auto it = cost.coloredPips.constBegin(); it != cost.coloredPips.constEnd(); ++it) {
+        const int available = remaining.value(it.key(), 0);
+        if (available < it.value()) {
+            return std::nullopt;
+        }
+        remaining[it.key()] = available - it.value();
+    }
+    return remaining;
+}
+
+bool RulesEngine::isGenericPaymentAmbiguous(const ManaCost &cost, const QMap<QString, int> &pool)
+{
+    if (cost.generic <= 0) {
+        return false;
+    }
+    const std::optional<QMap<QString, int>> remaining = remainingPoolAfterColoredPips(cost, pool);
+    if (!remaining) {
+        return false; // unaffordable -- planManaPayment()'s concern, not this function's
+    }
+
+    int nonzeroColors = 0;
+    int total = 0;
+    for (const QString &name : manaCounterNames()) {
+        const int available = remaining->value(name, 0);
+        if (available > 0) {
+            ++nonzeroColors;
+            total += available;
+        }
+    }
+    return nonzeroColors >= 2 && total > cost.generic;
+}
+
+std::optional<QMap<QString, int>> RulesEngine::planManaPaymentWithGenericChoice(const ManaCost &cost,
+                                                                                const QMap<QString, int> &pool,
+                                                                                const QMap<QString, int> &genericChoice)
+{
+    const std::optional<QMap<QString, int>> remaining = remainingPoolAfterColoredPips(cost, pool);
+    if (!remaining) {
+        return std::nullopt;
+    }
+
+    QMap<QString, int> plan;
+    for (auto it = cost.coloredPips.constBegin(); it != cost.coloredPips.constEnd(); ++it) {
+        plan[it.key()] = plan.value(it.key(), 0) + it.value();
+    }
+
+    int total = 0;
+    for (auto it = genericChoice.constBegin(); it != genericChoice.constEnd(); ++it) {
+        const int amount = it.value();
+        if (amount < 0 || amount > remaining->value(it.key(), 0)) {
+            return std::nullopt;
+        }
+        total += amount;
+        if (amount > 0) {
+            plan[it.key()] = plan.value(it.key(), 0) + amount;
+        }
+    }
+
+    if (total != cost.generic) {
+        return std::nullopt;
+    }
+    return plan;
+}
+
 bool RulesEngine::isCommanderCard(const QString &cardName, const QString &commanderName)
 {
     return !commanderName.isEmpty() && cardName == commanderName;

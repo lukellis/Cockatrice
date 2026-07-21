@@ -57,6 +57,21 @@ void StackZone::handleDropEvent(const QList<CardDragItem *> &dragItems,
         index = static_cast<int>(cards.size());
     }
 
+    PlayerActions *playerActions = getLogic()->getPlayer()->getPlayerActions();
+
+    // Real spell casting from hand (doc/commander-status/phase6-mana.md): same single-card-only
+    // gating as TableZone::handleDropEventByGrid() -- see that function's comment for why a
+    // multi-card drag is left ungated. gateManaCostForHandPlay() itself is a no-op for a
+    // within-zone reorder (startZone == getLogic(), i.e. not actually a move out of hand).
+    QList<const ::google::protobuf::Message *> manaPaymentCommands;
+    if (dragItems.size() == 1) {
+        auto *singleCard = qgraphicsitem_cast<CardItem *>(dragItems.first()->getItem());
+        if (singleCard && !playerActions->gateManaCostForHandPlay(singleCard, dragItems.first()->isForceFaceDown(),
+                                                                  manaPaymentCommands)) {
+            return; // unaffordable, or the player cancelled a color-choice dialog -- nothing sent
+        }
+    }
+
     Command_MoveCard cmd;
     cmd.set_start_player_id(startZone->getPlayer()->getPlayerInfo()->getId());
     cmd.set_start_zone(startZone->getName().toStdString());
@@ -75,7 +90,15 @@ void StackZone::handleDropEvent(const QList<CardDragItem *> &dragItems,
         }
     }
 
-    getLogic()->getPlayer()->getPlayerActions()->sendGameCommand(cmd);
+    if (manaPaymentCommands.isEmpty()) {
+        playerActions->sendGameCommand(cmd);
+    } else {
+        // prepareGameCommand(QList<const Message*>) deletes every pointer it's given, so this
+        // needs its own heap copy of cmd rather than &cmd (a stack object).
+        QList<const ::google::protobuf::Message *> allCommands{new Command_MoveCard(cmd)};
+        allCommands.append(manaPaymentCommands);
+        playerActions->sendGameCommand(playerActions->prepareGameCommand(allCommands));
+    }
 }
 
 void StackZone::setHeight(qreal newHeight)

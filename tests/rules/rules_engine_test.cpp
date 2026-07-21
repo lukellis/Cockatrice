@@ -541,6 +541,91 @@ TEST(RulesEngineTest, PlanManaPaymentFreeCostAlwaysSucceedsWithEmptyPlan)
     EXPECT_TRUE(plan->isEmpty());
 }
 
+// ---- RulesEngine::isGenericPaymentAmbiguous / planManaPaymentWithGenericChoice ----
+
+TEST(RulesEngineTest, GenericPaymentNotAmbiguousWithOnlyOneRemainingColor)
+{
+    ManaCost cost;
+    cost.generic = 2;
+    QMap<QString, int> pool{{"w", 5}};
+
+    EXPECT_FALSE(RulesEngine::isGenericPaymentAmbiguous(cost, pool));
+}
+
+TEST(RulesEngineTest, GenericPaymentNotAmbiguousWhenEveryRemainingColorIsForced)
+{
+    ManaCost cost;
+    cost.generic = 2;
+    // Exactly two nonzero colors, but their combined total (1+1=2) exactly equals the generic
+    // amount needed -- every unit must be used, so there's no real choice despite 2 colors.
+    QMap<QString, int> pool{{"w", 1}, {"u", 1}};
+
+    EXPECT_FALSE(RulesEngine::isGenericPaymentAmbiguous(cost, pool));
+}
+
+TEST(RulesEngineTest, GenericPaymentAmbiguousWithGenuineSlackAcrossColors)
+{
+    ManaCost cost;
+    cost.generic = 2;
+    // Three nonzero colors, only 2 of the 3 units are actually needed -- a real choice of which.
+    QMap<QString, int> pool{{"w", 1}, {"u", 1}, {"b", 1}};
+
+    EXPECT_TRUE(RulesEngine::isGenericPaymentAmbiguous(cost, pool));
+}
+
+TEST(RulesEngineTest, GenericPaymentNotAmbiguousWhenUnaffordable)
+{
+    ManaCost cost;
+    cost.coloredPips = {{"u", 1}};
+    cost.generic = 2;
+    QMap<QString, int> pool{{"r", 5}}; // can't even pay the colored pip
+
+    EXPECT_FALSE(RulesEngine::isGenericPaymentAmbiguous(cost, pool));
+}
+
+TEST(RulesEngineTest, GenericPaymentNotAmbiguousWhenGenericIsZero)
+{
+    ManaCost cost;
+    cost.coloredPips = {{"r", 1}};
+    QMap<QString, int> pool{{"r", 1}, {"w", 5}, {"u", 5}};
+
+    EXPECT_FALSE(RulesEngine::isGenericPaymentAmbiguous(cost, pool));
+}
+
+TEST(RulesEngineTest, PlanManaPaymentWithGenericChoiceAcceptsAValidSplit)
+{
+    ManaCost cost;
+    cost.coloredPips = {{"r", 1}};
+    cost.generic = 2;
+    QMap<QString, int> pool{{"r", 1}, {"w", 1}, {"u", 1}};
+
+    auto plan = RulesEngine::planManaPaymentWithGenericChoice(cost, pool, {{"w", 1}, {"u", 1}});
+    ASSERT_TRUE(plan.has_value());
+    EXPECT_EQ(plan->value("r"), 1);
+    EXPECT_EQ(plan->value("w"), 1);
+    EXPECT_EQ(plan->value("u"), 1);
+}
+
+TEST(RulesEngineTest, PlanManaPaymentWithGenericChoiceRejectsOverCapEntry)
+{
+    ManaCost cost;
+    cost.generic = 2;
+    QMap<QString, int> pool{{"w", 1}, {"u", 5}};
+
+    // Claims 2 white when only 1 is actually available.
+    EXPECT_FALSE(RulesEngine::planManaPaymentWithGenericChoice(cost, pool, {{"w", 2}}).has_value());
+}
+
+TEST(RulesEngineTest, PlanManaPaymentWithGenericChoiceRejectsWrongTotal)
+{
+    ManaCost cost;
+    cost.generic = 2;
+    QMap<QString, int> pool{{"w", 5}, {"u", 5}};
+
+    // Only totals to 1, not the required 2.
+    EXPECT_FALSE(RulesEngine::planManaPaymentWithGenericChoice(cost, pool, {{"w", 1}}).has_value());
+}
+
 // ---- RulesEngine::isCommanderCard / commanderTaxCounterNameForMove (command-zone decisions) ----
 
 TEST(RulesEngineTest, IsCommanderCardMatchesTheBannerCardByName)

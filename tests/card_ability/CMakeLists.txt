@@ -77,6 +77,21 @@ target_link_libraries(
 add_test(NAME static_abilities_test COMMAND static_abilities_test)
 
 # ------------------------
+# Spell Mana Cost Test (pure algorithms, no card database needed)
+# ------------------------
+add_executable(spell_mana_cost_test spell_mana_cost_test.cpp)
+
+target_link_libraries(
+  spell_mana_cost_test
+  PRIVATE libcockatrice_card
+  PRIVATE Threads::Threads
+  PRIVATE ${GTEST_BOTH_LIBRARIES}
+  PRIVATE ${TEST_QT_MODULES}
+)
+
+add_test(NAME spell_mana_cost_test COMMAND spell_mana_cost_test)
+
+# ------------------------
 # Dependencies on gtest
 # ------------------------
 if(NOT GTEST_FOUND)
@@ -85,4 +100,5 @@ if(NOT GTEST_FOUND)
   add_dependencies(activated_abilities_test gtest)
   add_dependencies(triggered_abilities_test gtest)
   add_dependencies(static_abilities_test gtest)
+  add_dependencies(spell_mana_cost_test gtest)
 endif()

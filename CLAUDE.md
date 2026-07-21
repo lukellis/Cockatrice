@@ -81,11 +81,19 @@ toolchain lives in a pre-existing, already-populated Docker container**, found v
 - Git/GitHub auth for pushing still happens from the **host** shell (the container
   has no SSH agent forwarded) — build/test/format inside Docker, `git commit`/`git
   push` on the host, same repo either way since it's one bind-mounted working tree.
-- The Xvfb/UI-testing recipe below (`.uitest/`) has **not yet been re-verified
-  against this container** — it may need the same Xvfb/xcb dependency packages
-  installed inside the container (or run instead from the host if the host ever
-  gets `Xvfb`/`python-xlib`). Confirm which side can actually drive a GUI before
-  relying on the section below in a from-Docker session.
+- **As of 2026-07-21, the Xvfb/UI-testing recipe below is confirmed working inside this
+  container** (`Xvfb`, `python3`, `python-xlib`, `pillow`, `xdotool`, and `twm` are all
+  already installed) — it runs from **inside the container**, not the host (the bare host has
+  no toolchain at all, confirmed no `pip3`). Earlier sessions' "card-item clicks/drags don't
+  register in this headless setup" conclusion (Stage C/D, the static-abilities extension) was
+  **wrong, or at least incomplete** — root-caused this session to a version-notification
+  dialog silently swallowing every subsequent scripted click (see `.uitest/scenario.py`'s
+  `ensure_test_client_profile()`), not a fundamental Xvfb/no-window-manager limitation. Real
+  drag-and-drop, click-to-play, counter clicks, and multi-dialog flows (a spinbox-based custom
+  dialog, `QMessageBox`, `DlgConnect`) have all been driven successfully this way. Use
+  `python3 .uitest/scenario.py run <name>` (see its own docstring) rather than hand-driving
+  Xvfb/`uitest.py` — it now idempotently fixes this fork's own startup-dialog/known-host/
+  single-click-to-play settings on every run, which is what actually unblocked this.
 
 ## Sandbox / build environment gotchas (an older, smaller host — not this one)
 

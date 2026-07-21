@@ -325,6 +325,41 @@ public:
     static std::optional<QMap<QString, int>> planManaPayment(const ManaCost &cost, const QMap<QString, int> &pool);
 
     /**
+     * @brief Sub-step of planManaPayment(): pays only @p cost's colored pips (exact-color match,
+     * one-for-one) and returns what's left of @p pool afterward -- std::nullopt if the colored
+     * pips alone aren't affordable. Exposed separately so a caller can reason about what's left to
+     * cover the generic remainder (see isGenericPaymentAmbiguous()/planManaPaymentWithGenericChoice()
+     * below) without duplicating planManaPayment()'s own colored-pip loop.
+     */
+    static std::optional<QMap<QString, int>> remainingPoolAfterColoredPips(const ManaCost &cost,
+                                                                           const QMap<QString, int> &pool);
+
+    /**
+     * @brief True iff, after paying @p cost's colored pips, more than one distinct valid way exists
+     * to cover @p cost's generic remainder from what's left of @p pool -- i.e. a real color choice
+     * exists for the player to make, as opposed to planManaPayment()'s own fixed w/u/b/r/g/x order
+     * silently picking for them. Concretely: at least two colors have a nonzero remaining balance,
+     * and their combined total strictly exceeds the generic amount needed (so some freedom exists
+     * in which to use) -- if exactly one color remains, or every remaining color's mana is fully
+     * required to exactly meet the generic amount, there's no real choice even though multiple
+     * colors are nonzero, so this is false. Also false (not an error) when @p cost can't be paid at
+     * all -- affordability is planManaPayment()'s job, not this function's.
+     */
+    static bool isGenericPaymentAmbiguous(const ManaCost &cost, const QMap<QString, int> &pool);
+
+    /**
+     * @brief Composes a full deduction plan from @p cost's colored pips (always paid in full, never
+     * player-chosen) plus a caller-supplied @p genericChoice -- e.g. a split chosen via a picker
+     * dialog once isGenericPaymentAmbiguous() is true. Validates @p genericChoice against
+     * remainingPoolAfterColoredPips(): every entry must stay within that color's availability, and
+     * the choice's total must exactly equal cost.generic. std::nullopt if invalid, matching
+     * planManaPayment()'s own "whole plan fails, nothing partial" contract.
+     */
+    static std::optional<QMap<QString, int>> planManaPaymentWithGenericChoice(const ManaCost &cost,
+                                                                              const QMap<QString, int> &pool,
+                                                                              const QMap<QString, int> &genericChoice);
+
+    /**
      * @brief Rule 903.3: whether @p cardName is the deck's designated commander and should be
      * routed to the command zone instead of the deck/sideboard at setup. @p commanderName is the
      * deck's banner-card name (DeckList::getBannerCard().name); empty means the deck has no

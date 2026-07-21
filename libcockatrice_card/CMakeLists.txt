@@ -56,6 +56,8 @@ add_library(
   libcockatrice/card/ability/static_abilities.cpp
   libcockatrice/card/ability/static_abilities.h
   libcockatrice/card/ability/card_effects.h
+  libcockatrice/card/ability/spell_mana_cost.cpp
+  libcockatrice/card/ability/spell_mana_cost.h
 )
 
 target_include_directories(

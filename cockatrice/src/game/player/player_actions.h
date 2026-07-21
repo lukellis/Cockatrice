@@ -93,6 +93,20 @@ public:
         return movingCardsUntil;
     }
 
+    // Real spell casting from hand (doc/commander-status/phase6-mana.md): gates a single card
+    // leaving the HAND zone behind an affordability check on its printed mana cost. Returns true
+    // if the caller may proceed -- payment Command_IncCounters, if any, are appended to
+    // extraCommands for the caller to send batched alongside its own move/attach command. Returns
+    // false if the whole action must be aborted (unaffordable -- a message was already shown --
+    // or the player cancelled a color-choice dialog); nothing is sent either way on false, so
+    // every caller is free to just `return` on false with no cleanup. A no-op (returns true, never
+    // touches extraCommands) for anything other than a face-up, non-land, affordable-cost card
+    // actually leaving hand -- see the .cpp for the exact scope (lands, face-down plays, and
+    // hybrid/X/split-cost spells are deliberately never gated).
+    bool gateManaCostForHandPlay(const CardItem *card,
+                                 bool faceDown,
+                                 QList<const ::google::protobuf::Message *> &extraCommands);
+
 signals:
     void requestViewTopCardsDialog(int defaultNumberTopCards, int deckSize);
     void requestViewBottomCardsDialog(int defaultNumberBottomCards, int deckSize);

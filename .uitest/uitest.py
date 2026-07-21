@@ -47,6 +47,17 @@ def click(x, y, button=1):
     time.sleep(0.15)
 
 
+def pixel(x, y):
+    """Returns the (r, g, b) color at a single screen coordinate -- a much cheaper way for a
+    scenario to tell two on-screen things apart (e.g. which hand card is which, by its distinct
+    card-frame color) than saving a full shot() and re-opening it just to sample one point."""
+    d = get_display()
+    root = d.screen().root
+    raw = root.get_image(x, y, 1, 1, X.ZPixmap, 0xFFFFFFFF)
+    b, g, r = raw.data[0], raw.data[1], raw.data[2]
+    return (r, g, b)
+
+
 def move(x, y):
     d = get_display()
     xtest.fake_input(d, X.MotionNotify, x=x, y=y)
