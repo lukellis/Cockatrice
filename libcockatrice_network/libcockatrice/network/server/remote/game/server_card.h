@@ -49,6 +49,7 @@ private:
     bool facedown;
     QString color;
     QString ptString;
+    QString keywordsString;
     QString annotation;
     bool destroyOnZoneChange;
     bool doesntUntap;
@@ -138,6 +139,18 @@ public:
     {
         return ptString;
     }
+    QString getKeywords() const
+    {
+        return keywordsString;
+    }
+    /**
+     * @brief Phase 8 combat automation, Stage C: whether this card's client-synced keyword list
+     * (see AttrKeywords in card_attributes.proto) includes @p name (e.g. "Deathtouch").
+     */
+    bool hasKeyword(const QString &name) const
+    {
+        return keywordsString.split(QLatin1Char(','), Qt::SkipEmptyParts).contains(name);
+    }
     QString getAnnotation() const
     {
         return annotation;
@@ -218,6 +231,10 @@ public:
     void setPT(const QString &_pt)
     {
         ptString = _pt;
+    }
+    void setKeywords(const QString &_keywords)
+    {
+        keywordsString = _keywords;
     }
     void setAnnotation(const QString &_annotation)
     {

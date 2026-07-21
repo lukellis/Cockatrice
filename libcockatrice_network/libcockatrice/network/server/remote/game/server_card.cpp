@@ -62,6 +62,7 @@ void Server_Card::resetState(bool keepAnnotations)
     setAttackTargetPlayerId(-1);
     setBlocked(-1, -1);
     setPT(QString());
+    setKeywords(QString());
     if (!keepAnnotations) {
         setAnnotation(QString());
     }
@@ -112,6 +113,12 @@ QString Server_Card::setAttribute(CardAttribute attribute, const QString &avalue
         case AttrAttackTarget:
             setAttackTargetPlayerId(avalue.toInt());
             break;
+        case AttrKeywords:
+            setKeywords(avalue);
+            if (event) {
+                event->set_attr_value(getKeywords().toStdString());
+            }
+            return getKeywords();
         case AttrBlocking: {
             // Packed as "playerId:cardId" (same single-string-attribute idiom AttrPT already uses
             // for "power/toughness") since a blocked attacker can belong to any other player, not
@@ -216,6 +223,9 @@ void Server_Card::getInfo(ServerInfo_Card *info)
     }
     if (!ptString.isEmpty()) {
         info->set_pt(ptString.toStdString());
+    }
+    if (!keywordsString.isEmpty()) {
+        info->set_keywords(keywordsString.toStdString());
     }
     if (!annotation.isEmpty()) {
         info->set_annotation(annotation.toStdString());

@@ -65,4 +65,8 @@ message ServerInfo_Card {
     // Phase 8 combat automation: the player this attacking creature is attacking, or -1 if it
     // isn't attacking or has no target yet.
     optional sint32 attack_target_player_id = 20 [default = -1];
+
+    // Phase 8 combat automation, Stage C: the creature's recognized evergreen keywords
+    // (CardKeywords::parse(), comma-joined), synced from the client's local card database.
+    optional string keywords = 21;
 }

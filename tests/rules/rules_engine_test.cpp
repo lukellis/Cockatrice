@@ -180,7 +180,8 @@ TEST(RulesEngineTest, MultipleBlockersSplitDamageInDeclarationOrderNoTrample)
     // A 5-power attacker blocked by two 2-toughness creatures: each blocker in declaration order
     // is assigned exactly its own toughness (2 each, rule 510.1c simplified to "assign lethal,
     // move on") -- the 1 leftover power (5 - 2 - 2) is simply wasted, not trampled through to the
-    // player, since trample isn't modeled.
+    // player, since this attacker doesn't have trample (see the Trample-specific tests below for
+    // the case where it does).
     CombatAttack attack;
     attack.attacker = CombatCreature{1, 100, 5, 4};
     attack.targetPlayerId = 2;
@@ -204,6 +205,95 @@ TEST(RulesEngineTest, BlockerPowerLessThanAttackerLeavesRemainderUnassigned)
 
     auto result = RulesEngine::calculateCombatDamage({attack});
     EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 2);
+}
+
+// ---- RulesEngine::calculateCombatDamage / isLethallyDamaged (Phase 8 combat automation Stage C:
+// deathtouch, trample, indestructible) ----
+
+TEST(RulesEngineTest, DeathtouchAttackerAssignsOnlyOneDamagePerBlocker)
+{
+    // A 6-power deathtouch attacker facing two high-toughness blockers only needs to assign 1
+    // damage to each to be considered lethal (rule 702.2b) -- with no trample, the remaining 4
+    // power (6 - 1 - 1) is simply wasted, same as any other non-trample leftover.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 6, 4, /*hasDeathtouch=*/true, /*hasTrample=*/false};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 1, 9}, CombatCreature{2, 201, 1, 9}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_TRUE(result.playerLifeLoss.isEmpty());
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 1);
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(201), 1);
+    EXPECT_TRUE(result.deathtouchDamaged.value(2).contains(200));
+    EXPECT_TRUE(result.deathtouchDamaged.value(2).contains(201));
+}
+
+TEST(RulesEngineTest, DeathtouchBlockerMarksAttackerAsDeathtouchDamaged)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 9};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 1, 3, /*hasDeathtouch=*/true, /*hasTrample=*/false}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_EQ(result.cardDamageMarked.value(1).value(100), 1);
+    EXPECT_TRUE(result.deathtouchDamaged.value(1).contains(100));
+}
+
+TEST(RulesEngineTest, TrampleAttackerSendsExcessPowerToDefendingPlayer)
+{
+    // A 5-power trample attacker blocked by a single 2-toughness creature: 2 damage is lethal, the
+    // remaining 3 tramples through to the defending player (rule 702.19b).
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 5, 4, /*hasDeathtouch=*/false, /*hasTrample=*/true};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 1, 2}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 2);
+    EXPECT_EQ(result.playerLifeLoss.value(2), 3);
+}
+
+TEST(RulesEngineTest, TrampleWithNoTargetDealsNoDamage)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 5, 4, /*hasDeathtouch=*/false, /*hasTrample=*/true};
+    attack.blockers = {CombatCreature{2, 200, 1, 2}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_TRUE(result.playerLifeLoss.isEmpty());
+}
+
+TEST(RulesEngineTest, DeathtouchAndTrampleCombineToMaximizeExcessDamage)
+{
+    // A 6-power deathtouch+trample attacker only needs to assign 1 damage (lethal via deathtouch)
+    // to each of two blockers, sending the remaining 4 through to the defending player.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 6, 4, /*hasDeathtouch=*/true, /*hasTrample=*/true};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 1, 9}, CombatCreature{2, 201, 1, 9}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack});
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 1);
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(201), 1);
+    EXPECT_EQ(result.playerLifeLoss.value(2), 4);
+}
+
+TEST(RulesEngineTest, IsLethallyDamagedTrueWhenMarkedDamageMeetsToughness)
+{
+    EXPECT_TRUE(RulesEngine::isLethallyDamaged(3, 3, /*anyDamageFromDeathtouch=*/false, /*indestructible=*/false));
+    EXPECT_FALSE(RulesEngine::isLethallyDamaged(2, 3, /*anyDamageFromDeathtouch=*/false, /*indestructible=*/false));
+}
+
+TEST(RulesEngineTest, IsLethallyDamagedTrueForAnyDeathtouchDamageRegardlessOfToughness)
+{
+    EXPECT_TRUE(RulesEngine::isLethallyDamaged(1, 9, /*anyDamageFromDeathtouch=*/true, /*indestructible=*/false));
+    EXPECT_FALSE(RulesEngine::isLethallyDamaged(0, 9, /*anyDamageFromDeathtouch=*/true, /*indestructible=*/false));
+}
+
+TEST(RulesEngineTest, IsLethallyDamagedFalseWhenIndestructibleEvenAtLethalDamage)
+{
+    EXPECT_FALSE(RulesEngine::isLethallyDamaged(9, 3, /*anyDamageFromDeathtouch=*/true, /*indestructible=*/true));
 }
 
 // ---- RulesEngine::planManaPayment (Phase 7 Stage 4, pure decision logic) ----

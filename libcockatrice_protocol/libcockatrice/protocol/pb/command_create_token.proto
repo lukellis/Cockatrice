@@ -28,4 +28,10 @@ message Command_CreateToken {
 
     optional string card_provider_id = 12;
     optional bool face_down = 13;
+
+    // Phase 8 combat automation, Stage C: the token's recognized evergreen keywords
+    // (CardKeywords::parse(), comma-joined), read from the client's local card database when a
+    // related-card token is created from a real CardInfo. Sibling to `pt` above -- see
+    // AttrKeywords in card_attributes.proto.
+    optional string keywords = 14;
 }

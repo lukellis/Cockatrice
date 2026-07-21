@@ -1,8 +1,8 @@
 # Phase 8: Combat System
 
-**Status: declare-attacker (Phase 7 Stage 6) done; Stages A/B (attack targeting,
-blocker declaration, automated combat damage, automated creature death) done at this
-fork's current scope.**
+**Status: declare-attacker (Phase 7 Stage 6) done; Stages A/B/C (attack targeting,
+blocker declaration, automated combat damage/creature death, deathtouch/trample/
+indestructible) done at this fork's current scope.**
 
 Design doc §3 Phase 8, the design doc's own largest single-phase estimate. This fork's
 combat work started as Phase 7 Stage 6 (the roadmap's two efforts converged there,
@@ -103,13 +103,57 @@ further:
   gated on `RulesEngine::CLEANUP_PHASE` specifically, not `isCombatPhase()`'s range like
   `AttrAttacking`'s own auto-clear.
 
+## Stage C: deathtouch, trample, indestructible
+
+Closes three of Stage B's named exclusions — the three that resolve entirely within the
+existing single Combat Damage step, unlike first/double strike (needs a whole new
+turn-structure step) or protection (also touches blocking/targeting legality), which
+stay excluded (see below).
+
+- **The real gap: the server has zero card-database/oracle-text access.** `Server_Card`
+  only exposed `getName()`. The only existing keyword parser,
+  `CardKeywords::parse(const CardInfo&)` (already recognizes Deathtouch/Trample/
+  Indestructible, used since Stage 6 for the client-side Vigilance tap-on-attack
+  decision), had only ever been called from client code — the server never saw the
+  result, and combat-damage math is rightly server-authoritative.
+- **The fix reuses the `AttrPT` idiom rather than adding card-DB access to the server.**
+  A new `AttrKeywords` card attribute (`CardAttribute` enum, `card_attributes.proto`) +
+  `keywords` field on `ServerInfo_Card` round-trip the same way `pt`/`AttrPT` already
+  do. On the *sending* side, a new `keywords` field on `CardToMove` (`command_move_card.proto`),
+  `Command_CreateToken` (`command_create_token.proto`), and `Command_FlipCard`
+  (`command_flip_card.proto`) — siblings to each message's existing `pt` field — carry
+  `CardKeywords::parse()`'s comma-joined result wherever the client already populates
+  `pt` from a `CardInfo` (`playCard`, `playCardToTable`, `cmMoveToTable`, related-card
+  token creation, `cmClone`, and revealing a face-down card via `cmFlip`). The server
+  trusts this exactly as much as it already trusts client-sent `pt` (no new trust
+  model) and stores it on `Server_Card` as `keywordsString`, exposed via
+  `hasKeyword(name)`.
+- **`RulesEngine::CombatCreature`** gained `hasDeathtouch`/`hasTrample` bools, populated
+  in `Server_Game::resolveCombatDamage()` from `Server_Card::hasKeyword()`.
+- **`RulesEngine::calculateCombatDamage()`** changed in two ways: the amount needed to
+  be "lethal" when assigning damage to a blocker is now 1 (not the blocker's full
+  toughness) when the attacker has deathtouch (rule 702.2b); and any power left over
+  after all blockers have been assigned lethal damage now goes to the defending player
+  if the attacker has trample (rule 702.19b), instead of being wasted. The result also
+  now tracks `deathtouchDamaged`: which damaged cards had at least one point of that
+  damage come from a deathtouch source (needed because a deathtouch source makes even 1
+  marked damage lethal, regardless of toughness).
+- **New pure helper `RulesEngine::isLethallyDamaged()`** replaces the inline
+  `markedDamage >= toughness` check in `resolveCombatDamage()`'s state-based death
+  check: true if `markedDamage >= toughness`, *or* any of that damage came from a
+  deathtouch source and `markedDamage > 0`; indestructible short-circuits straight to
+  false regardless (rule 702.12b — never destroyed by damage).
+- Damage-assignment order is still declaration order (ascending card id), same
+  deterministic stand-in as Stage B — deathtouch/trample change *how much* damage is
+  needed per blocker, not the order blockers are assigned to.
+
 ## Explicitly out of scope
 
 Named deliberately, matching this fork's practice of documenting exclusions rather than
 leaving silent gaps — each of these is a real, separate follow-up, not an oversight:
 
-- First strike, double strike, deathtouch, trample, indestructible, protection, damage
-  prevention/replacement effects.
+- First strike, double strike (no separate combat-damage steps — a real turn-structure
+  change, not just a math change), protection, damage prevention/replacement effects.
 - Planeswalker/battle damage — only players can currently be attacked or take combat
   damage.
 - Player-chosen damage-assignment order among multiple blockers — declaration order
@@ -118,7 +162,7 @@ leaving silent gaps — each of these is a real, separate follow-up, not an over
   entirely, not defaulted to 0.
 - Retroactively converting Phase 9's advisory life ≤ 0 / poison / commander-damage
   warnings into automatic loss — the restriction is lifted so this *could* happen, but
-  it wasn't part of Stages A/B and needs its own explicit sign-off.
+  it wasn't part of Stages A/B/C and needs its own explicit sign-off.
 
 Any further combat depth beyond the above is a new, separate, explicit design decision
 — not a gap left over from these stages.
@@ -127,7 +171,9 @@ Any further combat depth beyond the above is a new, separate, explicit design de
 
 - `tests/rules/rules_engine_test.cpp`: `canDeclareBlocker`, `parseNumericPT`, and
   `calculateCombatDamage` (unblocked/blocked/multi-blocker/no-target/non-numeric-P/T
-  cases) — pure logic, no server dependency.
+  cases) — pure logic, no server dependency. Stage C added cases for deathtouch's
+  minimal-lethal-assignment, trample's leftover-to-player, the two combined, and
+  `isLethallyDamaged`'s deathtouch/indestructible branches.
 - `tests/movecard_tests/commander_turn_structure_test.cpp`: `Server_Card::setAttribute`
   round-tripping for `AttrAttackTarget`/`AttrBlocking`, and the same
   before-game-starts gating precedent `cmdPassPriority`/`cmdActivateAbility` already
@@ -138,3 +184,21 @@ Any further combat depth beyond the above is a new, separate, explicit design de
   participant needs a live `Server_AbstractUserInterface`, not lightweight in this
   harness) — verify live per this fork's standard Xvfb + local-`servatrice` recipe
   (CLAUDE.md) before calling a change like this done.
+- **Stage C's own live-verification attempt found a real, separate infrastructure gap,
+  not a bug in this stage's code**: this fork's built-in local-hotseat "Local Game"
+  feature (`debug.ini`'s `[localgame]` auto-start + per-player `deck\Player N=` auto-load,
+  `MainWindow::startLocalGame()`/`TabGame::addLocalPlayer()`) is the only way to get two
+  players' creatures onto one board without a second real human (the EC2 runbook's own
+  documented requirement) — game creation, per-player deck auto-load, and card drawing
+  all worked correctly over the real client/server wire protocol in this fork's Docker
+  container. But clicking or dragging a hand card to play it never registered — traced
+  as far as confirming `CardItem::playCard()`'s `owner->getPlayerInfo()->getLocalOrJudge()`
+  gate (or something upstream of it) silently no-ops in this specific headless,
+  window-manager-less Xvfb setup, for reasons still unconfirmed (menu/keyboard input
+  *does* work once the window has been given focus by an initial click — this is
+  specifically about `QGraphicsScene` card-item clicks/drags). Not chased further since
+  it's orthogonal to Stage C's actual logic (already covered above by unit tests) and
+  would be a genuinely separate test-infrastructure investigation. `.uitest/sample_cards.xml`
+  now has a Trample creature (Ghor-Clan Rampager) and an Indestructible creature
+  (Darksteel Myr) alongside the pre-existing Deathtouch one (Baleful Strix) ready for
+  whenever this gap gets resolved.

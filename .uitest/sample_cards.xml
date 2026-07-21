@@ -78,6 +78,37 @@ When Baleful Strix enters the battlefield, draw a card.</text>
             </prop>
         </card>
         <card>
+            <name>Ghor-Clan Rampager</name>
+            <set>GTC</set>
+            <tablerow>0</tablerow>
+            <text>Trample
+Bloodrush -- Discard Ghor-Clan Rampager: Target attacking creature gets +2/+2 and gains trample until end of turn.</text>
+            <prop>
+                <colors>RG</colors>
+                <manacost>{2}{R/G}</manacost>
+                <cmc>3</cmc>
+                <type>Creature — Gruul Beast</type>
+                <maintype>Creature</maintype>
+                <pt>3/3</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Darksteel Myr</name>
+            <set>DST</set>
+            <tablerow>0</tablerow>
+            <text>Indestructible</text>
+            <prop>
+                <colors></colors>
+                <manacost>{3}</manacost>
+                <cmc>3</cmc>
+                <type>Artifact Creature — Myr</type>
+                <maintype>Creature</maintype>
+                <pt>1/1</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
             <name>Lightning Bolt</name>
             <set>M11</set>
             <tablerow>0</tablerow>

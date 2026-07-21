@@ -833,7 +833,12 @@ void Server_Game::resolveCombatDamage(GameEventStorage &ges)
             }
 
             Rules::RulesEngine::CombatAttack attack;
-            attack.attacker = {it.key(), card->getId(), attackerPT->first, attackerPT->second};
+            attack.attacker = {it.key(),
+                               card->getId(),
+                               attackerPT->first,
+                               attackerPT->second,
+                               card->hasKeyword(QStringLiteral("Deathtouch")),
+                               card->hasKeyword(QStringLiteral("Trample"))};
             attack.targetPlayerId = card->getAttackTargetPlayerId();
 
             // This attacker's declared blockers, across every player's table zone. Order is an
@@ -854,7 +859,9 @@ void Server_Game::resolveCombatDamage(GameEventStorage &ges)
                     if (!blockerPT) {
                         continue;
                     }
-                    blockers.append({blockerIt.key(), blockerCard->getId(), blockerPT->first, blockerPT->second});
+                    blockers.append({blockerIt.key(), blockerCard->getId(), blockerPT->first, blockerPT->second,
+                                     blockerCard->hasKeyword(QStringLiteral("Deathtouch")),
+                                     blockerCard->hasKeyword(QStringLiteral("Trample"))});
                 }
             }
             std::sort(blockers.begin(), blockers.end(),
@@ -893,7 +900,9 @@ void Server_Game::resolveCombatDamage(GameEventStorage &ges)
     // Mark damage via the same DAMAGE_CARD_COUNTER_ID counter applyPendingAbility()'s targeted
     // damage effect already uses, and collect anything now lethal for the state-based death check
     // below (rule 704.5g, simplified to just lethal combat damage -- this stage's explicit scope,
-    // see doc/commander-status/phase8-combat.md).
+    // see doc/commander-status/phase8-combat.md) via RulesEngine::isLethallyDamaged(), which also
+    // accounts for deathtouch (Stage C: any nonzero damage from a deathtouch source is lethal) and
+    // indestructible (Stage C: never destroyed by damage).
     QList<QPair<int, int>> lethalCards; // (owner player id, card id)
     for (auto ownerIt = result.cardDamageMarked.constBegin(); ownerIt != result.cardDamageMarked.constEnd();
          ++ownerIt) {
@@ -915,7 +924,10 @@ void Server_Game::resolveCombatDamage(GameEventStorage &ges)
             }
 
             auto pt = Rules::RulesEngine::parseNumericPT(card->getPT());
-            if (pt && card->getCounter(DAMAGE_CARD_COUNTER_ID) >= pt->second) {
+            const bool anyDeathtouchDamage = result.deathtouchDamaged.value(ownerIt.key()).contains(card->getId());
+            if (pt && Rules::RulesEngine::isLethallyDamaged(card->getCounter(DAMAGE_CARD_COUNTER_ID), pt->second,
+                                                            anyDeathtouchDamage,
+                                                            card->hasKeyword(QStringLiteral("Indestructible")))) {
                 lethalCards.append({ownerIt.key(), card->getId()});
             }
         }

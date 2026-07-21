@@ -95,6 +95,8 @@ void PlayerActions::playCard(CardItem *card, bool faceDown)
         cardToMove->set_face_down(faceDown);
         if (!faceDown) {
             cardToMove->set_pt(info.getPowTough().toStdString());
+            cardToMove->set_keywords(
+                QStringList(CardKeywords::parse(info).values()).join(QStringLiteral(",")).toStdString());
         }
         cardToMove->set_tapped(!faceDown && info.getUiAttributes().cipt);
         if (tableRow != 3) {
@@ -135,6 +137,8 @@ void PlayerActions::playCardToTable(const CardItem *card, bool faceDown)
     cardToMove->set_face_down(faceDown);
     if (!faceDown) {
         cardToMove->set_pt(info.getPowTough().toStdString());
+        cardToMove->set_keywords(
+            QStringList(CardKeywords::parse(info).values()).join(QStringLiteral(",")).toStdString());
     }
     cardToMove->set_tapped(!faceDown && info.getUiAttributes().cipt);
     cmd.set_target_zone(ZoneNames::TABLE);
@@ -1180,6 +1184,7 @@ void PlayerActions::createCard(const CardItem *sourceCard,
     }
 
     cmd.set_pt(cardInfo->getPowTough().toStdString());
+    cmd.set_keywords(QStringList(CardKeywords::parse(*cardInfo).values()).join(QStringLiteral(",")).toStdString());
     if (SettingsCache::instance().getAnnotateTokens()) {
         cmd.set_annotation(cardInfo->getText().toStdString());
     } else {
@@ -2241,6 +2246,9 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
                         ExactCard ec = card->getCard();
                         if (ec) {
                             cmd->set_pt(ec.getInfo().getPowTough().toStdString());
+                            cmd->set_keywords(QStringList(CardKeywords::parse(ec.getInfo()).values())
+                                                  .join(QStringLiteral(","))
+                                                  .toStdString());
                         }
                     }
                     commandList.append(cmd);
@@ -2261,6 +2269,12 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
                     cmd->set_card_provider_id(card->getProviderId().toStdString());
                     cmd->set_color(card->getColor().toStdString());
                     cmd->set_pt(card->getPT().toStdString());
+                    ExactCard cloneSourceCard = card->getCard();
+                    if (cloneSourceCard) {
+                        cmd->set_keywords(QStringList(CardKeywords::parse(cloneSourceCard.getInfo()).values())
+                                              .join(QStringLiteral(","))
+                                              .toStdString());
+                    }
                     cmd->set_annotation(card->getAnnotation().toStdString());
                     cmd->set_destroy_on_zone_change(true);
                     cmd->set_x(-1);
@@ -2392,6 +2406,8 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
                         const CardInfo &info = exactCard.getInfo();
                         tableRow = info.getUiAttributes().tableRow;
                         ctm->set_pt(info.getPowTough().toStdString());
+                        ctm->set_keywords(
+                            QStringList(CardKeywords::parse(info).values()).join(QStringLiteral(",")).toStdString());
                         ctm->set_tapped(info.getUiAttributes().cipt);
                     }
 

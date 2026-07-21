@@ -16,6 +16,11 @@ message CardToMove {
 
     // When moving sets the card to be tapped
     optional bool tapped = 4;
+
+    // Phase 8 combat automation, Stage C: the card's recognized evergreen keywords
+    // (CardKeywords::parse(), comma-joined), read from the client's local card database. Sibling to
+    // `pt` above -- see AttrKeywords in card_attributes.proto.
+    optional string keywords = 5;
 }
 
 // Container of multiple cards to move

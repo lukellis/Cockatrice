@@ -8,4 +8,10 @@ message Command_FlipCard {
     optional sint32 card_id = 2 [default = -1];
     optional bool face_down = 3;
     optional string pt = 4;
+
+    // Phase 8 combat automation, Stage C: the card's recognized evergreen keywords
+    // (CardKeywords::parse(), comma-joined), read from the client's local card database when a
+    // face-down card is flipped face up. Sibling to `pt` above -- see AttrKeywords in
+    // card_attributes.proto.
+    optional string keywords = 5;
 }

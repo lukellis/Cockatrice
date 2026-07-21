@@ -13,4 +13,9 @@ enum CardAttribute {
     // Phase 8 combat automation: which opposing player an attacking creature is attacking; the
     // player id as a string, "-1" clears it.
     AttrAttackTarget = 9;
+    // Phase 8 combat automation, Stage C: the creature's recognized evergreen keywords
+    // (CardKeywords::parse(), comma-joined), synced by the client from its local card database when
+    // the card enters play. Combat math currently only consumes Deathtouch/Trample/Indestructible;
+    // the rest ride along unused for future stages.
+    AttrKeywords = 10;
 }

@@ -540,6 +540,15 @@ void Server_AbstractPlayer::onCardBeingMoved(GameEventStorage &ges,
                           ptString);
     }
 
+    // Phase 8 combat automation, Stage C: sync the card's client-recognized keywords (Deathtouch,
+    // Trample, Indestructible, etc.), the server-trusted source combat math reads (see
+    // AttrKeywords in card_attributes.proto).
+    QString keywordsString = QString::fromStdString(thisCardProperties->keywords());
+    if (!keywordsString.isEmpty()) {
+        setCardAttrHelper(ges, targetzone->getPlayer()->getPlayerId(), targetzone->getName(), card->getId(),
+                          AttrKeywords, keywordsString);
+    }
+
     // If card is transferring to a different player, leave an annotation of who actually "owns" the card
     const auto &priorAnnotation = card->getAnnotation();
     if (startzone->getPlayer() != targetzone->getPlayer() && !priorAnnotation.contains("Owner:")) {
@@ -847,6 +856,11 @@ Server_AbstractPlayer::cmdFlipCard(const Command_FlipCard &cmd, ResponseContaine
         setCardAttrHelper(ges, playerId, zone->getName(), card->getId(), AttrPT, ptString);
     }
 
+    QString keywordsString = nameFromStdString(cmd.keywords());
+    if (!keywordsString.isEmpty() && !faceDown) {
+        setCardAttrHelper(ges, playerId, zone->getName(), card->getId(), AttrKeywords, keywordsString);
+    }
+
     return Response::RespOk;
 }
 
@@ -1025,6 +1039,7 @@ Server_AbstractPlayer::cmdCreateToken(const Command_CreateToken &cmd, ResponseCo
     if (!cmd.face_down()) {
         card->setColor(nameFromStdString(cmd.color()));
         card->setPT(nameFromStdString(cmd.pt()));
+        card->setKeywords(nameFromStdString(cmd.keywords()));
     }
     card->setAnnotation(nameFromStdString(cmd.annotation()));
     card->setDestroyOnZoneChange(cmd.destroy_on_zone_change());

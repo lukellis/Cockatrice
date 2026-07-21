@@ -55,19 +55,40 @@ RulesEngine::CombatDamageResult RulesEngine::calculateCombatDamage(const QList<C
 
         int remainingPower = attack.attacker.power;
         int totalBlockerPower = 0;
+        bool anyBlockerHasDeathtouch = false;
         for (const CombatCreature &blocker : attack.blockers) {
             totalBlockerPower += blocker.power;
+            anyBlockerHasDeathtouch = anyBlockerHasDeathtouch || blocker.hasDeathtouch;
             if (remainingPower <= 0) {
                 continue;
             }
-            const int assigned = std::min(remainingPower, blocker.toughness);
+            const int neededForLethal = attack.attacker.hasDeathtouch ? 1 : blocker.toughness;
+            const int assigned = std::min(remainingPower, neededForLethal);
             result.cardDamageMarked[blocker.playerId][blocker.cardId] += assigned;
+            if (assigned > 0 && attack.attacker.hasDeathtouch) {
+                result.deathtouchDamaged[blocker.playerId].insert(blocker.cardId);
+            }
             remainingPower -= assigned;
         }
+        if (remainingPower > 0 && attack.attacker.hasTrample && attack.targetPlayerId != -1) {
+            result.playerLifeLoss[attack.targetPlayerId] += remainingPower;
+        }
+
         result.cardDamageMarked[attack.attacker.playerId][attack.attacker.cardId] += totalBlockerPower;
+        if (totalBlockerPower > 0 && anyBlockerHasDeathtouch) {
+            result.deathtouchDamaged[attack.attacker.playerId].insert(attack.attacker.cardId);
+        }
     }
 
     return result;
+}
+
+bool RulesEngine::isLethallyDamaged(int markedDamage, int toughness, bool anyDamageFromDeathtouch, bool indestructible)
+{
+    if (indestructible) {
+        return false;
+    }
+    return markedDamage >= toughness || (anyDamageFromDeathtouch && markedDamage > 0);
 }
 
 std::optional<std::pair<int, int>> RulesEngine::parseNumericPT(const QString &pt)

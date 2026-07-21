@@ -45,7 +45,7 @@ to silently fill in.
 | 5. Priority passing (simplified stand-in for a full stack) | Partial, by design | [phase5-priority-stack.md](doc/commander-status/phase5-priority-stack.md) |
 | 6. Mana system (pool auto-empty only) | Narrow slice done | [phase6-mana.md](doc/commander-status/phase6-mana.md) |
 | 7. Card ability system (display parsing + a real execution engine) | Done at scope (Increments 1–2, Stages 1–6) | [phase7-card-abilities.md](doc/commander-status/phase7-card-abilities.md) |
-| 8. Combat system | Declare-attacker + Stages A/B (targeting, blocking, automated damage/death) done | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
+| 8. Combat system | Declare-attacker + Stages A/B/C (targeting, blocking, automated damage/death, deathtouch/trample/indestructible) done | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
 | 9. State-based actions (advisory warnings) | Partial, by design | [phase9-state-based-actions.md](doc/commander-status/phase9-state-based-actions.md) |
 | §12 UI design & enhancements | Ongoing | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
 
@@ -59,9 +59,10 @@ note, since that setup has changed across hosts this fork has been developed on)
 
 **As of 2026-07-20, by explicit user direction, this fork no longer holds to
 "advisory/manual-only, never hard automation"** (see CLAUDE.md's Design Principles
-section) — Phase 8 Stages A/B are the first Commander mechanic built as genuine
+section) — Phase 8 Stages A/B/C are the first Commander mechanic built as genuine
 automated enforcement (real attack targeting, blocker declaration, automated combat
-damage, automated creature death) rather than an advisory counter/warning.
+damage, automated creature death, deathtouch/trample/indestructible) rather than an
+advisory counter/warning.
 
 **The Phase 7/8 staged execution-engine roadmap and the `libcockatrice_rules`
 reorganization are both fully worked through at this fork's current scope.** Any of the
@@ -71,9 +72,9 @@ pick up unprompted:
 - Partner/Background commander support (see `phase2-deck-validation.md`'s known
   limitations).
 - Double-faced-card back-face color identity (same doc).
-- Any further combat depth beyond Stages A/B — first/double strike, deathtouch,
-  trample, indestructible, protection, damage prevention, planeswalker/battle damage,
-  player-chosen damage-assignment order (see `phase8-combat.md`).
+- Any further combat depth beyond Stages A/B/C — first/double strike, protection,
+  damage prevention, planeswalker/battle damage, player-chosen damage-assignment order
+  (see `phase8-combat.md`).
 - Converting Phase 9's advisory life ≤ 0 / poison / commander-damage warnings into
   automatic loss — now possible given the lifted restriction, but not yet done.
 - Any further Phase 5/6 depth beyond what's documented (real general stack resolution,
@@ -99,10 +100,10 @@ future change doesn't collide with a retired or in-use extension number.
 - Single designated commander only — no Partner/Background pairing.
 - Color identity doesn't pull in a double-faced card's back face.
 - No automated stack resolution for arbitrary spells. Combat damage and creature
-  death *are* now automated (Phase 8 Stages A/B), but only for plain numeric-P/T
-  creatures with no keyword abilities (no first/double strike, deathtouch, trample,
-  indestructible, protection) — see the Phase 5/7/8/9 docs for exactly what narrower
-  slice of each *is* covered.
+  death *are* now automated (Phase 8 Stages A/B/C) for plain numeric-P/T creatures,
+  including deathtouch/trample/indestructible, but not first/double strike or
+  protection — see the Phase 5/7/8/9 docs for exactly what narrower slice of each *is*
+  covered.
 - No legend rule, 0-toughness, or illegal-aura state-based actions (see
   `phase9-state-based-actions.md`).
 - Command zone has no dedicated context menu (graveyard/exile do).
