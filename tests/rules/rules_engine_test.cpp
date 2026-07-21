@@ -296,6 +296,125 @@ TEST(RulesEngineTest, IsLethallyDamagedFalseWhenIndestructibleEvenAtLethalDamage
     EXPECT_FALSE(RulesEngine::isLethallyDamaged(9, 3, /*anyDamageFromDeathtouch=*/true, /*indestructible=*/true));
 }
 
+// ---- RulesEngine::participatesInStrikeStep / calculateCombatDamage step param (Phase 8 combat
+// automation Stage D: first strike, double strike) ----
+
+using CombatDamageStep = RulesEngine::CombatDamageStep;
+
+TEST(RulesEngineTest, VanillaCreatureOnlyParticipatesInRegularStep)
+{
+    EXPECT_FALSE(RulesEngine::participatesInStrikeStep(false, false, CombatDamageStep::FirstStrike));
+    EXPECT_TRUE(RulesEngine::participatesInStrikeStep(false, false, CombatDamageStep::Regular));
+}
+
+TEST(RulesEngineTest, FirstStrikeOnlyParticipatesInFirstStrikeStep)
+{
+    EXPECT_TRUE(RulesEngine::participatesInStrikeStep(true, false, CombatDamageStep::FirstStrike));
+    EXPECT_FALSE(RulesEngine::participatesInStrikeStep(true, false, CombatDamageStep::Regular));
+}
+
+TEST(RulesEngineTest, DoubleStrikeParticipatesInBothSteps)
+{
+    EXPECT_TRUE(RulesEngine::participatesInStrikeStep(false, true, CombatDamageStep::FirstStrike));
+    EXPECT_TRUE(RulesEngine::participatesInStrikeStep(false, true, CombatDamageStep::Regular));
+    // hasFirstStrike + hasDoubleStrike together is redundant but should behave the same as
+    // hasDoubleStrike alone -- a card can't usefully have both, but the pure function shouldn't
+    // special-case it either way.
+    EXPECT_TRUE(RulesEngine::participatesInStrikeStep(true, true, CombatDamageStep::FirstStrike));
+    EXPECT_TRUE(RulesEngine::participatesInStrikeStep(true, true, CombatDamageStep::Regular));
+}
+
+TEST(RulesEngineTest, UnblockedFirstStrikeAttackerDealsDamageOnlyInFirstStrikeStep)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 3, false, false, /*hasFirstStrike=*/true, false};
+    attack.targetPlayerId = 2;
+
+    auto firstStrikeResult = RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::FirstStrike);
+    EXPECT_EQ(firstStrikeResult.playerLifeLoss.value(2), 3);
+
+    auto regularResult = RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::Regular);
+    EXPECT_TRUE(regularResult.playerLifeLoss.isEmpty());
+}
+
+TEST(RulesEngineTest, UnblockedVanillaAttackerDealsDamageOnlyInRegularStep)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 3};
+    attack.targetPlayerId = 2;
+
+    EXPECT_TRUE(RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::FirstStrike).playerLifeLoss.isEmpty());
+    EXPECT_EQ(RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::Regular).playerLifeLoss.value(2), 3);
+}
+
+TEST(RulesEngineTest, UnblockedDoubleStrikeAttackerDealsDamageInBothSteps)
+{
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 3, false, false, false, /*hasDoubleStrike=*/true};
+    attack.targetPlayerId = 2;
+
+    EXPECT_EQ(RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::FirstStrike).playerLifeLoss.value(2), 3);
+    EXPECT_EQ(RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::Regular).playerLifeLoss.value(2), 3);
+}
+
+TEST(RulesEngineTest, FirstStrikeAttackerKillsNonFirstStrikeBlockerBeforeItCanHitBack)
+{
+    // In the first-strike step, the attacker (first strike) assigns its lethal damage to the
+    // blocker, but the blocker (no first strike) doesn't act this step, so nothing is marked on
+    // the attacker yet.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 3, false, false, /*hasFirstStrike=*/true, false};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 2, 3}};
+
+    auto result = RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::FirstStrike);
+    EXPECT_EQ(result.cardDamageMarked.value(2).value(200), 3); // blocker takes attacker's full power
+    EXPECT_FALSE(result.cardDamageMarked.contains(1));         // attacker takes nothing -- blocker hasn't acted yet
+}
+
+TEST(RulesEngineTest, NonFirstStrikeBlockerStillActsInRegularStepAgainstAFirstStrikeAttacker)
+{
+    // The regular step: the attacker (first strike only, not double strike) no longer acts, but
+    // the blocker (if it survived the first-strike step) still deals its damage back.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 3, 3, false, false, /*hasFirstStrike=*/true, false};
+    attack.targetPlayerId = 2;
+    attack.blockers = {CombatCreature{2, 200, 2, 9}}; // high toughness so it "survives" for this test
+
+    auto result = RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::Regular);
+    EXPECT_EQ(result.cardDamageMarked.value(1).value(100), 2);    // blocker's damage to the attacker
+    EXPECT_FALSE(result.cardDamageMarked.value(2).contains(200)); // attacker doesn't act again
+}
+
+TEST(RulesEngineTest, AttackerRemainsBlockedInRegularStepEvenIfEveryBlockerHasDied)
+{
+    // Rule 509.1h: once declared blocked, an attacker stays blocked even if its blocker(s) have
+    // since been removed from combat (e.g. killed in the first-strike step) -- CombatAttack::blocked
+    // models this independent of the (now empty) blockers list. Without trample, a "blocked with no
+    // blockers left" attacker deals no damage to anyone.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 5, 4};
+    attack.targetPlayerId = 2;
+    attack.blocked = true; // blocker existed at declare time but isn't in this pass's live scan
+
+    auto result = RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::Regular);
+    EXPECT_TRUE(result.playerLifeLoss.isEmpty());
+    EXPECT_TRUE(result.cardDamageMarked.isEmpty());
+}
+
+TEST(RulesEngineTest, TrampleAttackerBlockedByNowDeadCreaturesDealsFullDamageToPlayer)
+{
+    // Same "remains blocked with zero blockers" scenario, but with trample: since there's no
+    // blocker left to assign lethal damage to, the attacker's entire power tramples through.
+    CombatAttack attack;
+    attack.attacker = CombatCreature{1, 100, 5, 4, false, /*hasTrample=*/true};
+    attack.targetPlayerId = 2;
+    attack.blocked = true;
+
+    auto result = RulesEngine::calculateCombatDamage({attack}, CombatDamageStep::Regular);
+    EXPECT_EQ(result.playerLifeLoss.value(2), 5);
+}
+
 // ---- RulesEngine::planManaPayment (Phase 7 Stage 4, pure decision logic) ----
 
 TEST(RulesEngineTest, PlanManaPaymentPaysExactColoredPips)

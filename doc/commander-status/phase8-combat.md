@@ -1,8 +1,8 @@
 # Phase 8: Combat System
 
-**Status: declare-attacker (Phase 7 Stage 6) done; Stages A/B/C (attack targeting,
+**Status: declare-attacker (Phase 7 Stage 6) done; Stages A/B/C/D (attack targeting,
 blocker declaration, automated combat damage/creature death, deathtouch/trample/
-indestructible) done at this fork's current scope.**
+indestructible, first strike/double strike) done at this fork's current scope.**
 
 Design doc §3 Phase 8, the design doc's own largest single-phase estimate. This fork's
 combat work started as Phase 7 Stage 6 (the roadmap's two efforts converged there,
@@ -147,13 +147,84 @@ stay excluded (see below).
   deterministic stand-in as Stage B — deathtouch/trample change *how much* damage is
   needed per blocker, not the order blockers are assigned to.
 
+## Stage D: first strike, double strike
+
+Closes the first named exclusion from Stages A/B/C's list below — the one the previous
+writeup called out as needing "a whole new turn-structure change, not just a math
+change." It doesn't get one.
+
+- **The design tradeoff**: Cockatrice's phase list (`cockatrice/src/game/phase.cpp`'s
+  `Phases::phases[]`) is a single hardcoded array, shared by client and server, with no
+  phase enum — `RulesEngine`'s own phase-index constants
+  (`DECLARE_BLOCKERS_PHASE`/`COMBAT_DAMAGE_PHASE`/`CLEANUP_PHASE`) are literal integers
+  documented as coupled to that array's ordering. A background survey done before this
+  stage confirmed inserting a true "First Strike Combat Damage" step between Declare
+  Blockers and Combat Damage would reindex every phase from Combat Damage onward across
+  both the client and server: `phase.h`'s `phaseTypesCount`, the phase-button toolbar's
+  position-indexed button list and `getLongPhaseName()` switch
+  (`cockatrice/src/game_graphics/phases_toolbar.cpp`), a *second*, independently
+  hardcoded `CLEANUP_PHASE = 10` in `game_event_handler.cpp` (not derived from
+  `RulesEngine`'s copy — an easy desync target), and several hardcoded phase-index
+  lists in `rules_engine_test.cpp`. Given this fork's standing preference for reusing
+  existing generic mechanisms over new structural surface area (see `CLAUDE.md`'s
+  design principles), that blast radius was judged not worth it for one keyword
+  pairing — the choice (and the tradeoff above) was reviewed and signed off on
+  explicitly rather than picked unilaterally.
+- **What's built instead**: rule 510.4's two combat-damage sub-passes are modeled as
+  two calls to `RulesEngine::calculateCombatDamage()` from *within* the existing
+  Combat Damage step — no new phase, no reindexing, no client-visible turn-structure
+  change. `Server_Game::resolveCombatDamage()` now: (1) captures which attackers are
+  declared blocked *before* either sub-pass runs (see below for why), (2) gathers
+  combatants fresh via the new `gatherCombatAttacks()` helper and runs a first-strike
+  sub-pass (`RulesEngine::CombatDamageStep::FirstStrike`) through the now-shared
+  `applyCombatDamageResult()` helper (life loss, damage marking, lethal-creature
+  graveyard moves — the exact logic Stage B/C already had, just extracted so it can run
+  twice), then (3) re-gathers combatants (a second, independent
+  `gatherCombatAttacks()` call) and runs a regular sub-pass
+  (`CombatDamageStep::Regular`). A first-strike kill is already reflected on the board
+  (moved to the graveyard) by the time the second gather runs, so it naturally drops out
+  — the same "re-derive from live board state" idiom Stage B/C's single pass already
+  used, just invoked twice.
+- **`RulesEngine::CombatCreature`** gained `hasFirstStrike`/`hasDoubleStrike` bools,
+  populated in `gatherCombatAttacks()` from `Server_Card::hasKeyword()` — no protocol
+  changes needed at all, since Stage C's `AttrKeywords`/`keywords` round-trip already
+  carries every recognized `CardKeywords::evergreenKeywords()` entry, not just
+  Deathtouch/Trample/Indestructible; "First strike"/"Double strike" were already
+  flowing to the server, just unread until now.
+- **`RulesEngine::participatesInStrikeStep(hasFirstStrike, hasDoubleStrike, step)`**: a
+  first-strike or double-strike creature acts in the `FirstStrike` step; everything
+  else acts in the `Regular` step; double strike acts in both (rule 702.7b/702.4).
+  `RulesEngine::calculateCombatDamage()` gates each side of an exchange independently —
+  an attacker's assignment across its blockers is gated on the *attacker's* own
+  participation this step, and each blocker's contribution to the damage dealt back to
+  the attacker is gated on *that blocker's* own participation, so e.g. a first-strike
+  attacker can kill a non-first-strike blocker in the first-strike sub-pass without
+  taking any damage back that same sub-pass. `step` defaults to `Regular`, so every
+  pre-Stage-D caller (no first/double strike creature anywhere in combat) is
+  byte-for-byte unaffected — the first sub-pass is simply a no-op in that case, and the
+  second sub-pass alone reproduces the old single-pass behavior exactly.
+- **Rule 509.1h, the real complication of splitting into two sub-passes**: an attacker
+  remains "blocked" even after every creature blocking it has been removed from combat
+  (e.g. killed in the first-strike sub-pass) — a double-strike or trample attacker
+  whose only blocker just died must *not* be treated as unblocked in the second
+  sub-pass (no free hit to the player without trample; with trample, *all* its power
+  tramples through, since there's no blocker left to assign lethal damage to first).
+  This is a genuine part of implementing first/double strike correctly, not an
+  artifact of the sub-pass approach — real Magic has the identical rule between its
+  own two steps. Modeled via a new `CombatAttack::blocked` bool, decoupled from
+  `blockers.isEmpty()`: `Server_Game::resolveCombatDamage()` computes the declared-
+  blocked set once, up front (before any deaths happen), and both `gatherCombatAttacks()`
+  calls set `blocked` from that fixed set rather than re-deriving it from the
+  (possibly-thinned) live blocker scan. `calculateCombatDamage()` treats an attack as
+  blocked if either `blocked` is true or `blockers` is non-empty, so every pre-Stage-D
+  caller that never sets `blocked` (defaults false) is unaffected.
+
 ## Explicitly out of scope
 
 Named deliberately, matching this fork's practice of documenting exclusions rather than
 leaving silent gaps — each of these is a real, separate follow-up, not an oversight:
 
-- First strike, double strike (no separate combat-damage steps — a real turn-structure
-  change, not just a math change), protection, damage prevention/replacement effects.
+- Protection, damage prevention/replacement effects.
 - Planeswalker/battle damage — only players can currently be attacked or take combat
   damage.
 - Player-chosen damage-assignment order among multiple blockers — declaration order
@@ -162,7 +233,7 @@ leaving silent gaps — each of these is a real, separate follow-up, not an over
   entirely, not defaulted to 0.
 - Retroactively converting Phase 9's advisory life ≤ 0 / poison / commander-damage
   warnings into automatic loss — the restriction is lifted so this *could* happen, but
-  it wasn't part of Stages A/B/C and needs its own explicit sign-off.
+  it wasn't part of Stages A/B/C/D and needs its own explicit sign-off.
 
 Any further combat depth beyond the above is a new, separate, explicit design decision
 — not a gap left over from these stages.
@@ -173,7 +244,14 @@ Any further combat depth beyond the above is a new, separate, explicit design de
   `calculateCombatDamage` (unblocked/blocked/multi-blocker/no-target/non-numeric-P/T
   cases) — pure logic, no server dependency. Stage C added cases for deathtouch's
   minimal-lethal-assignment, trample's leftover-to-player, the two combined, and
-  `isLethallyDamaged`'s deathtouch/indestructible branches.
+  `isLethallyDamaged`'s deathtouch/indestructible branches. Stage D added
+  `participatesInStrikeStep`'s truth table (vanilla/first-strike/double-strike ×
+  FirstStrike/Regular step), an unblocked attacker of each keyword combination dealing
+  damage in the right step(s), a first-strike attacker killing a non-first-strike
+  blocker without taking damage back in the same sub-pass (and the blocker still
+  hitting back in the following regular sub-pass, if it survived), and the
+  `CombatAttack::blocked`-with-empty-`blockers` "remains blocked" case (rule 509.1h)
+  both with and without trample.
 - `tests/movecard_tests/commander_turn_structure_test.cpp`: `Server_Card::setAttribute`
   round-tripping for `AttrAttackTarget`/`AttrBlocking`, and the same
   before-game-starts gating precedent `cmdPassPriority`/`cmdActivateAbility` already
@@ -202,3 +280,8 @@ Any further combat depth beyond the above is a new, separate, explicit design de
   now has a Trample creature (Ghor-Clan Rampager) and an Indestructible creature
   (Darksteel Myr) alongside the pre-existing Deathtouch one (Baleful Strix) ready for
   whenever this gap gets resolved.
+- **Stage D inherits the same unresolved gap** — not re-attempted, since nothing about
+  it would differ from Stage C's finding. `.uitest/sample_cards.xml` now also has a
+  First Strike creature (Order of Leitbur) and a Double Strike creature (Boros
+  Swiftblade), ready alongside the Stage C cards for whenever the Xvfb card-play gap
+  gets resolved.

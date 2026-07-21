@@ -26,6 +26,7 @@
 #include <QMap>
 #include <QMutex>
 #include <QObject>
+#include <QPair>
 #include <QSet>
 #include <QStringList>
 #include <libcockatrice/protocol/pb/event_leave.pb.h>
@@ -97,13 +98,24 @@ private:
     // lookup-by-name, Server_Card::incrementCounter(DAMAGE_CARD_COUNTER_ID, ...)). Called from
     // advancePriority() when a priority round exhausts with something pending.
     void applyPendingAbility(const Rules::PendingAbility &ability, GameEventStorage &ges);
-    // Phase 8 combat automation, Stage B: gathers every attacking creature (with a numerically
-    // parseable P/T) and its declared blockers across all players, runs
-    // Rules::RulesEngine::calculateCombatDamage(), and applies the result -- defending players'
-    // life loss, damage marked via the same DAMAGE_CARD_COUNTER_ID counter applyPendingAbility()
-    // already uses, and a state-based check moving anything now lethal to its owner's graveyard.
+    // Phase 8 combat automation, Stage B (extended in Stage D): resolves combat damage for the
+    // whole table, in one or two sub-passes (rule 510.4 -- see RulesEngine::CombatDamageStep).
     // Called from setActivePhase() on entering RulesEngine::COMBAT_DAMAGE_PHASE.
     void resolveCombatDamage(GameEventStorage &ges);
+    // Phase 8 Stage D: gathers every attacking creature (with a numerically parseable P/T) and its
+    // *currently* declared blockers across all players -- re-run fresh before each combat-damage
+    // sub-pass, since a blocker (or attacker) killed by the first-strike sub-pass has already been
+    // moved to its owner's graveyard and so naturally drops out of this scan for the regular
+    // sub-pass. @p declaredBlockedAttackers (captured once, before the first sub-pass, since
+    // blocking declarations themselves don't change between sub-passes) is keyed by
+    // (attacker's player id, attacker's card id) and feeds CombatAttack::blocked -- rule 509.1h:
+    // an attacker stays "blocked" even if every one of its blockers has since died.
+    QList<Rules::RulesEngine::CombatAttack> gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAttackers);
+    // Phase 8 combat automation, Stage B: applies one CombatDamageResult -- defending players' life
+    // loss, damage marked via the same DAMAGE_CARD_COUNTER_ID counter applyPendingAbility() already
+    // uses, and a state-based check moving anything now lethal to its owner's graveyard. Split out
+    // in Stage D so resolveCombatDamage() can call it once per combat-damage sub-pass.
+    void applyCombatDamageResult(const Rules::RulesEngine::CombatDamageResult &result, GameEventStorage &ges);
 signals:
     void sigStartGameIfReady(bool override);
     void gameInfoChanged(ServerInfo_Game gameInfo);

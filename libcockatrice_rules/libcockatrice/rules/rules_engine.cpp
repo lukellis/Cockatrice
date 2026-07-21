@@ -41,13 +41,26 @@ bool RulesEngine::canDeclareBlocker(int phase, bool blockerTapped, bool blockerA
     return phase == DECLARE_BLOCKERS_PHASE && !blockerTapped && !blockerAttacking;
 }
 
-RulesEngine::CombatDamageResult RulesEngine::calculateCombatDamage(const QList<CombatAttack> &attacks)
+bool RulesEngine::participatesInStrikeStep(bool hasFirstStrike, bool hasDoubleStrike, CombatDamageStep step)
+{
+    if (step == CombatDamageStep::FirstStrike) {
+        return hasFirstStrike || hasDoubleStrike;
+    }
+    return !hasFirstStrike || hasDoubleStrike;
+}
+
+RulesEngine::CombatDamageResult RulesEngine::calculateCombatDamage(const QList<CombatAttack> &attacks,
+                                                                   CombatDamageStep step)
 {
     CombatDamageResult result;
 
     for (const CombatAttack &attack : attacks) {
-        if (attack.blockers.isEmpty()) {
-            if (attack.targetPlayerId != -1) {
+        const bool attackerActs =
+            participatesInStrikeStep(attack.attacker.hasFirstStrike, attack.attacker.hasDoubleStrike, step);
+        const bool isBlocked = attack.blocked || !attack.blockers.isEmpty();
+
+        if (!isBlocked) {
+            if (attackerActs && attack.targetPlayerId != -1) {
                 result.playerLifeLoss[attack.targetPlayerId] += attack.attacker.power;
             }
             continue;
@@ -57,9 +70,12 @@ RulesEngine::CombatDamageResult RulesEngine::calculateCombatDamage(const QList<C
         int totalBlockerPower = 0;
         bool anyBlockerHasDeathtouch = false;
         for (const CombatCreature &blocker : attack.blockers) {
-            totalBlockerPower += blocker.power;
-            anyBlockerHasDeathtouch = anyBlockerHasDeathtouch || blocker.hasDeathtouch;
-            if (remainingPower <= 0) {
+            const bool blockerActs = participatesInStrikeStep(blocker.hasFirstStrike, blocker.hasDoubleStrike, step);
+            if (blockerActs) {
+                totalBlockerPower += blocker.power;
+                anyBlockerHasDeathtouch = anyBlockerHasDeathtouch || blocker.hasDeathtouch;
+            }
+            if (!attackerActs || remainingPower <= 0) {
                 continue;
             }
             const int neededForLethal = attack.attacker.hasDeathtouch ? 1 : blocker.toughness;
@@ -70,13 +86,15 @@ RulesEngine::CombatDamageResult RulesEngine::calculateCombatDamage(const QList<C
             }
             remainingPower -= assigned;
         }
-        if (remainingPower > 0 && attack.attacker.hasTrample && attack.targetPlayerId != -1) {
+        if (attackerActs && remainingPower > 0 && attack.attacker.hasTrample && attack.targetPlayerId != -1) {
             result.playerLifeLoss[attack.targetPlayerId] += remainingPower;
         }
 
-        result.cardDamageMarked[attack.attacker.playerId][attack.attacker.cardId] += totalBlockerPower;
-        if (totalBlockerPower > 0 && anyBlockerHasDeathtouch) {
-            result.deathtouchDamaged[attack.attacker.playerId].insert(attack.attacker.cardId);
+        if (totalBlockerPower > 0) {
+            result.cardDamageMarked[attack.attacker.playerId][attack.attacker.cardId] += totalBlockerPower;
+            if (anyBlockerHasDeathtouch) {
+                result.deathtouchDamaged[attack.attacker.playerId].insert(attack.attacker.cardId);
+            }
         }
     }
 

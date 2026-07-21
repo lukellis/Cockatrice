@@ -109,6 +109,38 @@ Bloodrush -- Discard Ghor-Clan Rampager: Target attacking creature gets +2/+2 an
             </prop>
         </card>
         <card>
+            <name>Order of Leitbur</name>
+            <set>ALL</set>
+            <tablerow>0</tablerow>
+            <text>First strike
+Protection from black</text>
+            <prop>
+                <colors>W</colors>
+                <manacost>{W}{W}</manacost>
+                <cmc>2</cmc>
+                <type>Creature — Human Knight</type>
+                <maintype>Creature</maintype>
+                <pt>2/2</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
+            <name>Boros Swiftblade</name>
+            <set>GPT</set>
+            <tablerow>0</tablerow>
+            <text>Double strike
+Boros Swiftblade can't be blocked by more than one creature.</text>
+            <prop>
+                <colors>RW</colors>
+                <manacost>{R}{W}</manacost>
+                <cmc>2</cmc>
+                <type>Creature — Human Soldier</type>
+                <maintype>Creature</maintype>
+                <pt>2/1</pt>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
             <name>Lightning Bolt</name>
             <set>M11</set>
             <tablerow>0</tablerow>

@@ -125,9 +125,12 @@ public:
      * @brief A creature's controller + card id + numeric power/toughness, the minimal shape
      * calculateCombatDamage() needs -- deliberately decoupled from Server_Card so the damage math
      * stays unit-testable without a live server (see rules_engine_test.cpp). @p hasDeathtouch and
-     * @p hasTrample are Stage C additions (rule 702.2b/702.19b) synced from the client's
-     * CardKeywords::parse() via the AttrKeywords card attribute -- see phase8-combat.md's Stage C
-     * section for why the server has to be told these rather than looking them up itself.
+     * @p hasTrample are Stage C additions (rule 702.2b/702.19b); @p hasFirstStrike and
+     * @p hasDoubleStrike are Stage D additions (rule 702.7/702.4) -- all four synced from the
+     * client's CardKeywords::parse() via the AttrKeywords card attribute -- see phase8-combat.md's
+     * Stage C/D sections for why the server has to be told these rather than looking them up
+     * itself. Appended after hasTrample (rather than interleaved) so existing positional aggregate
+     * initializers in rules_engine_test.cpp keep compiling unchanged.
      */
     struct CombatCreature
     {
@@ -137,19 +140,54 @@ public:
         int toughness = 0;
         bool hasDeathtouch = false;
         bool hasTrample = false;
+        bool hasFirstStrike = false;
+        bool hasDoubleStrike = false;
     };
+
+    /**
+     * @brief Rule 510.4's two combat-damage sub-passes: first-strike/double-strike creatures deal
+     * (and take) combat damage in the first-strike sub-pass; everything else deals damage in the
+     * regular sub-pass, and double-strike creatures act in both. This fork models the two
+     * sub-passes as two calls to calculateCombatDamage() (see its own doc comment and Stage D in
+     * phase8-combat.md) rather than a new turn-structure phase, since Cockatrice's phase list is a
+     * single hardcoded array shared by client and server with no phase enum -- reindexing it for
+     * one keyword pairing was judged not worth the blast radius (see phase8-combat.md's Stage D
+     * section for the full design-tradeoff writeup).
+     */
+    enum class CombatDamageStep
+    {
+        FirstStrike,
+        Regular
+    };
+
+    /**
+     * @brief Rule 702.7b/510.4: whether a creature with @p hasFirstStrike/@p hasDoubleStrike deals
+     * (and takes) combat damage during @p step. First strike and double strike both act in the
+     * FirstStrike step; everything else acts in the Regular step, and double strike acts in both
+     * (a creature with only first strike does not act again in the Regular step, having already
+     * assigned its damage).
+     */
+    static bool participatesInStrikeStep(bool hasFirstStrike, bool hasDoubleStrike, CombatDamageStep step);
 
     /**
      * @brief One attacking creature's combat, from RulesEngine's point of view: who it's
      * attacking (targetPlayerId, -1 if no target was ever set -- see Stage A) and, if any, the
-     * creatures blocking it, in declaration order (rule 509's damage-assignment order is a player
-     * choice this fork doesn't model; declaration order is the deterministic stand-in -- see
-     * COMMANDER_IMPLEMENTATION_STATUS.md's Phase 8 doc).
+     * creatures currently blocking it, in declaration order (rule 509's damage-assignment order is
+     * a player choice this fork doesn't model; declaration order is the deterministic stand-in --
+     * see COMMANDER_IMPLEMENTATION_STATUS.md's Phase 8 doc). @p blocked (Stage D) is true if this
+     * attacker was ever declared blocked, independent of whether @p blockers is currently empty --
+     * rule 509.1h: an attacker remains blocked even after every creature blocking it is removed
+     * from combat (e.g. killed in the first-strike sub-pass), so a double-strike/trample attacker
+     * whose only blocker died between sub-passes must NOT be treated as unblocked in the regular
+     * sub-pass. Left false (the pre-Stage-D default) is fine for any caller that doesn't split
+     * combat damage into sub-passes -- calculateCombatDamage() falls back to
+     * `!blockers.isEmpty()` in that case, matching this field's behavior before it existed.
      */
     struct CombatAttack
     {
         CombatCreature attacker;
         int targetPlayerId = -1;
+        bool blocked = false;
         QList<CombatCreature> blockers;
     };
 
@@ -171,19 +209,29 @@ public:
 
     /**
      * @brief Rule 510, simplified: an unblocked attacker with a target deals its power to that
-     * player; a blocked attacker splits its power across its blockers in declaration order,
-     * assigning each blocker the amount needed to be considered lethal -- its full toughness, or
-     * just 1 if the attacker has deathtouch (rule 702.2b) -- before moving to the next; any power
-     * left over after all blockers have been assigned lethal damage tramples through to the
-     * defending player if the attacker has trample (rule 702.19b), otherwise it's wasted. All of
-     * an attacker's blockers simultaneously deal their combined power back to the attacker (rule
-     * 510.1a). Explicitly out of scope, same as the rest of this fork's combat depth: first/double
-     * strike (no separate combat-damage steps), protection, damage prevention/replacement effects,
-     * planeswalker/battle damage, and player-chosen damage-assignment order (declaration order
-     * stands in, same as before). An attacker with no target (targetPlayerId == -1) deals no
-     * damage at all if unblocked, trample included.
+     * player; a blocked attacker splits its power across its (possibly zero, per rule 509.1h --
+     * see CombatAttack::blocked) blockers in declaration order, assigning each blocker the amount
+     * needed to be considered lethal -- its full toughness, or just 1 if the attacker has
+     * deathtouch (rule 702.2b) -- before moving to the next; any power left over after all
+     * blockers have been assigned lethal damage tramples through to the defending player if the
+     * attacker has trample (rule 702.19b), otherwise it's wasted. Blockers simultaneously deal
+     * their combined power back to the attacker (rule 510.1a).
+     *
+     * @p step (Stage D, rule 510.4) restricts both sides of this to only the creatures that act
+     * during that sub-pass -- see participatesInStrikeStep(): an attacker/blocker that doesn't act
+     * this sub-pass neither deals nor is assigned damage by the *other* side's own action this
+     * call (a non-acting attacker still gets damage marked on it by a blocker that *does* act, and
+     * vice versa -- only the acting side's own damage-dealing is gated). Defaults to Regular so
+     * every pre-Stage-D caller (nobody in combat has first/double strike) is unaffected -- see
+     * phase8-combat.md's Stage D section.
+     *
+     * Explicitly out of scope, same as the rest of this fork's combat depth: protection, damage
+     * prevention/replacement effects, planeswalker/battle damage, and player-chosen
+     * damage-assignment order (declaration order stands in, same as before). An attacker with no
+     * target (targetPlayerId == -1) deals no damage at all if unblocked, trample included.
      */
-    static CombatDamageResult calculateCombatDamage(const QList<CombatAttack> &attacks);
+    static CombatDamageResult calculateCombatDamage(const QList<CombatAttack> &attacks,
+                                                    CombatDamageStep step = CombatDamageStep::Regular);
 
     /**
      * @brief Rule 704.5g simplified: whether a creature with @p toughness and @p markedDamage

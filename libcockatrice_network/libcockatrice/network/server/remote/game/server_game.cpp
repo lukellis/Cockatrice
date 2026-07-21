@@ -810,13 +810,14 @@ void Server_Game::setActivePhase(int newPhase)
     broadcastPriorityChange(activePlayer);
 }
 
-void Server_Game::resolveCombatDamage(GameEventStorage &ges)
+QList<Rules::RulesEngine::CombatAttack>
+Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAttackers)
 {
     QMap<int, Server_AbstractPlayer *> allPlayers = getPlayers();
 
     // Gather every attacking creature with a numerically parseable P/T (see parseNumericPT()'s
     // doc comment -- a non-numeric P/T like "*/1+*" is left out entirely, for manual resolution,
-    // rather than silently mis-calculated as 0/0) and its declared blockers.
+    // rather than silently mis-calculated as 0/0) and its currently declared blockers.
     QList<Rules::RulesEngine::CombatAttack> attacks;
     for (auto it = allPlayers.constBegin(); it != allPlayers.constEnd(); ++it) {
         Server_CardZone *table = it.value()->getZones().value(ZoneNames::TABLE);
@@ -838,12 +839,15 @@ void Server_Game::resolveCombatDamage(GameEventStorage &ges)
                                attackerPT->first,
                                attackerPT->second,
                                card->hasKeyword(QStringLiteral("Deathtouch")),
-                               card->hasKeyword(QStringLiteral("Trample"))};
+                               card->hasKeyword(QStringLiteral("Trample")),
+                               card->hasKeyword(QStringLiteral("First strike")),
+                               card->hasKeyword(QStringLiteral("Double strike"))};
             attack.targetPlayerId = card->getAttackTargetPlayerId();
+            attack.blocked = declaredBlockedAttackers.contains({it.key(), card->getId()});
 
-            // This attacker's declared blockers, across every player's table zone. Order is an
-            // arbitrary but deterministic stand-in (ascending card id) for the real player-chosen
-            // damage-assignment order -- see CombatAttack's doc comment.
+            // This attacker's currently living declared blockers, across every player's table
+            // zone. Order is an arbitrary but deterministic stand-in (ascending card id) for the
+            // real player-chosen damage-assignment order -- see CombatAttack's doc comment.
             QList<Rules::RulesEngine::CombatCreature> blockers;
             for (auto blockerIt = allPlayers.constBegin(); blockerIt != allPlayers.constEnd(); ++blockerIt) {
                 Server_CardZone *blockerTable = blockerIt.value()->getZones().value(ZoneNames::TABLE);
@@ -861,7 +865,9 @@ void Server_Game::resolveCombatDamage(GameEventStorage &ges)
                     }
                     blockers.append({blockerIt.key(), blockerCard->getId(), blockerPT->first, blockerPT->second,
                                      blockerCard->hasKeyword(QStringLiteral("Deathtouch")),
-                                     blockerCard->hasKeyword(QStringLiteral("Trample"))});
+                                     blockerCard->hasKeyword(QStringLiteral("Trample")),
+                                     blockerCard->hasKeyword(QStringLiteral("First strike")),
+                                     blockerCard->hasKeyword(QStringLiteral("Double strike"))});
                 }
             }
             std::sort(blockers.begin(), blockers.end(),
@@ -872,11 +878,55 @@ void Server_Game::resolveCombatDamage(GameEventStorage &ges)
         }
     }
 
-    if (attacks.isEmpty()) {
-        return;
+    return attacks;
+}
+
+void Server_Game::resolveCombatDamage(GameEventStorage &ges)
+{
+    // Rule 509.1h: an attacker remains "blocked" even after every creature blocking it is removed
+    // from combat (e.g. killed in the first-strike sub-pass below) -- so which attackers are
+    // blocked must be captured once here, before either sub-pass runs, rather than re-derived from
+    // each sub-pass's (possibly-thinned-by-deaths) blocker scan.
+    QSet<QPair<int, int>> declaredBlockedAttackers;
+    QMap<int, Server_AbstractPlayer *> allPlayers = getPlayers();
+    for (auto it = allPlayers.constBegin(); it != allPlayers.constEnd(); ++it) {
+        Server_CardZone *table = it.value()->getZones().value(ZoneNames::TABLE);
+        if (!table) {
+            continue;
+        }
+        for (Server_Card *card : table->getCards()) {
+            if (card->getBlockedCardId() != -1) {
+                declaredBlockedAttackers.insert({card->getBlockedPlayerId(), card->getBlockedCardId()});
+            }
+        }
     }
 
-    Rules::RulesEngine::CombatDamageResult result = Rules::RulesEngine::calculateCombatDamage(attacks);
+    // Rule 510.4: first-strike/double-strike creatures deal (and take) combat damage in an earlier
+    // sub-pass; anything it kills is moved to its owner's graveyard (inside
+    // applyCombatDamageResult()) before the regular sub-pass re-gathers combatants fresh from the
+    // board -- see gatherCombatAttacks()'s own doc comment for why re-gathering, rather than
+    // reusing the first sub-pass's list, is what makes a first-strike death "count" before the
+    // second sub-pass. Most combats have no first/double strike creature at all, in which case the
+    // first sub-pass is a no-op (calculateCombatDamage() finds nothing that acts in it) and the
+    // second sub-pass alone reproduces this fork's pre-Stage-D single-pass behavior exactly.
+    QList<Rules::RulesEngine::CombatAttack> firstStrikeAttacks = gatherCombatAttacks(declaredBlockedAttackers);
+    if (!firstStrikeAttacks.isEmpty()) {
+        applyCombatDamageResult(Rules::RulesEngine::calculateCombatDamage(
+                                    firstStrikeAttacks, Rules::RulesEngine::CombatDamageStep::FirstStrike),
+                                ges);
+    }
+
+    QList<Rules::RulesEngine::CombatAttack> regularAttacks = gatherCombatAttacks(declaredBlockedAttackers);
+    if (!regularAttacks.isEmpty()) {
+        applyCombatDamageResult(
+            Rules::RulesEngine::calculateCombatDamage(regularAttacks, Rules::RulesEngine::CombatDamageStep::Regular),
+            ges);
+    }
+}
+
+void Server_Game::applyCombatDamageResult(const Rules::RulesEngine::CombatDamageResult &result, GameEventStorage &ges)
+{
+    QMap<int, Server_AbstractPlayer *> allPlayers = getPlayers();
 
     for (auto it = result.playerLifeLoss.constBegin(); it != result.playerLifeLoss.constEnd(); ++it) {
         auto *targetPlayer = dynamic_cast<Server_Player *>(allPlayers.value(it.key()));
