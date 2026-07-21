@@ -141,6 +141,20 @@ Boros Swiftblade can't be blocked by more than one creature.</text>
             </prop>
         </card>
         <card>
+            <name>Glorious Anthem</name>
+            <set>7ED</set>
+            <tablerow>0</tablerow>
+            <text>Creatures you control get +1/+1.</text>
+            <prop>
+                <colors>W</colors>
+                <manacost>{1}{W}</manacost>
+                <cmc>2</cmc>
+                <type>Enchantment</type>
+                <maintype>Enchantment</maintype>
+                <format-commander>legal</format-commander>
+            </prop>
+        </card>
+        <card>
             <name>Lightning Bolt</name>
             <set>M11</set>
             <tablerow>0</tablerow>

@@ -23,6 +23,7 @@
 #include "server_arrowtarget.h"
 
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <libcockatrice/protocol/pb/card_attributes.pb.h>
 #include <libcockatrice/protocol/pb/serverinfo_card.pb.h>
@@ -50,6 +51,7 @@ private:
     QString color;
     QString ptString;
     QString keywordsString;
+    QString staticAbilitiesString;
     QString annotation;
     bool destroyOnZoneChange;
     bool doesntUntap;
@@ -151,6 +153,20 @@ public:
     {
         return keywordsString.split(QLatin1Char(','), Qt::SkipEmptyParts).contains(name);
     }
+    /**
+     * @brief The full set behind hasKeyword() -- needed wherever a caller must fold in keywords
+     * granted by another permanent's static ability (see RulesEngine::applyStaticEffects()) rather
+     * than just checking a single fixed name.
+     */
+    QSet<QString> getKeywordSet() const
+    {
+        const QStringList parts = keywordsString.split(QLatin1Char(','), Qt::SkipEmptyParts);
+        return QSet<QString>(parts.begin(), parts.end());
+    }
+    QString getStaticAbilities() const
+    {
+        return staticAbilitiesString;
+    }
     QString getAnnotation() const
     {
         return annotation;
@@ -235,6 +251,10 @@ public:
     void setKeywords(const QString &_keywords)
     {
         keywordsString = _keywords;
+    }
+    void setStaticAbilities(const QString &_staticAbilities)
+    {
+        staticAbilitiesString = _staticAbilities;
     }
     void setAnnotation(const QString &_annotation)
     {

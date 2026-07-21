@@ -69,4 +69,8 @@ message ServerInfo_Card {
     // Phase 8 combat automation, Stage C: the creature's recognized evergreen keywords
     // (CardKeywords::parse(), comma-joined), synced from the client's local card database.
     optional string keywords = 21;
+
+    // Static/continuous ability slice: the card's own printed static abilities
+    // (StaticAbilities::parse(), serialized), synced from the client's local card database.
+    optional string static_abilities = 22;
 }

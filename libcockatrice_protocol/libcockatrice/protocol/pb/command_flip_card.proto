@@ -14,4 +14,9 @@ message Command_FlipCard {
     // face-down card is flipped face up. Sibling to `pt` above -- see AttrKeywords in
     // card_attributes.proto.
     optional string keywords = 5;
+
+    // Static/continuous ability slice: the card's own printed static abilities
+    // (StaticAbilities::parse(), serialized), read when a face-down card is flipped face up.
+    // Sibling to `pt`/`keywords` above -- see AttrStaticAbilities in card_attributes.proto.
+    optional string static_abilities = 6;
 }

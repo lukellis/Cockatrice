@@ -810,6 +810,18 @@ void Server_Game::setActivePhase(int newPhase)
     broadcastPriorityChange(activePlayer);
 }
 
+QList<QPair<int, QString>> Server_Game::staticAbilitySourcesFor(Server_CardZone *table)
+{
+    QList<QPair<int, QString>> sources;
+    if (!table) {
+        return sources;
+    }
+    for (Server_Card *card : table->getCards()) {
+        sources.append({card->getId(), card->getStaticAbilities()});
+    }
+    return sources;
+}
+
 QList<Rules::RulesEngine::CombatAttack>
 Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAttackers)
 {
@@ -824,6 +836,7 @@ Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAtt
         if (!table) {
             continue;
         }
+        const QList<QPair<int, QString>> attackerStaticSources = staticAbilitySourcesFor(table);
         for (Server_Card *card : table->getCards()) {
             if (!card->getAttacking()) {
                 continue;
@@ -832,16 +845,18 @@ Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAtt
             if (!attackerPT) {
                 continue;
             }
+            const auto attackerEffective = Rules::RulesEngine::applyStaticEffects(
+                card->getId(), attackerPT->first, attackerPT->second, card->getKeywordSet(), attackerStaticSources);
 
             Rules::RulesEngine::CombatAttack attack;
             attack.attacker = {it.key(),
                                card->getId(),
-                               attackerPT->first,
-                               attackerPT->second,
-                               card->hasKeyword(QStringLiteral("Deathtouch")),
-                               card->hasKeyword(QStringLiteral("Trample")),
-                               card->hasKeyword(QStringLiteral("First strike")),
-                               card->hasKeyword(QStringLiteral("Double strike"))};
+                               attackerEffective.power,
+                               attackerEffective.toughness,
+                               attackerEffective.keywords.contains(QStringLiteral("Deathtouch")),
+                               attackerEffective.keywords.contains(QStringLiteral("Trample")),
+                               attackerEffective.keywords.contains(QStringLiteral("First strike")),
+                               attackerEffective.keywords.contains(QStringLiteral("Double strike"))};
             attack.targetPlayerId = card->getAttackTargetPlayerId();
             attack.blocked = declaredBlockedAttackers.contains({it.key(), card->getId()});
 
@@ -854,6 +869,7 @@ Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAtt
                 if (!blockerTable) {
                     continue;
                 }
+                const QList<QPair<int, QString>> blockerStaticSources = staticAbilitySourcesFor(blockerTable);
                 for (Server_Card *blockerCard : blockerTable->getCards()) {
                     if (blockerCard->getBlockedPlayerId() != it.key() ||
                         blockerCard->getBlockedCardId() != card->getId()) {
@@ -863,11 +879,15 @@ Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAtt
                     if (!blockerPT) {
                         continue;
                     }
-                    blockers.append({blockerIt.key(), blockerCard->getId(), blockerPT->first, blockerPT->second,
-                                     blockerCard->hasKeyword(QStringLiteral("Deathtouch")),
-                                     blockerCard->hasKeyword(QStringLiteral("Trample")),
-                                     blockerCard->hasKeyword(QStringLiteral("First strike")),
-                                     blockerCard->hasKeyword(QStringLiteral("Double strike"))});
+                    const auto blockerEffective = Rules::RulesEngine::applyStaticEffects(
+                        blockerCard->getId(), blockerPT->first, blockerPT->second, blockerCard->getKeywordSet(),
+                        blockerStaticSources);
+                    blockers.append({blockerIt.key(), blockerCard->getId(), blockerEffective.power,
+                                     blockerEffective.toughness,
+                                     blockerEffective.keywords.contains(QStringLiteral("Deathtouch")),
+                                     blockerEffective.keywords.contains(QStringLiteral("Trample")),
+                                     blockerEffective.keywords.contains(QStringLiteral("First strike")),
+                                     blockerEffective.keywords.contains(QStringLiteral("Double strike"))});
                 }
             }
             std::sort(blockers.begin(), blockers.end(),
@@ -961,6 +981,7 @@ void Server_Game::applyCombatDamageResult(const Rules::RulesEngine::CombatDamage
         if (!table) {
             continue;
         }
+        const QList<QPair<int, QString>> staticSources = staticAbilitySourcesFor(table);
         for (auto cardIt = ownerIt.value().constBegin(); cardIt != ownerIt.value().constEnd(); ++cardIt) {
             Server_Card *card = table->getCard(cardIt.key());
             if (!card) {
@@ -975,10 +996,14 @@ void Server_Game::applyCombatDamageResult(const Rules::RulesEngine::CombatDamage
 
             auto pt = Rules::RulesEngine::parseNumericPT(card->getPT());
             const bool anyDeathtouchDamage = result.deathtouchDamaged.value(ownerIt.key()).contains(card->getId());
-            if (pt && Rules::RulesEngine::isLethallyDamaged(card->getCounter(DAMAGE_CARD_COUNTER_ID), pt->second,
-                                                            anyDeathtouchDamage,
-                                                            card->hasKeyword(QStringLiteral("Indestructible")))) {
-                lethalCards.append({ownerIt.key(), card->getId()});
+            if (pt) {
+                const auto effective = Rules::RulesEngine::applyStaticEffects(card->getId(), pt->first, pt->second,
+                                                                              card->getKeywordSet(), staticSources);
+                if (Rules::RulesEngine::isLethallyDamaged(
+                        card->getCounter(DAMAGE_CARD_COUNTER_ID), effective.toughness, anyDeathtouchDamage,
+                        effective.keywords.contains(QStringLiteral("Indestructible")))) {
+                    lethalCards.append({ownerIt.key(), card->getId()});
+                }
             }
         }
     }

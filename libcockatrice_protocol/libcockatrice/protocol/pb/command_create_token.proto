@@ -34,4 +34,9 @@ message Command_CreateToken {
     // related-card token is created from a real CardInfo. Sibling to `pt` above -- see
     // AttrKeywords in card_attributes.proto.
     optional string keywords = 14;
+
+    // Static/continuous ability slice: the token source's own printed static abilities
+    // (StaticAbilities::parse(), serialized), read the same way `keywords` above is. See
+    // AttrStaticAbilities in card_attributes.proto.
+    optional string static_abilities = 15;
 }

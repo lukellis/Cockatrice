@@ -549,6 +549,15 @@ void Server_AbstractPlayer::onCardBeingMoved(GameEventStorage &ges,
                           AttrKeywords, keywordsString);
     }
 
+    // Static/continuous ability slice: sync the card's own printed static abilities (P/T boosts and
+    // keyword grants -- see AttrStaticAbilities in card_attributes.proto), the same way keywords
+    // are synced just above.
+    QString staticAbilitiesString = QString::fromStdString(thisCardProperties->static_abilities());
+    if (!staticAbilitiesString.isEmpty()) {
+        setCardAttrHelper(ges, targetzone->getPlayer()->getPlayerId(), targetzone->getName(), card->getId(),
+                          AttrStaticAbilities, staticAbilitiesString);
+    }
+
     // If card is transferring to a different player, leave an annotation of who actually "owns" the card
     const auto &priorAnnotation = card->getAnnotation();
     if (startzone->getPlayer() != targetzone->getPlayer() && !priorAnnotation.contains("Owner:")) {
@@ -861,6 +870,11 @@ Server_AbstractPlayer::cmdFlipCard(const Command_FlipCard &cmd, ResponseContaine
         setCardAttrHelper(ges, playerId, zone->getName(), card->getId(), AttrKeywords, keywordsString);
     }
 
+    QString staticAbilitiesString = nameFromStdString(cmd.static_abilities());
+    if (!staticAbilitiesString.isEmpty() && !faceDown) {
+        setCardAttrHelper(ges, playerId, zone->getName(), card->getId(), AttrStaticAbilities, staticAbilitiesString);
+    }
+
     return Response::RespOk;
 }
 
@@ -1040,6 +1054,7 @@ Server_AbstractPlayer::cmdCreateToken(const Command_CreateToken &cmd, ResponseCo
         card->setColor(nameFromStdString(cmd.color()));
         card->setPT(nameFromStdString(cmd.pt()));
         card->setKeywords(nameFromStdString(cmd.keywords()));
+        card->setStaticAbilities(nameFromStdString(cmd.static_abilities()));
     }
     card->setAnnotation(nameFromStdString(cmd.annotation()));
     card->setDestroyOnZoneChange(cmd.destroy_on_zone_change());

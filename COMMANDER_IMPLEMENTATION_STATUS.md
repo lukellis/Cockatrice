@@ -46,14 +46,18 @@ to silently fill in.
 | 6. Mana system (pool auto-empty only) | Narrow slice done | [phase6-mana.md](doc/commander-status/phase6-mana.md) |
 | 7. Card ability system (display parsing + a real execution engine) | Done at scope (Increments 1–2, Stages 1–6) | [phase7-card-abilities.md](doc/commander-status/phase7-card-abilities.md) |
 | 8. Combat system | Declare-attacker + Stages A/B/C/D (targeting, blocking, automated damage/death, deathtouch/trample/indestructible, first strike/double strike) done | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
+| 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects, combat-math consumers only | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
 | 9. State-based actions (advisory warnings) | Partial, by design | [phase9-state-based-actions.md](doc/commander-status/phase9-state-based-actions.md) |
 | §12 UI design & enhancements | Ongoing | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
 
 ## Current status
 
-Everything in the table above is implemented, GTest-covered, and live-verified per its
-own doc's "Testing" section; the full suite passes with zero known regressions and
-`format.sh --cmake --branch master` is clean. All work is on the `commander-rules`
+Everything in the table above is implemented and GTest-covered per its own doc's "Testing"
+section; the full suite passes with zero known regressions and `format.sh --cmake --branch
+master` is clean. Most rows are also live-verified per their own doc — the static/continuous
+abilities extension is the one exception: its live-verification attempt hit a UI-testing
+infrastructure gap (see `phase8-static-abilities.md`'s "Testing" section) rather than
+completing, so it's currently GTest-verified only. All work is on the `commander-rules`
 branch, pushed to `origin` (this host's only remote — see `CLAUDE.md`'s git-remotes
 note, since that setup has changed across hosts this fork has been developed on).
 
@@ -106,4 +110,8 @@ future change doesn't collide with a retired or in-use extension number.
   covered.
 - No legend rule, 0-toughness, or illegal-aura state-based actions (see
   `phase9-state-based-actions.md`).
+- Static/continuous abilities (anthem/lord effects) are recognized for only two exact line
+  shapes (P/T boost, keyword grant, both scoped to "creatures you control"), consumed by combat
+  math only — no client display of the boost, no creature-type restrictions, no combined
+  single-line phrasing — see `phase8-static-abilities.md`.
 - Command zone has no dedicated context menu (graveyard/exile do).

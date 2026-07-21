@@ -3,10 +3,12 @@
 
 #include <QList>
 #include <QMap>
+#include <QPair>
 #include <QSet>
 #include <QString>
 #include <QStringList>
 #include <libcockatrice/card/ability/card_effects.h>
+#include <libcockatrice/card/ability/static_abilities.h>
 #include <optional>
 
 namespace Rules
@@ -255,6 +257,39 @@ public:
      * instead of silently mis-calculating it as a 0-power/0-toughness creature.
      */
     static std::optional<std::pair<int, int>> parseNumericPT(const QString &pt);
+
+    /**
+     * @brief The outcome of folding every applicable static/continuous ability into one
+     * permanent's base characteristics -- see applyStaticEffects().
+     */
+    struct StaticEffectResult
+    {
+        int power = 0;
+        int toughness = 0;
+        QSet<QString> keywords;
+    };
+
+    /**
+     * @brief Folds every static ability sourced from @p controllerBattlefield into @p targetCardId's
+     * base power/toughness/keywords, and returns the result. @p controllerBattlefield is
+     * `(cardId, staticAbilitiesString)` for every card the *same controller* as @p targetCardId
+     * controls (see StaticAbilities::serialize()/AttrStaticAbilities in card_attributes.proto) --
+     * scoping the list to one controller's battlefield is the caller's job, keeping this function
+     * pure and callable without a live Server_Card, the same way calculateCombatDamage() takes
+     * pre-scoped CombatAttack%s rather than zone objects.
+     *
+     * Each source's abilities are deserialized and applied in turn: a StaticAbilities::StaticScope::
+     * OthersYours ability is skipped for its own source card (an anthem never buffs itself), while
+     * an ::AllYours ability applies even to its own source (a creature that says "creatures you
+     * control get +1/+1" buffs itself too). Every other source in @p controllerBattlefield always
+     * applies to @p targetCardId regardless of scope, since "you control" is evaluated relative to
+     * the source's controller, which the caller has already scoped this list to.
+     */
+    static StaticEffectResult applyStaticEffects(int targetCardId,
+                                                 int basePower,
+                                                 int baseToughness,
+                                                 const QSet<QString> &baseKeywords,
+                                                 const QList<QPair<int, QString>> &controllerBattlefield);
 
     /**
      * @brief Pure logic: the next player, in ascending-id turn order starting just after

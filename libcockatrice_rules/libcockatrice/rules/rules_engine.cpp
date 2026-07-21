@@ -127,6 +127,29 @@ std::optional<std::pair<int, int>> RulesEngine::parseNumericPT(const QString &pt
     return std::make_pair(power, toughness);
 }
 
+RulesEngine::StaticEffectResult RulesEngine::applyStaticEffects(int targetCardId,
+                                                                int basePower,
+                                                                int baseToughness,
+                                                                const QSet<QString> &baseKeywords,
+                                                                const QList<QPair<int, QString>> &controllerBattlefield)
+{
+    StaticEffectResult result{basePower, baseToughness, baseKeywords};
+
+    for (const auto &source : controllerBattlefield) {
+        const QList<StaticAbilities::StaticAbility> abilities = StaticAbilities::deserialize(source.second);
+        for (const StaticAbilities::StaticAbility &ability : abilities) {
+            if (ability.scope == StaticAbilities::StaticScope::OthersYours && source.first == targetCardId) {
+                continue;
+            }
+            result.power += ability.powerBonus;
+            result.toughness += ability.toughnessBonus;
+            result.keywords += ability.grantedKeywords;
+        }
+    }
+
+    return result;
+}
+
 int RulesEngine::nextPriorityPlayer(const QList<int> &playerOrder,
                                     int currentPlayerId,
                                     const QSet<int> &passedPlayers,

@@ -18,4 +18,10 @@ enum CardAttribute {
     // the card enters play. Combat math currently only consumes Deathtouch/Trample/Indestructible;
     // the rest ride along unused for future stages.
     AttrKeywords = 10;
+    // Static/continuous ability slice: this card's own printed static abilities (P/T boosts and
+    // keyword grants applying to "creatures you control"/"other creatures you control"), synced by
+    // the client the same way AttrKeywords is. See StaticAbilities::serialize() and
+    // doc/commander-status/phase8-static-abilities.md. Server-only consumer today (combat math) --
+    // no client display change.
+    AttrStaticAbilities = 11;
 }

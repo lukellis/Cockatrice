@@ -16,6 +16,7 @@
 #include <libcockatrice/card/ability/activated_abilities.h>
 #include <libcockatrice/card/ability/card_keywords.h>
 #include <libcockatrice/card/ability/mana_abilities.h>
+#include <libcockatrice/card/ability/static_abilities.h>
 #include <libcockatrice/card/ability/triggered_abilities.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
@@ -97,6 +98,7 @@ void PlayerActions::playCard(CardItem *card, bool faceDown)
             cardToMove->set_pt(info.getPowTough().toStdString());
             cardToMove->set_keywords(
                 QStringList(CardKeywords::parse(info).values()).join(QStringLiteral(",")).toStdString());
+            cardToMove->set_static_abilities(StaticAbilities::serialize(StaticAbilities::parse(info)).toStdString());
         }
         cardToMove->set_tapped(!faceDown && info.getUiAttributes().cipt);
         if (tableRow != 3) {
@@ -139,6 +141,7 @@ void PlayerActions::playCardToTable(const CardItem *card, bool faceDown)
         cardToMove->set_pt(info.getPowTough().toStdString());
         cardToMove->set_keywords(
             QStringList(CardKeywords::parse(info).values()).join(QStringLiteral(",")).toStdString());
+        cardToMove->set_static_abilities(StaticAbilities::serialize(StaticAbilities::parse(info)).toStdString());
     }
     cardToMove->set_tapped(!faceDown && info.getUiAttributes().cipt);
     cmd.set_target_zone(ZoneNames::TABLE);
@@ -1185,6 +1188,7 @@ void PlayerActions::createCard(const CardItem *sourceCard,
 
     cmd.set_pt(cardInfo->getPowTough().toStdString());
     cmd.set_keywords(QStringList(CardKeywords::parse(*cardInfo).values()).join(QStringLiteral(",")).toStdString());
+    cmd.set_static_abilities(StaticAbilities::serialize(StaticAbilities::parse(*cardInfo)).toStdString());
     if (SettingsCache::instance().getAnnotateTokens()) {
         cmd.set_annotation(cardInfo->getText().toStdString());
     } else {
@@ -2249,6 +2253,8 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
                             cmd->set_keywords(QStringList(CardKeywords::parse(ec.getInfo()).values())
                                                   .join(QStringLiteral(","))
                                                   .toStdString());
+                            cmd->set_static_abilities(
+                                StaticAbilities::serialize(StaticAbilities::parse(ec.getInfo())).toStdString());
                         }
                     }
                     commandList.append(cmd);
@@ -2274,6 +2280,9 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
                         cmd->set_keywords(QStringList(CardKeywords::parse(cloneSourceCard.getInfo()).values())
                                               .join(QStringLiteral(","))
                                               .toStdString());
+                        cmd->set_static_abilities(
+                            StaticAbilities::serialize(StaticAbilities::parse(cloneSourceCard.getInfo()))
+                                .toStdString());
                     }
                     cmd->set_annotation(card->getAnnotation().toStdString());
                     cmd->set_destroy_on_zone_change(true);
@@ -2408,6 +2417,8 @@ void PlayerActions::cardMenuAction(QList<CardItem *> selectedCards, CardMenuActi
                         ctm->set_pt(info.getPowTough().toStdString());
                         ctm->set_keywords(
                             QStringList(CardKeywords::parse(info).values()).join(QStringLiteral(",")).toStdString());
+                        ctm->set_static_abilities(
+                            StaticAbilities::serialize(StaticAbilities::parse(info)).toStdString());
                         ctm->set_tapped(info.getUiAttributes().cipt);
                     }
 

@@ -123,6 +123,61 @@ TEST(RulesEngineTest, ParseNumericPTRejectsMalformedStrings)
     EXPECT_FALSE(RulesEngine::parseNumericPT("3/4/5").has_value());
 }
 
+// ---- RulesEngine::applyStaticEffects (static/continuous ability slice, pure decision logic) ----
+
+TEST(RulesEngineTest, NoSourcesLeavesBaseCharacteristicsUnchanged)
+{
+    auto result = RulesEngine::applyStaticEffects(1, 2, 2, {"Flying"}, {});
+    EXPECT_EQ(result.power, 2);
+    EXPECT_EQ(result.toughness, 2);
+    EXPECT_EQ(result.keywords, QSet<QString>({"Flying"}));
+}
+
+TEST(RulesEngineTest, OthersYoursAnthemBoostsAnotherCreatureButNotItself)
+{
+    // Card 10 is the anthem source ("Other creatures you control get +1/+1."); card 20 is a
+    // different creature the same controller controls.
+    QList<QPair<int, QString>> battlefield = {{10, "o|1|1|"}, {20, ""}};
+
+    auto boosted = RulesEngine::applyStaticEffects(20, 2, 2, {}, battlefield);
+    EXPECT_EQ(boosted.power, 3);
+    EXPECT_EQ(boosted.toughness, 3);
+
+    auto sourceItself = RulesEngine::applyStaticEffects(10, 2, 2, {}, battlefield);
+    EXPECT_EQ(sourceItself.power, 2);
+    EXPECT_EQ(sourceItself.toughness, 2);
+}
+
+TEST(RulesEngineTest, AllYoursAnthemBoostsItsOwnSourceToo)
+{
+    QList<QPair<int, QString>> battlefield = {{10, "a|1|1|"}};
+    auto result = RulesEngine::applyStaticEffects(10, 2, 2, {}, battlefield);
+    EXPECT_EQ(result.power, 3);
+    EXPECT_EQ(result.toughness, 3);
+}
+
+TEST(RulesEngineTest, MultipleAnthemsStack)
+{
+    QList<QPair<int, QString>> battlefield = {{10, "o|1|1|"}, {11, "o|1|0|"}};
+    auto result = RulesEngine::applyStaticEffects(20, 2, 2, {}, battlefield);
+    EXPECT_EQ(result.power, 4);
+    EXPECT_EQ(result.toughness, 3);
+}
+
+TEST(RulesEngineTest, KeywordGrantExtendsTheEffectiveKeywordSet)
+{
+    QList<QPair<int, QString>> battlefield = {{10, "o|0|0|Trample"}};
+    auto result = RulesEngine::applyStaticEffects(20, 2, 2, {"Deathtouch"}, battlefield);
+    EXPECT_EQ(result.keywords, QSet<QString>({"Deathtouch", "Trample"}));
+}
+
+TEST(RulesEngineTest, OthersYoursKeywordGrantDoesNotApplyToItsOwnSource)
+{
+    QList<QPair<int, QString>> battlefield = {{10, "o|0|0|Trample"}};
+    auto result = RulesEngine::applyStaticEffects(10, 2, 2, {}, battlefield);
+    EXPECT_TRUE(result.keywords.isEmpty());
+}
+
 // ---- RulesEngine::calculateCombatDamage (Phase 8 combat automation Stage B, pure decision logic) ----
 
 using CombatAttack = RulesEngine::CombatAttack;

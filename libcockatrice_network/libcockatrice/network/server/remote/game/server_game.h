@@ -40,6 +40,7 @@ class GameReplay;
 class Server_Room;
 class Server_AbstractPlayer;
 class Server_AbstractParticipant;
+class Server_CardZone;
 class ServerInfo_User;
 class ServerInfo_Game;
 class Server_AbstractUserInterface;
@@ -111,6 +112,13 @@ private:
     // (attacker's player id, attacker's card id) and feeds CombatAttack::blocked -- rule 509.1h:
     // an attacker stays "blocked" even if every one of its blockers has since died.
     QList<Rules::RulesEngine::CombatAttack> gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAttackers);
+    // Static/continuous ability slice: every (cardId, staticAbilitiesString) pair on @p table,
+    // the shape RulesEngine::applyStaticEffects() consumes -- scoping this to one player's table
+    // zone is what makes "you control" mean the right thing (see applyStaticEffects()'s doc
+    // comment). Called once per relevant table zone at each of combat's three P/T-or-keyword
+    // read sites (both halves of gatherCombatAttacks(), and applyCombatDamageResult()'s
+    // lethal-damage check).
+    QList<QPair<int, QString>> staticAbilitySourcesFor(Server_CardZone *table);
     // Phase 8 combat automation, Stage B: applies one CombatDamageResult -- defending players' life
     // loss, damage marked via the same DAMAGE_CARD_COUNTER_ID counter applyPendingAbility() already
     // uses, and a state-based check moving anything now lethal to its owner's graveyard. Split out

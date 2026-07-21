@@ -21,6 +21,11 @@ message CardToMove {
     // (CardKeywords::parse(), comma-joined), read from the client's local card database. Sibling to
     // `pt` above -- see AttrKeywords in card_attributes.proto.
     optional string keywords = 5;
+
+    // Static/continuous ability slice: the card's own printed static abilities
+    // (StaticAbilities::parse(), serialized), read from the client's local card database. Sibling
+    // to `pt`/`keywords` above -- see AttrStaticAbilities in card_attributes.proto.
+    optional string static_abilities = 6;
 }
 
 // Container of multiple cards to move
