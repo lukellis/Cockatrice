@@ -1327,7 +1327,15 @@ Server_AbstractPlayer::cmdSetCardAttr(const Command_SetCardAttr &cmd, ResponseCo
         }
         const int targetPlayerId = attrValue.toInt();
         if (targetPlayerId != -1) {
-            if (!card->getAttacking() || targetPlayerId == playerId || !game->getPlayers().contains(targetPlayerId)) {
+            // Deliberately doesn't also require card->getAttacking() here: actDeclareAttacker()
+            // always batches this together with an AttrAttacking=1 command for the same card, but
+            // Server_ProtocolHandler::processGameCommandContainer() applies a batch's commands in
+            // *reverse* message order (a long-standing, unrelated quirk -- see
+            // server_protocolhandler.cpp), so this command can genuinely run before that one
+            // within the same batch. A target on a not-actually-attacking card is harmless dead
+            // data -- Stage B's resolveCombatDamage() already requires getAttacking() before it
+            // ever looks at the target.
+            if (targetPlayerId == playerId || !game->getPlayers().contains(targetPlayerId)) {
                 return Response::RespContextError;
             }
         }
