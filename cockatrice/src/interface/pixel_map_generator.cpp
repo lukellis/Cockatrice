@@ -91,11 +91,6 @@ QMap<QString, QPixmap> CounterPixmapGenerator::pmCache;
 
 QPixmap CounterPixmapGenerator::generatePixmap(int height, QString name, bool highlight)
 {
-    // The colorless counter is named "x" by the server but the file is named "general.svg"
-    if (name == "x") {
-        name = "general";
-    }
-
     if (highlight) {
         name.append("_highlight");
     }

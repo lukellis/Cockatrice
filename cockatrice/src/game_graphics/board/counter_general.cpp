@@ -4,8 +4,10 @@
 #include "abstract_graphics_item.h"
 #include "translate_counter_name.h"
 
+#include <QMap>
 #include <QPainter>
 #include <QSet>
+#include <QSvgRenderer>
 #include <libcockatrice/rules/commander_counter_names.h>
 
 namespace
@@ -19,6 +21,39 @@ bool hasOwnIcon(const QString &name)
 {
     static const QSet<QString> namesWithIcons = {"w", "u", "b", "r", "g", "storm", "poison"};
     return namesWithIcons.contains(name);
+}
+
+// Mana-color counter name -> a small pictograph glyph evoking that color (sun/drop/skull/tree/
+// flame -- cockatrice/resources/icons/counter_glyphs/), each with its own transparent background
+// and a natural, contrasting tone (not a uniform flat recolor) so it reads clearly against that
+// color's own counter sphere. Colorless ("x") deliberately has no entry: no glyph for it.
+const QMap<QString, QString> &manaGlyphFiles()
+{
+    static const QMap<QString, QString> files = {
+        {"w", "sun"}, {"u", "drop"}, {"b", "skull"}, {"r", "flame"}, {"g", "tree"},
+    };
+    return files;
+}
+
+// Sized to fit fully inside the counter circle -- no overflow/halo past the counter's own edge.
+QPixmap manaGlyphPixmap(const QString &glyphName, int size)
+{
+    static QMap<QString, QPixmap> cache;
+    const QString key = glyphName + QStringLiteral("_") + QString::number(size);
+    auto it = cache.constFind(key);
+    if (it != cache.constEnd()) {
+        return it.value();
+    }
+
+    QSvgRenderer renderer(QStringLiteral("theme:icons/counter_glyphs/%1.svg").arg(glyphName));
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+    if (renderer.isValid()) {
+        QPainter painter(&pixmap);
+        renderer.render(&painter, QRectF(0, 0, size, size));
+    }
+    cache.insert(key, pixmap);
+    return pixmap;
 }
 
 QString shortLabelFor(const QString &name)
@@ -73,6 +108,16 @@ void GeneralCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /
     painter->save();
     resetPainterTransform(painter);
     painter->drawPixmap(QPoint(0, 0), pixmap);
+
+    const auto glyphIt = manaGlyphFiles().constFind(name);
+    if (glyphIt != manaGlyphFiles().constEnd()) {
+        // Sized to fit well inside the circle (not the full diameter), fully contained -- no
+        // watermark/halo bleeding past the counter's own edge.
+        const int glyphSize = static_cast<int>(translatedHeight * 0.62);
+        const QPixmap glyph = manaGlyphPixmap(glyphIt.value(), glyphSize);
+        const qreal offset = (translatedHeight - glyphSize) / 2.0;
+        painter->drawPixmap(QPointF(offset, offset), glyph);
+    }
 
     if (value) {
         QFont f; // inherits the app-wide sans-serif default (see main.cpp)

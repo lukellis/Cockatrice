@@ -106,19 +106,27 @@ with nothing once the count badge below was removed, but bottom-right was the ex
 ask).
 
 **`ManaPentagonWidget`** (`cockatrice/src/game_graphics/board/mana_pentagon_widget.{h,cpp}`):
-the six mana counters (w/u/b/r/g/x) now live in a bordered circle, the five colors at
-pentagon vertices in standard color-pie order (clockwise from the top) and colorless
-smaller in the center, instead of stacking individually in
-`PlayerGraphicsItem::rearrangeCounters()`. Each color counter gets a faint background
-watermark of its real WUBRG pip glyph (`cockatrice/resources/icons/mana/{W,U,B,R,G}.svg`
-— the actual mana-symbol icons used elsewhere for cost display, distinct from
-`counters/*.svg`'s plain colored spheres), loaded directly via `QSvgRenderer` since
-it's a one-off `theme:icons/mana/<Letter>.svg` lookup rather than
-`CounterPixmapGenerator`'s `counters/`-scoped one; colorless deliberately gets no
-watermark. The counters themselves are still real `CounterState`-backed
+the six mana counters (w/u/b/r/g/x) now sit at pentagon vertices in standard color-pie
+order (clockwise from the top) with colorless smaller in the center, instead of
+stacking individually in `PlayerGraphicsItem::rearrangeCounters()`. **Two corrections
+after the first attempt**: an initial version drew each color's real WUBRG cost-pip SVG
+(`icons/mana/{W,U,B,R,G}.svg`) oversized as a faint background watermark behind the
+counter, and drew a bordered circle around the whole pentagon — both were live-verified
+via a screenshot and rejected (the oversized pip bled past the counter's own edge as a
+"halo," and the outer circle wasn't wanted at all). Fixed to: no border/background on
+the pentagon widget itself (purely a layout container now); each mana counter
+(`GeneralCounter::paint()`, `counter_general.cpp`) draws a small hand-drawn pictograph
+evoking its color — sun (W), water drop (U), skull (B), flame (R), tree (G) — from new
+transparent-background SVGs at `cockatrice/resources/icons/counter_glyphs/`, each in a
+natural contrasting tone (not a uniform gray recolor) against its own counter sphere,
+sized to ~62% of the counter's diameter so it's always fully contained. Colorless
+deliberately gets no glyph. The counters themselves are still real `CounterState`-backed
 `GeneralCounter`s (unchanged click/tooltip/menu behavior), just reparented onto the
 pentagon and shrunk (radius 20→12) to fit. `PlayerGraphicsItem::counterAreaWidth` grew
-55→90 to fit the ~88px-wide pentagon centered.
+55→90 to fit the ~88px-wide pentagon centered. Also swapped `w`'s sphere color from pale
+yellow to true white (`counters/w.svg`) and gave colorless its own dedicated light-gray
+sphere (new `counters/x.svg`, no longer redirected to the shared `general.svg` fallback
+that per-commander tax/damage badges also use) so the two are visually distinct.
 
 **Icon-based Storm + Poison, grouped in `CounterGroupBox`**
 (`cockatrice/src/game_graphics/board/counter_group_box.{h,cpp}`): both now render via
