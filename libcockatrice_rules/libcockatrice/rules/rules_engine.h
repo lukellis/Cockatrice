@@ -110,6 +110,58 @@ public:
      */
     static bool canDeclareBlocker(int phase, bool blockerTapped, bool blockerAttacking);
 
+    /**
+     * @brief Phase index for the Declare Attackers step (see isCombatPhase()'s phase-index doc).
+     */
+    static constexpr int DECLARE_ATTACKERS_PHASE = 5;
+
+    /**
+     * @brief Rule 508.1a, simplified: a creature may only be declared as an attacker during the
+     * Declare Attackers step, and only by its controller if they're the active player (only the
+     * active player attacks in a turn). Untapped/vigilance/summoning-sickness are not modeled
+     * here -- deliberately just the phase/turn part, kept unit-testable the same way
+     * canDeclareBlocker() is.
+     */
+    static bool canDeclareAttacker(int phase, bool controllerIsActivePlayer);
+
+    /**
+     * @brief Total number of turn-structure phases/steps (see cockatrice/src/game/phase.cpp's
+     * Phases::phases[] -- same "coupled to that array's ordering" caveat every other phase
+     * constant in this class already documents).
+     */
+    static constexpr int PHASE_COUNT = 11;
+
+    /**
+     * @brief Whether a player-requested jump from @p currentPhase to @p requestedPhase is a legal
+     * single step forward through turn structure (rule 500.1: phases and steps always happen in
+     * order, one at a time). Reaching phase 0 again is a *new turn* (a different active player,
+     * rule 500.3-500.4) rather than a phase advance, so it's deliberately never valid via this
+     * check -- see canEndTurn() for that transition instead.
+     */
+    static bool canAdvanceToPhase(int currentPhase, int requestedPhase);
+
+    /**
+     * @brief Rule 500.3/514: a turn may only be ended (moving to the next player's untap step)
+     * once the table has actually reached the End/Cleanup step -- see CLEANUP_PHASE.
+     */
+    static bool canEndTurn(int phase);
+
+    /** @brief Phase index for the First Main phase (see isCombatPhase()'s phase-index doc). */
+    static constexpr int FIRST_MAIN_PHASE = 3;
+
+    /** @brief Phase index for the Second Main phase (see isCombatPhase()'s phase-index doc). */
+    static constexpr int SECOND_MAIN_PHASE = 9;
+
+    /**
+     * @brief Rule 505.5a, simplified: a sorcery-speed card (anything but an instant -- flash
+     * isn't modeled) may only be played during one of the controller's own main phases, by the
+     * active player, while they hold priority. @p controllerHoldsPriority stands in for "the
+     * stack is empty and nothing is pending a response" the same simplified way holding priority
+     * already stands in for "no one has responded yet" elsewhere in this fork (Phase 5) -- not a
+     * literal stack-empty check, since this fork has no general spell stack to inspect.
+     */
+    static bool canCastSorcerySpeed(int phase, bool controllerIsActivePlayer, bool controllerHoldsPriority);
+
     /** @brief Phase index for the Combat Damage step (see isCombatPhase()'s phase-index doc). */
     static constexpr int COMBAT_DAMAGE_PHASE = 7;
 

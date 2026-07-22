@@ -1346,9 +1346,11 @@ Server_AbstractPlayer::cmdSetCardAttr(const Command_SetCardAttr &cmd, ResponseCo
 
     // Phase 8 combat automation: real enforcement (not just the physical-simulator-style
     // pass-through the rest of this generic attribute path still gives everything else -- see
-    // CLAUDE.md's Design principles for why that changed). Attacking itself (AttrAttacking) is
-    // deliberately left as unrestricted as it always was; only the *new* target-tracking
-    // attributes get validated here, since they're what makes combat damage automatable.
+    // CLAUDE.md's Design principles for why that changed). Attacking (AttrAttacking) is now also
+    // gated (turn-structure enforcement, doc/commander-status/phase4-turn-structure.md) --
+    // declaring an attacker requires the Declare Attackers step and the active player; clearing
+    // it (attrValue "0") stays unrestricted, matching the server's own auto-clear path which
+    // doesn't go through this command at all.
     if (attribute == AttrAttackTarget) {
         Server_CardZone *zone = getZones().value(zoneName);
         Server_Card *card = zone ? zone->getCard(cmd.card_id()) : nullptr;
@@ -1364,8 +1366,21 @@ Server_AbstractPlayer::cmdSetCardAttr(const Command_SetCardAttr &cmd, ResponseCo
             // server_protocolhandler.cpp), so this command can genuinely run before that one
             // within the same batch. A target on a not-actually-attacking card is harmless dead
             // data -- Stage B's resolveCombatDamage() already requires getAttacking() before it
-            // ever looks at the target.
-            if (targetPlayerId == playerId || !game->getPlayers().contains(targetPlayerId)) {
+            // ever looks at the target. It still needs the same phase/active-player legality as
+            // AttrAttacking itself, though, so a targeted declare can't half-succeed.
+            if (targetPlayerId == playerId || !game->getPlayers().contains(targetPlayerId) ||
+                !Rules::RulesEngine::canDeclareAttacker(game->getActivePhase(), game->getActivePlayer() == playerId)) {
+                return Response::RespContextError;
+            }
+        }
+    } else if (attribute == AttrAttacking) {
+        if (attrValue == QLatin1String("1")) {
+            Server_CardZone *zone = getZones().value(zoneName);
+            Server_Card *card = zone ? zone->getCard(cmd.card_id()) : nullptr;
+            if (!card) {
+                return Response::RespNameNotFound;
+            }
+            if (!Rules::RulesEngine::canDeclareAttacker(game->getActivePhase(), game->getActivePlayer() == playerId)) {
                 return Response::RespContextError;
             }
         }

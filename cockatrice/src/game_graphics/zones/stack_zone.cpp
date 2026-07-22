@@ -66,9 +66,14 @@ void StackZone::handleDropEvent(const QList<CardDragItem *> &dragItems,
     QList<const ::google::protobuf::Message *> manaPaymentCommands;
     if (dragItems.size() == 1) {
         auto *singleCard = qgraphicsitem_cast<CardItem *>(dragItems.first()->getItem());
-        if (singleCard && !playerActions->gateManaCostForHandPlay(singleCard, dragItems.first()->isForceFaceDown(),
-                                                                  manaPaymentCommands)) {
-            return; // unaffordable, or the player cancelled a color-choice dialog -- nothing sent
+        if (singleCard) {
+            bool isForceFaceDown = dragItems.first()->isForceFaceDown();
+            if (!playerActions->gateCardTimingForHandPlay(singleCard, isForceFaceDown)) {
+                return; // wrong timing (rule 505.5a) -- a message was already shown, nothing sent
+            }
+            if (!playerActions->gateManaCostForHandPlay(singleCard, isForceFaceDown, manaPaymentCommands)) {
+                return; // unaffordable, or the player cancelled a color-choice dialog -- nothing sent
+            }
         }
     }
 

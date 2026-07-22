@@ -108,6 +108,15 @@ public:
                                  bool faceDown,
                                  QList<const ::google::protobuf::Message *> &extraCommands);
 
+    // Turn-structure enforcement (doc/commander-status/phase4-turn-structure.md): gates a single
+    // card leaving the HAND zone behind rule 505.5a's sorcery-speed timing restriction (your own
+    // main phase, active player, holding priority). Returns true if the caller may proceed; false
+    // if the play must be aborted (a message was already shown) -- same "no-op unless actually
+    // leaving hand" scope and true/false contract as gateManaCostForHandPlay(), and deliberately
+    // independent of it (this is a timing check, not a cost check). A no-op for instants (flash
+    // isn't modeled) and for anything not actually leaving HAND face-up.
+    bool gateCardTimingForHandPlay(const CardItem *card, bool faceDown);
+
 signals:
     void requestViewTopCardsDialog(int defaultNumberTopCards, int deckSize);
     void requestViewBottomCardsDialog(int defaultNumberBottomCards, int deckSize);

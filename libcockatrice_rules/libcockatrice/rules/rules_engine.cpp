@@ -41,6 +41,27 @@ bool RulesEngine::canDeclareBlocker(int phase, bool blockerTapped, bool blockerA
     return phase == DECLARE_BLOCKERS_PHASE && !blockerTapped && !blockerAttacking;
 }
 
+bool RulesEngine::canDeclareAttacker(int phase, bool controllerIsActivePlayer)
+{
+    return phase == DECLARE_ATTACKERS_PHASE && controllerIsActivePlayer;
+}
+
+bool RulesEngine::canAdvanceToPhase(int currentPhase, int requestedPhase)
+{
+    return requestedPhase == currentPhase + 1 && requestedPhase < PHASE_COUNT;
+}
+
+bool RulesEngine::canEndTurn(int phase)
+{
+    return phase == CLEANUP_PHASE;
+}
+
+bool RulesEngine::canCastSorcerySpeed(int phase, bool controllerIsActivePlayer, bool controllerHoldsPriority)
+{
+    return (phase == FIRST_MAIN_PHASE || phase == SECOND_MAIN_PHASE) && controllerIsActivePlayer &&
+           controllerHoldsPriority;
+}
+
 bool RulesEngine::participatesInStrikeStep(bool hasFirstStrike, bool hasDoubleStrike, CombatDamageStep step)
 {
     if (step == CombatDamageStep::FirstStrike) {

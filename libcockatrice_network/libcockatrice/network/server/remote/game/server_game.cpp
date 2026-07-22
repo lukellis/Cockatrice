@@ -747,9 +747,11 @@ void Server_Game::setActivePhase(int newPhase)
     }
 
     // Phase 8 Stage 6: attacking status ends once combat ends (rule 506.4 simplified as "left the
-    // combat-phase range" rather than one specific transition, since this fork's phases can be
-    // freely jumped in any order — see Phase 4's standing no-enforced-phase-order design). Active-
-    // player-only, like untap/draw above, since only the active player's creatures can be attacking.
+    // combat-phase range" rather than one specific transition -- turn-structure enforcement now
+    // makes this happen via strictly sequential phase advances, but "left the range" is kept as
+    // the trigger anyway since it's still correct and doesn't depend on how the table got there;
+    // see doc/commander-status/phase4-turn-structure.md). Active-player-only, like untap/draw
+    // above, since only the active player's creatures can be attacking.
     if (!Rules::RulesEngine::isCombatPhase(newPhase)) {
         auto *activePlayerObj = dynamic_cast<Server_Player *>(getPlayers().value(activePlayer));
         if (activePlayerObj) {

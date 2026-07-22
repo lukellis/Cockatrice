@@ -263,6 +263,7 @@ def ensure_test_card_database():
 LOCAL_GAME_DECKS = {
     "mana_gate": REPO_ROOT / ".uitest" / "manatest.cod",
     "variable_mana_gate": REPO_ROOT / ".uitest" / "variablemanatest.cod",
+    "turn_structure_gate": REPO_ROOT / ".uitest" / "turnstructuretest.cod",
 }
 
 
@@ -313,7 +314,7 @@ def ensure_local_game_profile(enabled, deck_path=None):
     return changed
 
 
-def ensure_client():
+def ensure_client(local_game=False):
     if _running(str(CLIENT_BIN)):
         print("[setup] client already running")
         return
@@ -344,6 +345,22 @@ def ensure_client():
             break
         time.sleep(0.3)
     time.sleep(2.0)
+    # This Xvfb setup has no window manager, so nothing ever gives a freshly-mapped window
+    # input focus on its own -- confirmed live (2026-07-21, while adding scenario_turn_
+    # structure_gate) by finding that a keyboard-only action (Tab, "Next Phase") sent
+    # literally nothing over the wire as the very first input to a fresh client, then worked
+    # correctly right after a click landed inside the actual game-board QGraphicsView. Only
+    # local-game scenarios need this fixed up here: they can legitimately start with a
+    # keyboard shortcut (scenario_turn_structure_gate's phase-stepping does), and (400, 400)
+    # is empirically known to land inside the battlefield, not blank margin -- (400, 700),
+    # below the visible board, did NOT establish focus when tried. Deliberately NOT done for
+    # a Home-tab (non-local-game) launch: (400, 400) lands on an unknown Home-tab list item
+    # there (confirmed live to break scenario_connect, which already does its own first click
+    # on a known widget immediately -- it never needed this fix and (400, 400) isn't safe for
+    # it the way it is for the game board).
+    if local_game:
+        uitest.click(400, 400)
+        time.sleep(0.2)
     print("[setup] client launched")
 
 
@@ -368,7 +385,7 @@ def setup(local_game=False, deck_path=None):
         print(f"[setup] running client is in '{current_mode}' mode, need '{requested_mode}' -- restarting it")
         teardown(kill_xvfb=False)
 
-    ensure_client()
+    ensure_client(local_game=local_game)
     MODE_MARKER.write_text(requested_mode)
 
 
@@ -520,8 +537,21 @@ def scenario_mana_gate(ctx):
     check.
     """
     print("[mana_gate] drawing the starting 3-card hand")
-    for _ in range(3):
-        ctx.click(23, 190)  # Draw button
+    # Turn-structure enforcement (2026-07-21, doc/commander-status/phase4-turn-structure.md)
+    # means the old "click the Draw phase button 3 times" trick's first click -- which relied
+    # on jumping straight from Untap to Draw -- now gets rejected (RespContextError, no card
+    # drawn). Step there legally instead: two Tab presses (Untap(0)->Upkeep(1)->Draw(2), the
+    # pre-existing "Next Phase" shortcut) auto-draws card 1 on entering Draw (playerCount==1 in
+    # a local hotseat game, so rule 103.8a's two-player-only first-draw skip never applies);
+    # the Draw phase button is then already active, so clicking it fires its double-click
+    # convenience (Command_DrawCards) for cards 2 and 3, same as this scenario always relied on
+    # for its 2nd/3rd clicks -- just not for the phase-jumping 1st one anymore.
+    ctx.key("Tab")
+    ctx.sleep(0.5)
+    ctx.key("Tab")
+    ctx.sleep(0.5)
+    for _ in range(2):
+        ctx.click(23, 190)  # Draw phase button, already active
         ctx.sleep(0.5)
     # This tiny deck empties on the 3rd draw, which pops an advisory "attempted to draw from
     # an empty library" QMessageBox -- sometimes more than once (Phase 4's own turn-structure
@@ -530,6 +560,13 @@ def scenario_mana_gate(ctx):
     for _ in range(3):
         ctx.key("Return")  # QMessageBox::information's default (only) button -- not a fixed
         ctx.sleep(0.3)      # pixel coordinate, since the box auto-sizes to its message length
+    ctx.sleep(0.5)
+
+    # New sorcery-speed casting-timing gate (phase4-turn-structure.md): none of this scenario's
+    # three cards are instants, so every cast below would otherwise be blocked purely on timing
+    # before mana-cost gating (this scenario's actual subject) ever runs. One more legal Tab
+    # reaches First Main (phase 3) from Draw (phase 2).
+    ctx.key("Tab")
     ctx.sleep(0.5)
 
     samples = _hand_colors(3)
@@ -615,12 +652,23 @@ def scenario_variable_mana_gate(ctx):
     against the running client/server, same as every other coordinate in this file.
     """
     print("[variable_mana_gate] drawing the starting 3-card hand")
-    for _ in range(3):
-        ctx.click(23, 190)  # Draw button
+    # Same turn-structure-enforcement fix as scenario_mana_gate() -- see its comment for why
+    # the old "3 draw-button clicks" trick's 1st click no longer works on its own.
+    ctx.key("Tab")
+    ctx.sleep(0.5)
+    ctx.key("Tab")
+    ctx.sleep(0.5)
+    for _ in range(2):
+        ctx.click(23, 190)  # Draw phase button, already active
         ctx.sleep(0.5)
     for _ in range(3):
         ctx.key("Return")  # dismiss the empty-library QMessageBox, same as scenario_mana_gate
         ctx.sleep(0.3)
+    ctx.sleep(0.5)
+
+    # New sorcery-speed casting-timing gate -- same fix as scenario_mana_gate(), one more legal
+    # Tab from Draw (phase 2) to First Main (phase 3) before any of these casts are attempted.
+    ctx.key("Tab")
     ctx.sleep(0.5)
 
     # Resampled after every card leaves hand, not computed once up front: casting a card
@@ -692,16 +740,93 @@ def scenario_variable_mana_gate(ctx):
                           label="Fireball casts after announcing X=2 via the new spinbox")
 
 
+_LIGHTNING_BOLT_COLOR = (230, 0, 0)  # mono-red placeholder, same value as _FIREBALL_COLOR
+
+
+def scenario_turn_structure_gate(ctx):
+    """Live-verifies the sorcery-speed casting-timing gate
+    (doc/commander-status/phase4-turn-structure.md's "Turn-structure and timing enforcement"
+    section) end to end, the same one-player local hotseat trick as scenario_mana_gate().
+    .uitest/turnstructuretest.cod draws Plains (a land -- sorcery-speed by rule 305.1, so
+    timing-gated even though it's never mana-cost-gated) and Lightning Bolt (an instant,
+    deliberately exempt from the gate) -- both already in .uitest/sample_cards.xml.
+
+    A fresh local game starts on phase 0 (Untap). Building a 2-card hand deliberately does
+    *not* reuse scenario_mana_gate()'s old "click the Draw phase button 3 times" trick: that
+    trick's first click relied on jumping straight from whatever phase to Draw (phase 2),
+    which the new canAdvanceToPhase() enforcement this scenario is testing now correctly
+    rejects -- confirmed live the hard way (that click now gets RespContextError and no card
+    is drawn at all). Instead this steps forward legally via the pre-existing "Next Phase"
+    shortcut (plain Tab, Untap(0)->Upkeep(1)->Draw(2)) -- entering Draw auto-draws 1 card
+    (playerCount==1 in a local hotseat game, so rule 103.8a's two-player-only first-draw skip
+    never applies -- see phase4-turn-structure.md), then a single click on the now-*already-
+    active* Draw phase button fires its double-click convenience (Command_DrawCards) for the
+    2nd card, same mechanism scenario_mana_gate() relied on for its 2nd/3rd clicks, just not
+    for the phase-jumping 1st one. This conveniently lands the hand on phase 2 (Draw) --
+    still not a main phase, so the "wrong timing" case needs no further phase setup.
+    """
+    print("[turn_structure_gate] stepping Untap->Upkeep->Draw and drawing the starting 2-card hand")
+    for _ in range(2):
+        ctx.key("Tab")  # legal one-step-forward advance
+        ctx.sleep(0.5)
+    ctx.click(23, 190)  # Draw phase button, already active -- fires its double-click draw action
+    ctx.sleep(0.5)
+
+    samples = _hand_colors(2)
+    print(f"  sampled hand colors: {samples}")
+    plains_x = next((x for x, color in samples if color != _LIGHTNING_BOLT_COLOR), None)
+    bolt_x = next((x for x, color in samples if color == _LIGHTNING_BOLT_COLOR), None)
+    if plains_x is None or bolt_x is None:
+        print(f"  [FAIL] expected one red (Lightning Bolt) and one non-red (Plains) hand slot, sampled {samples}")
+        ctx.ok = False
+        return False
+
+    print("[turn_structure_gate] casting Plains during Draw (phase 2, not a main phase) -- expect a block")
+    ctx.click(plains_x, HAND_ROW_Y)
+    ctx.sleep(1.0)
+    line = _wait_for_log(CLIENT_LOG, _moved_to_table_pattern("Plains"), timeout=2)
+    if line is not None:
+        print(f"  [FAIL] Plains was cast outside a main phase -> {line.strip()}")
+        ctx.ok = False
+    else:
+        print("  [PASS] Plains was correctly blocked outside a main phase (nothing logged)")
+        ctx.key("Return")  # dismiss the new "Cannot Play" timing dialog
+        ctx.sleep(0.3)
+
+    print("[turn_structure_gate] +1 Red mana, then casting Lightning Bolt during Draw -- instants are exempt")
+    ctx.click(*_MANA_COUNTER_XY["r"])
+    ctx.sleep(0.3)
+    ctx.click(bolt_x, HAND_ROW_Y)
+    ctx.sleep(1.0)
+    if not ctx.assert_log(CLIENT_LOG, _moved_to_table_pattern("Lightning Bolt"), timeout=5,
+                          label="Lightning Bolt (an instant) is exempt from the sorcery-speed gate"):
+        return False
+
+    print("[turn_structure_gate] stepping to First Main (phase 3) via the pre-existing Next Phase shortcut (Tab)")
+    ctx.key("Tab")
+    ctx.sleep(0.5)
+    if not ctx.assert_log(CLIENT_LOG, r"Event_SetActivePhase\.ext.*phase: 3\b", timeout=5,
+                          label="a legal one-step Tab press reaches First Main (phase 3)"):
+        return False
+
+    print("[turn_structure_gate] casting Plains again, now in First Main -- expect it to succeed")
+    ctx.click(_HAND_SLOT_CENTERS[1][0], HAND_ROW_Y)  # only Plains remains in hand
+    ctx.sleep(1.0)
+    return ctx.assert_log(CLIENT_LOG, _moved_to_table_pattern("Plains"), timeout=5,
+                          label="Plains casts once in the controller's own main phase")
+
+
 SCENARIOS = {
     "connect": scenario_connect,
     "mana_gate": scenario_mana_gate,
     "variable_mana_gate": scenario_variable_mana_gate,
+    "turn_structure_gate": scenario_turn_structure_gate,
 }
 
 # Scenarios needing a fresh local hotseat game (see ensure_local_game_profile()) rather than
 # the Home tab a plain client launch lands on. Each needs its own fixture deck -- see
 # LOCAL_GAME_DECKS.
-LOCAL_GAME_SCENARIOS = {"mana_gate", "variable_mana_gate"}
+LOCAL_GAME_SCENARIOS = {"mana_gate", "variable_mana_gate", "turn_structure_gate"}
 
 
 def main():

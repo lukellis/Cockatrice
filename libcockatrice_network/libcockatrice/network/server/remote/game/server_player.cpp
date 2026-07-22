@@ -608,8 +608,17 @@ Server_Player::cmdNextTurn(const Command_NextTurn & /*cmd*/, ResponseContainer &
         return Response::RespGameNotStarted;
     }
 
-    if (conceded && !judge) {
-        return Response::RespContextError;
+    if (!judge) {
+        if (conceded) {
+            return Response::RespContextError;
+        }
+
+        // Turn-structure enforcement: only the active player can end their own turn, and only
+        // once the table has actually reached the End/Cleanup step (rule 500.3/514) -- see
+        // doc/commander-status/phase4-turn-structure.md.
+        if (game->getActivePlayer() != playerId || !Rules::RulesEngine::canEndTurn(game->getActivePhase())) {
+            return Response::RespContextError;
+        }
     }
 
     game->nextTurn();
@@ -630,6 +639,13 @@ Response::ResponseCode Server_Player::cmdSetActivePhase(const Command_SetActiveP
         }
 
         if (game->getActivePlayer() != playerId) {
+            return Response::RespContextError;
+        }
+
+        // Turn-structure enforcement: phases/steps happen in order, one at a time (rule 500.1) --
+        // see doc/commander-status/phase4-turn-structure.md. Reaching phase 0 again is a new turn
+        // (Command_NextTurn), not a phase advance, so it's never accepted here.
+        if (!Rules::RulesEngine::canAdvanceToPhase(game->getActivePhase(), static_cast<int>(cmd.phase()))) {
             return Response::RespContextError;
         }
     }

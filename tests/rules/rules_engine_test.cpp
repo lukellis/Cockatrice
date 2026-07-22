@@ -100,6 +100,87 @@ TEST(RulesEngineTest, AttackingCreatureCannotAlsoBeDeclaredAsBlocker)
     EXPECT_FALSE(RulesEngine::canDeclareBlocker(RulesEngine::DECLARE_BLOCKERS_PHASE, false, true));
 }
 
+// ---- RulesEngine::canDeclareAttacker (turn-structure enforcement, pure decision logic) ----
+
+TEST(RulesEngineTest, AttackerCanBeDeclaredInDeclareAttackersPhaseByActivePlayer)
+{
+    EXPECT_TRUE(RulesEngine::canDeclareAttacker(RulesEngine::DECLARE_ATTACKERS_PHASE, true));
+}
+
+TEST(RulesEngineTest, AttackerCannotBeDeclaredOutsideDeclareAttackersPhase)
+{
+    for (int phase : {0, 1, 2, 3, 4, 6, 7, 8, 9, 10}) {
+        EXPECT_FALSE(RulesEngine::canDeclareAttacker(phase, true)) << phase;
+    }
+}
+
+TEST(RulesEngineTest, NonActivePlayerCannotDeclareAnAttacker)
+{
+    EXPECT_FALSE(RulesEngine::canDeclareAttacker(RulesEngine::DECLARE_ATTACKERS_PHASE, false));
+}
+
+// ---- RulesEngine::canAdvanceToPhase / canEndTurn (turn-structure enforcement) ----
+
+TEST(RulesEngineTest, CanAdvanceToPhaseAcceptsExactlyOneStepForward)
+{
+    for (int phase = 0; phase < RulesEngine::PHASE_COUNT - 1; ++phase) {
+        EXPECT_TRUE(RulesEngine::canAdvanceToPhase(phase, phase + 1)) << phase;
+    }
+}
+
+TEST(RulesEngineTest, CanAdvanceToPhaseRejectsSkippingAhead)
+{
+    EXPECT_FALSE(RulesEngine::canAdvanceToPhase(3, 5));
+}
+
+TEST(RulesEngineTest, CanAdvanceToPhaseRejectsGoingBackward)
+{
+    EXPECT_FALSE(RulesEngine::canAdvanceToPhase(5, 3));
+}
+
+TEST(RulesEngineTest, CanAdvanceToPhaseRejectsStayingPut)
+{
+    EXPECT_FALSE(RulesEngine::canAdvanceToPhase(5, 5));
+}
+
+TEST(RulesEngineTest, CanAdvanceToPhaseRejectsWrappingToPhaseZero)
+{
+    EXPECT_FALSE(RulesEngine::canAdvanceToPhase(RulesEngine::CLEANUP_PHASE, 0));
+}
+
+TEST(RulesEngineTest, CanEndTurnOnlyFromCleanupPhase)
+{
+    EXPECT_TRUE(RulesEngine::canEndTurn(RulesEngine::CLEANUP_PHASE));
+    for (int phase = 0; phase < RulesEngine::CLEANUP_PHASE; ++phase) {
+        EXPECT_FALSE(RulesEngine::canEndTurn(phase)) << phase;
+    }
+}
+
+// ---- RulesEngine::canCastSorcerySpeed (turn-structure enforcement) ----
+
+TEST(RulesEngineTest, SorcerySpeedCastLegalInEitherMainPhaseForActivePlayerHoldingPriority)
+{
+    EXPECT_TRUE(RulesEngine::canCastSorcerySpeed(RulesEngine::FIRST_MAIN_PHASE, true, true));
+    EXPECT_TRUE(RulesEngine::canCastSorcerySpeed(RulesEngine::SECOND_MAIN_PHASE, true, true));
+}
+
+TEST(RulesEngineTest, SorcerySpeedCastIllegalOutsideMainPhases)
+{
+    for (int phase : {0, 1, 2, 4, 5, 6, 7, 8, 10}) {
+        EXPECT_FALSE(RulesEngine::canCastSorcerySpeed(phase, true, true)) << phase;
+    }
+}
+
+TEST(RulesEngineTest, SorcerySpeedCastIllegalForNonActivePlayer)
+{
+    EXPECT_FALSE(RulesEngine::canCastSorcerySpeed(RulesEngine::FIRST_MAIN_PHASE, false, true));
+}
+
+TEST(RulesEngineTest, SorcerySpeedCastIllegalWithoutHoldingPriority)
+{
+    EXPECT_FALSE(RulesEngine::canCastSorcerySpeed(RulesEngine::FIRST_MAIN_PHASE, true, false));
+}
+
 // ---- RulesEngine::parseNumericPT (Phase 8 combat automation Stage B, pure decision logic) ----
 
 TEST(RulesEngineTest, ParseNumericPTParsesPlainIntegers)

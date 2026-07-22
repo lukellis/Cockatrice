@@ -67,6 +67,10 @@ void PlayerActions::playCard(CardItem *card, bool faceDown)
         return;
     }
 
+    if (!gateCardTimingForHandPlay(card, faceDown)) {
+        return; // wrong timing (rule 505.5a) -- a message was already shown, nothing sent
+    }
+
     QList<const ::google::protobuf::Message *> manaPaymentCommands;
     if (!gateManaCostForHandPlay(card, faceDown, manaPaymentCommands)) {
         return; // unaffordable, or the player cancelled a color-choice dialog -- nothing sent
@@ -1799,6 +1803,42 @@ static void appendManaPaymentCommands(QList<const ::google::protobuf::Message *>
             }
         }
     }
+}
+
+// Turn-structure enforcement (doc/commander-status/phase4-turn-structure.md): the same "a card
+// left hand" call sites gateManaCostForHandPlay() funnels through also enforce rule 505.5a's
+// sorcery-speed timing here, ahead of any mana-payment prompt -- no point asking how to pay for a
+// play that isn't legal right now. See gateCardTimingForHandPlay()'s own doc comment in
+// player_actions.h for the return-value contract.
+bool PlayerActions::gateCardTimingForHandPlay(const CardItem *card, bool faceDown)
+{
+    if (!card || faceDown || !card->getZone() || card->getZone()->getName() != ZoneNames::HAND) {
+        return true; // scoped strictly to casting from hand, same as gateManaCostForHandPlay()
+    }
+
+    ExactCard exactCard = card->getCard();
+    if (!exactCard) {
+        return true;
+    }
+
+    const CardInfo &info = exactCard.getInfo();
+    if (info.getMainCardType() == QLatin1String("Instant")) {
+        return true; // instants aren't sorcery-speed -- flash isn't modeled, same conservative
+                     // "don't guess" fallback as this fork's other type-based checks
+    }
+
+    GameState *gameState = player->getGame()->getGameState();
+    const bool legal = Rules::RulesEngine::canCastSorcerySpeed(
+        gameState->getCurrentPhase(), gameState->getActivePlayer() == player->getPlayerInfo()->getId(),
+        player->getHoldsPriority());
+    if (!legal) {
+        QMessageBox::information(
+            nullptr, tr("Cannot Play"),
+            tr("%1 can only be played during your own main phase, while you hold priority.").arg(info.getName()));
+        return false;
+    }
+
+    return true;
 }
 
 // Real spell casting from hand (doc/commander-status/phase6-mana.md): the shared gate every "a

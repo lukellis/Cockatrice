@@ -59,8 +59,11 @@ further:
   `Rules::RulesEngine::canDeclareBlocker()` (phase == Declare Blockers, blocker
   untapped, blocker not itself attacking) is enforced in
   `Server_AbstractPlayer::cmdSetCardAttr()`, along with ownership/target-exists checks
-  for both new attributes. Stage 6's original `AttrAttacking` toggle is deliberately
-  left unrestricted (unchanged shipped behavior).
+  for both new attributes. Stage 6's original `AttrAttacking` toggle was originally left
+  deliberately unrestricted (unchanged shipped behavior) — **as of 2026-07-21 it no
+  longer is** (see below): this fork's turn-structure enforcement pass
+  (`doc/commander-status/phase4-turn-structure.md`) closed that gap alongside
+  phase-order and casting-timing enforcement.
 - **Zero new protocol commands or events.** Both new attributes reuse the existing
   generic `Command_SetCardAttr`/`Event_SetCardAttr`/`ServerInfo_Card` mechanism already
   used for `attacking`/`tapped`/`pt` — just two new `CardAttribute` enum values and
@@ -219,6 +222,30 @@ change." It doesn't get one.
   blocked if either `blocked` is true or `blockers` is non-empty, so every pre-Stage-D
   caller that never sets `blocked` (defaults false) is unaffected.
 
+## Attack-timing enforcement (2026-07-21)
+
+Part of the same turn-structure enforcement pass documented in
+`phase4-turn-structure.md`, closing this doc's own Stage A note above.
+`Rules::RulesEngine::canDeclareAttacker(phase, controllerIsActivePlayer)` — rule
+508.1a simplified: `phase == DECLARE_ATTACKERS_PHASE && controllerIsActivePlayer` —
+mirrors `canDeclareBlocker()`'s shape and is enforced in the same
+`Server_AbstractPlayer::cmdSetCardAttr()`:
+
+- **`AttrAttacking`**: declaring an attacker (`attrValue == "1"`) now requires
+  `canDeclareAttacker()`; clearing it (`"0"`) stays ungated, matching the server's own
+  auto-clear path (which doesn't go through this command at all) and today's shipped
+  behavior for un-declaring.
+- **`AttrAttackTarget`**: actually setting a target (not clearing to `-1`) now also
+  requires `canDeclareAttacker()`, alongside the pre-existing ownership check — so a
+  targeted declare (the "Declare as attacker, targeting..." submenu, which batches both
+  attributes together) can't half-succeed if the phase/active-player check fails.
+
+Untapped-state and vigilance/summoning-sickness legality are deliberately **not**
+checked here (unlike `canDeclareBlocker()`'s tapped check) — this fork doesn't enforce
+summoning sickness anywhere, and adding an untapped-only check without it would be a
+partial, inconsistent rule; scoped strictly to the phase/active-player timing the user
+asked for.
+
 ## Explicitly out of scope
 
 Named deliberately, matching this fork's practice of documenting exclusions rather than
@@ -240,7 +267,8 @@ Any further combat depth beyond the above is a new, separate, explicit design de
 
 ## Testing
 
-- `tests/rules/rules_engine_test.cpp`: `canDeclareBlocker`, `parseNumericPT`, and
+- `tests/rules/rules_engine_test.cpp`: `canDeclareAttacker` (Declare-Attackers-only,
+  active-player-only) alongside `canDeclareBlocker`, `parseNumericPT`, and
   `calculateCombatDamage` (unblocked/blocked/multi-blocker/no-target/non-numeric-P/T
   cases) — pure logic, no server dependency. Stage C added cases for deathtouch's
   minimal-lethal-assignment, trample's leftover-to-player, the two combined, and

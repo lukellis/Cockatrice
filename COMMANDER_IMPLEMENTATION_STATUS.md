@@ -41,7 +41,7 @@ to silently fill in.
 | 1. Foundation, build setup & `RulesEngine` architecture | Done | [phase1-foundation.md](doc/commander-status/phase1-foundation.md) |
 | 2. Commander deck validation | Done | [phase2-deck-validation.md](doc/commander-status/phase2-deck-validation.md) |
 | 3. Command zone & commander tracking | Done | [phase3-command-zone.md](doc/commander-status/phase3-command-zone.md) |
-| 4. Turn structure automation | Partial, by design | [phase4-turn-structure.md](doc/commander-status/phase4-turn-structure.md) |
+| 4. Turn structure automation | Automation done; phase-order, next-turn, and casting/attack-timing enforced | [phase4-turn-structure.md](doc/commander-status/phase4-turn-structure.md) |
 | 5. Priority passing (simplified stand-in for a full stack) | Partial, by design | [phase5-priority-stack.md](doc/commander-status/phase5-priority-stack.md) |
 | 6. Mana system (pool auto-empty + real cost payment for casting from hand) | Narrow slice done | [phase6-mana.md](doc/commander-status/phase6-mana.md) |
 | 7. Card ability system (display parsing + a real execution engine) | Done at scope (Increments 1–2, Stages 1–6) | [phase7-card-abilities.md](doc/commander-status/phase7-card-abilities.md) |
@@ -74,6 +74,36 @@ section) — Phase 8 Stages A/B/C/D are the first Commander mechanic built as ge
 automated enforcement (real attack targeting, blocker declaration, automated combat
 damage, automated creature death, deathtouch/trample/indestructible, first
 strike/double strike) rather than an advisory counter/warning.
+
+**As of 2026-07-21, by explicit user request, turn structure itself is now enforced**
+(`phase4-turn-structure.md`'s new "Turn-structure and timing enforcement" section,
+`phase8-combat.md`'s new "Attack-timing enforcement" section): phases must be stepped
+through in order (`Command_SetActivePhase` rejects anything but exactly one step
+forward), `Command_NextTurn` now requires the active player and the Cleanup step
+(previously had no active-player check at all), attackers can only be declared during
+Declare Attackers, and sorcery-speed cards (everything but instants, including lands)
+can only be played during the controller's own main phase while they hold priority.
+GTest-covered (`tests/rules/rules_engine_test.cpp`'s new `canAdvanceToPhase`/
+`canEndTurn`/`canDeclareAttacker`/`canCastSorcerySpeed` cases) and live-verified via a
+new `.uitest/scenario.py run turn_structure_gate` scenario (`.uitest/turnstructuretest.cod`:
+Plains, Lightning Bolt) confirming, via the client's own debug log: a land blocked outside
+a main phase, an instant exempt from that same block in the same phase, a legal
+one-step "Next Phase" (Tab) advance actually landing on First Main, and the
+previously-blocked land succeeding once there. **Found and fixed two real bugs this way,
+not just confirmed the happy path**: (1) this fork's own `mana_gate`/`variable_mana_gate`
+scenarios built their test hand via a "click the Draw phase button 3 times" trick whose
+first click relied on jumping straight from Untap to Draw — exactly what the new
+`canAdvanceToPhase()` enforcement now correctly rejects, so both scenarios silently drew
+zero cards until fixed to step forward legally via Tab instead (and gained an extra Tab
+into First Main before casting anything, since the new timing gate would otherwise block
+their sorcery-speed test cards too); (2) `.uitest/scenario.py`'s `ensure_client()` never
+established window input focus for a freshly-launched client (no window manager in this
+Xvfb setup), so a scenario that starts with a keyboard shortcut — as `turn_structure_gate`'s
+phase-stepping does — sent nothing at all until some click landed on the window first; every
+prior scenario had dodged this by coincidence (always clicking before ever pressing a key).
+Fixed by clicking a known-safe point inside the game board right after launch, scoped to
+local-game mode only (the same fix at the wrong screen position, or applied to the Home-tab
+"connect" scenario too, was confirmed live to actively break things instead).
 
 **The Phase 7/8 staged execution-engine roadmap and the `libcockatrice_rules`
 reorganization are both fully worked through at this fork's current scope.** Any of the
