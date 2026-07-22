@@ -165,11 +165,11 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         const double h = fm.height() * 1.25;
         const QRectF badgeRect((translatedSize.width() - w) / 2.0, (translatedSize.height() - h) / 2.0, w, h);
 
-        // Dark, heavily-rounded box with no border -- distinct from the generic counters' circles
-        // and legible over any card color/art without competing for attention with a bright color
-        // or an outline.
+        // Solid (not translucent) dark gray, heavily-rounded box with no border -- distinct from
+        // the generic counters' circles and legible over any card color/art without competing for
+        // attention with a bright color or an outline.
         painter->setPen(Qt::NoPen);
-        painter->setBrush(QBrush(QColor(20, 20, 20, 210)));
+        painter->setBrush(QBrush(QColor(45, 45, 45, 255)));
         const double cornerRadius = qMin(w, h) * 0.5;
         painter->drawRoundedRect(badgeRect, cornerRadius, cornerRadius);
 
