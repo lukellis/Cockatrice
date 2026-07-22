@@ -60,11 +60,6 @@
         <file>resources/icons/mana/R.svg</file>
         <file>resources/icons/mana/U.svg</file>
         <file>resources/icons/mana/W.svg</file>
-        <file>resources/icons/counter_glyphs/sun.svg</file>
-        <file>resources/icons/counter_glyphs/drop.svg</file>
-        <file>resources/icons/counter_glyphs/skull.svg</file>
-        <file>resources/icons/counter_glyphs/tree.svg</file>
-        <file>resources/icons/counter_glyphs/flame.svg</file>
 
         <file>resources/backgrounds/home.png</file>
         <file>resources/backgrounds/card_triplet.svg</file>

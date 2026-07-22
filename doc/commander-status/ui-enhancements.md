@@ -147,6 +147,18 @@ frame) and a white-fill-with-black-outline numeral (an 8-direction 1px-offset "s
 pass in black, then the fill in white) — readable against any sphere/glyph combination
 underneath, not just some of them.
 
+**Glyphs retired; numeral shrink-to-fit added**: with the outlined numeral now bold and
+centered on the same spot as the glyph, the two mostly just overlapped -- the glyphs
+were dropped entirely (`counter_glyphs/` assets, `cockatrice.qrc` entries, and the
+draw call all removed) per explicit follow-up feedback, back to a plain colored sphere
+plus numeral. Separately, live-testing what a large mana value actually looks like
+(repeatedly clicking a mana counter up to 20, then 100) surfaced a real bug the fixed
+font size had always had: at 100 the three digits visibly overflowed both edges of the
+circle. Fixed with a shrink-to-fit loop (`QFontMetrics::horizontalAdvance`, stepping the
+pixel size down while the text is wider than ~82% of the circle's diameter) plus a
+smaller base size than before (`0.62x` the old multiplier) so even the common
+single-digit case reads a bit less crowded.
+
 **Icon-based Storm + Poison, grouped in `CounterGroupBox`**
 (`cockatrice/src/game_graphics/board/counter_group_box.{h,cpp}`): both now render via
 `GeneralCounter` (the old text-only `TextCounter` widget is retired/deleted) pointed at

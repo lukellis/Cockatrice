@@ -4,10 +4,9 @@
 #include "abstract_graphics_item.h"
 #include "translate_counter_name.h"
 
-#include <QMap>
+#include <QFontMetrics>
 #include <QPainter>
 #include <QSet>
-#include <QSvgRenderer>
 #include <libcockatrice/rules/commander_counter_names.h>
 
 namespace
@@ -21,39 +20,6 @@ bool hasOwnIcon(const QString &name)
 {
     static const QSet<QString> namesWithIcons = {"w", "u", "b", "r", "g", "storm", "poison"};
     return namesWithIcons.contains(name);
-}
-
-// Mana-color counter name -> a small pictograph glyph evoking that color (sun/drop/skull/tree/
-// flame -- cockatrice/resources/icons/counter_glyphs/), each with its own transparent background
-// and a natural, contrasting tone (not a uniform flat recolor) so it reads clearly against that
-// color's own counter sphere. Colorless ("x") deliberately has no entry: no glyph for it.
-const QMap<QString, QString> &manaGlyphFiles()
-{
-    static const QMap<QString, QString> files = {
-        {"w", "sun"}, {"u", "drop"}, {"b", "skull"}, {"r", "flame"}, {"g", "tree"},
-    };
-    return files;
-}
-
-// Sized to fit fully inside the counter circle -- no overflow/halo past the counter's own edge.
-QPixmap manaGlyphPixmap(const QString &glyphName, int size)
-{
-    static QMap<QString, QPixmap> cache;
-    const QString key = glyphName + QStringLiteral("_") + QString::number(size);
-    auto it = cache.constFind(key);
-    if (it != cache.constEnd()) {
-        return it.value();
-    }
-
-    QSvgRenderer renderer(QStringLiteral("theme:icons/counter_glyphs/%1.svg").arg(glyphName));
-    QPixmap pixmap(size, size);
-    pixmap.fill(Qt::transparent);
-    if (renderer.isValid()) {
-        QPainter painter(&pixmap);
-        renderer.render(&painter, QRectF(0, 0, size, size));
-    }
-    cache.insert(key, pixmap);
-    return pixmap;
 }
 
 QString shortLabelFor(const QString &name)
@@ -109,36 +75,29 @@ void GeneralCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /
     resetPainterTransform(painter);
     painter->drawPixmap(QPoint(0, 0), pixmap);
 
-    const auto glyphIt = manaGlyphFiles().constFind(name);
-    if (glyphIt != manaGlyphFiles().constEnd()) {
-        // Sized to fit well inside the circle (not the full diameter), fully contained -- no
-        // watermark/halo bleeding past the counter's own edge.
-        const int glyphSize = static_cast<int>(translatedHeight * 0.62);
-        const QPixmap glyph = manaGlyphPixmap(glyphIt.value(), glyphSize);
-        const qreal xOffset = (translatedHeight - glyphSize) / 2.0;
-        // Nudged up slightly from dead-center: these glyphs (pointed-top, rounded-bottom
-        // silhouettes) have more visual weight in their lower half, so a geometrically centered
-        // placement reads as sitting a bit low.
-        const qreal yOffset = xOffset - glyphSize * 0.08;
-        painter->drawPixmap(QPointF(xOffset, yOffset), glyph);
-    }
-
     if (value) {
-        QFont f; // inherits the app-wide sans-serif default (see main.cpp)
-        f.setPixelSize(qMax((int)(radius * scaleFactor), 10));
-        f.setWeight(QFont::Bold);
-        painter->setFont(f);
-
-        // Local (0,0)-based rect matching the pixmap/glyph coordinate frame above -- using
-        // mapRect directly here (its position component, not just its size) drew the numeral
-        // offset from the glyph/sphere it's supposed to sit on top of.
+        // Local (0,0)-based rect matching the pixmap drawn above -- using mapRect directly here
+        // (its position component, not just its size) drew the numeral offset from the sphere
+        // it's supposed to sit on top of.
         const QRectF textRect(0, 0, translatedHeight, translatedHeight);
         const QString text = QString::number(value);
 
+        // Shrink-to-fit: a fixed size regardless of digit count let 3-digit values overflow the
+        // circle (confirmed live: 100 spilled past both edges). Starts smaller than before, too
+        // (0.62x radius instead of 1x), then steps down further only if the text is still wider
+        // than the circle leaves room for.
+        QFont f; // inherits the app-wide sans-serif default (see main.cpp)
+        f.setWeight(QFont::Bold);
+        int pixelSize = qMax((int)(radius * scaleFactor * 0.62), 8);
+        const qreal maxTextWidth = translatedHeight * 0.82;
+        f.setPixelSize(pixelSize);
+        while (QFontMetrics(f).horizontalAdvance(text) > maxTextWidth && pixelSize > 6) {
+            f.setPixelSize(--pixelSize);
+        }
+        painter->setFont(f);
+
         // White fill with a dark outline (drawn as an 8-direction 1px-offset shadow) so the
-        // numeral stays readable regardless of what's underneath -- a pale sphere (w/u/g/x) or
-        // the dark-gray glyph silhouette itself, both of which a flat black or white fill alone
-        // would lose contrast against on at least one of them.
+        // numeral stays readable regardless of what's underneath.
         painter->setPen(Qt::black);
         for (qreal dx = -1; dx <= 1; ++dx) {
             for (qreal dy = -1; dy <= 1; ++dy) {
