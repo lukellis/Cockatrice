@@ -108,23 +108,56 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     painter->save();
     AbstractCardItem::paint(painter, option, widget);
 
+    // The dedicated +1/+1 counter gets its own translucent-square "+N/+N" badge (below) instead of
+    // one of the generic lettered counters' small colored circles -- it's excluded from this loop
+    // (and from its position/count stacking) entirely so it doesn't fight the generic counters for
+    // a grid slot.
+    const int plusOneOneValue = state->getCounters().value(PLUS_ONE_ONE_COUNTER_ID, 0);
+    const int genericCounterCount = state->getCounters().size() - (plusOneOneValue > 0 ? 1 : 0);
     int i = 0;
     QMapIterator<int, int> counterIterator(state->getCounters());
     while (counterIterator.hasNext()) {
         counterIterator.next();
-        // The dedicated +1/+1 counter always renders in the same fixed green as its menu icon and
-        // the augmented-P/T text color below, rather than the settings-configurable per-id color
-        // the generic lettered counters use -- it isn't one of those user-recolorable slots.
-        QColor _color = counterIterator.key() == PLUS_ONE_ONE_COUNTER_ID
-                            ? QColor(80, 220, 100)
-                            : cardCounterSettings.color(counterIterator.key());
-
-        paintNumberEllipse(counterIterator.value(), 14, _color, i, state->getCounters().size(), painter);
+        if (counterIterator.key() == PLUS_ONE_ONE_COUNTER_ID) {
+            continue;
+        }
+        QColor _color = cardCounterSettings.color(counterIterator.key());
+        paintNumberEllipse(counterIterator.value(), 14, _color, i, genericCounterCount, painter);
         ++i;
     }
 
     QSizeF translatedSize = getTranslatedSize(painter);
     qreal scaleFactor = translatedSize.width() / boundingRect().width();
+
+    if (plusOneOneValue > 0) {
+        painter->save();
+        // Drawn in transformPainter()'s reset, device-pixel coordinate space (like the P/T text
+        // below), not the raw untransformed space the generic counter circles above use -- that
+        // space's font size shrinks along with the board's own zoom, which made this badge's text
+        // unreadably tiny at a normal zoomed-out table view. This keeps it legible at a fixed
+        // apparent size regardless of zoom, the same convention the P/T/annotation text relies on.
+        transformPainter(painter, translatedSize, tapAngle);
+
+        const QString badgeText = QStringLiteral("+%1/+%1").arg(plusOneOneValue);
+        QFont font = painter->font();
+        font.setBold(true);
+        QFontMetrics fm(font);
+        const double w = fm.horizontalAdvance(badgeText) * 1.3;
+        const double h = fm.height() * 1.4;
+        const QRectF badgeRect(4 * scaleFactor, 4 * scaleFactor, w, h);
+
+        // Translucent green square, deliberately distinct in shape and text from the generic
+        // counters' small opaque circles above -- this is the "obvious" +1/+1 indicator, not just
+        // one more badge in the same style.
+        painter->setPen(QPen(QColor(80, 220, 100, 230), 1.5));
+        painter->setBrush(QBrush(QColor(80, 220, 100, 110)));
+        painter->drawRect(badgeRect);
+
+        painter->setPen(Qt::white);
+        painter->setFont(font);
+        painter->drawText(badgeRect, Qt::AlignCenter, badgeText);
+        painter->restore();
+    }
 
     if (!state->getPT().isEmpty()) {
         painter->save();

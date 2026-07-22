@@ -8,6 +8,7 @@
 #include "../board/card_item.h"
 #include "../board/translate_counter_name.h"
 
+#include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/protocol/pb/context_move_card.pb.h>
 #include <libcockatrice/protocol/pb/context_mulligan.pb.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -670,17 +671,25 @@ void MessageLogWidget::logSetCardCounter(PlayerLogic *player, QString cardName, 
     QString finalStr;
     int delta = abs(oldValue - value);
     if (value > oldValue) {
-        finalStr = tr("%1 places %2 %3%4 counter(s) on %5 (now %6).", "", delta);
+        finalStr = tr("%1 places %2 %3 counter(s) on %4 (now %5).", "", delta);
     } else {
-        finalStr = tr("%1 removes %2 %3%4 counter(s) from %5 (now %6).", "", delta);
+        finalStr = tr("%1 removes %2 %3 counter(s) from %4 (now %5).", "", delta);
     }
 
-    auto &cardCounterSettings = SettingsCache::instance().cardCounters();
-    QString hex = cardCounterSettings.color(counterId).name();
+    // The dedicated +1/+1 counter (see PLUS_ONE_ONE_COUNTER_ID's doc comment) isn't one of the
+    // generic lettered counters, so it gets its own "+1/+1" label instead of a settings-driven
+    // color dot + letter (which would otherwise read as a meaningless "G counter").
+    QString counterLabel;
+    if (counterId == PLUS_ONE_ONE_COUNTER_ID) {
+        counterLabel = QStringLiteral("<font color=\"#50dc64\">+1/+1</font>");
+    } else {
+        auto &cardCounterSettings = SettingsCache::instance().cardCounters();
+        QString hex = cardCounterSettings.color(counterId).name();
+        counterLabel = "<font color=\"" + hex + "\">●</font>" + cardCounterSettings.displayName(counterId);
+    }
     appendHtmlServerMessage(finalStr.arg(sanitizeHtml(player->getPlayerInfo()->getName()))
                                 .arg("<font class=\"blue\">" + QString::number(delta) + "</font>")
-                                .arg("<font color=\"" + hex + "\">●</font>")
-                                .arg(cardCounterSettings.displayName(counterId))
+                                .arg(counterLabel)
                                 .arg(cardLink(std::move(cardName)))
                                 .arg(value));
 }
