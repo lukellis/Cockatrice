@@ -8,6 +8,7 @@
 
 #include <QGraphicsItem>
 #include <QList>
+#include <QObject>
 
 class AbstractCounter;
 
@@ -18,10 +19,14 @@ class AbstractCounter;
  * layout/visual container -- each child counter keeps its own click/menu/tooltip behavior
  * unchanged, this only reparents and repositions it.
  */
-class CounterGroupBox : public QGraphicsItem
+class CounterGroupBox : public QObject, public QGraphicsItem
 {
+    Q_OBJECT
+    Q_INTERFACES(QGraphicsItem)
+
 public:
     explicit CounterGroupBox(QGraphicsItem *parent = nullptr);
+    ~CounterGroupBox() override;
 
     // Reparents @p widget onto this box and appends it to the row, growing the frame to fit.
     void addCounterWidget(AbstractCounter *widget);

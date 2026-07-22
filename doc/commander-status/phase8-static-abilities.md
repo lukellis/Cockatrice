@@ -96,17 +96,15 @@ consumers) is a new, separate, explicit design decision — not a gap left over 
   Phase 7/8 suite unmodified. `./format.sh --cmake --branch master` clean (one unrelated
   cross-version reformat of `pending_ability_widget.{cpp,h}` — a file this change never touched —
   reverted per this fork's documented `format.sh` caveat in `CLAUDE.md`).
-- **Live verification was attempted and did not complete** — not a finding about this slice's own
-  logic, but a reconfirmation of the same class of infrastructure gap Stage C/D already hit and
-  documented as out of scope to chase. This session's build host is a Docker container
-  (`cockatrice-build`) that `CLAUDE.md` itself flags as "not yet re-verified" for the Xvfb/UI
-  recipe. Running the checked-in `.uitest/scenario.py run connect` baseline in this container for
-  the first time failed at the login step (client launches, but the server never receives a login
-  request within the timeout) — before even reaching card-play, let alone combat. This is
-  consistent with (possibly the same root cause as) Stage C/D's own finding that card-item
-  clicks/drags don't register in this specific headless, window-manager-less Xvfb setup. Not
-  chased further, matching Stage C/D's own precedent: it's orthogonal to this slice's actual logic
-  (fully covered by the unit tests above) and would be a genuinely separate test-infrastructure
-  investigation. `.uitest/sample_cards.xml` now has a Glorious Anthem-style anthem card
-  ("Creatures you control get +1/+1.") ready alongside the existing Stage C/D keyword test cards
-  for whenever that gap is resolved.
+- **As of 2026-07-22, live-verified** via `.uitest/scenario.py run combat_gate` (see
+  `phase8-combat.md`'s "Testing" section for the full scenario description — it was built to
+  close this gap and the Stage C/D 2-player-combat gap in the same pass). Glorious Anthem
+  ("Creatures you control get +1/+1.") and Darksteel Myr (base 1/1) both resolve onto the
+  battlefield, Myr attacks unblocked, and the defending player's life drops by exactly 2, not 1 —
+  proving `applyStaticEffects()`'s `AllYours` anthem case (which also boosts its own source, per
+  this doc's "What's built" section) actually reaches `gatherCombatAttacks()`'s effective-power
+  calculation over the real client/server wire, not just in the pure-function unit tests above.
+  The original 2026-07-21 attempt's "did not complete" finding is superseded — CLAUDE.md's
+  UI-testing section already explained the underlying cause (a version-notification dialog
+  swallowing scripted clicks) was fixed after that attempt; this session's re-attempt against the
+  same `cockatrice-build` container confirms it.

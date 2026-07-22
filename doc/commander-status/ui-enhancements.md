@@ -210,11 +210,52 @@ in `theme_manager.cpp`) were darkened directly — same hues, not a different pa
 no bundled font file needed), and the handful of board widgets that hardcoded
 `QFont("Serif")` now just use the default constructor to inherit it.
 
-**Known gap**: the commander-damage row has no live UI-test coverage — it needs a real
-opponent to ever populate (a damage counter is never created in a 1-player local
-hotseat game), and `counter_ui_gate`'s scenario harness only drives one client. Verified
-by code review and a full rebuild/`ctest` pass, not a live screenshot.
+**As of 2026-07-22, the commander-damage row is live-verified**, closing the gap noted
+below at the time this was written — `.uitest/scenario.py run combat_gate` (see
+`phase8-combat.md`'s "Testing" section) drives a real 2-player local-hotseat game, the
+first scenario in this fork to do so, specifically because populating a damage counter
+needs a real opponent (a 1-player game never creates one).
 
 Live-verified (everything else) via `.uitest/scenario.py run counter_ui_gate`,
 re-pointed at the pentagon's new mana-counter click coordinates (re-measured live after
 the layout change — see the scenario file's own comment).
+
+### CounterGroupBox dangling-pointer crash (found via the first 2-player live-verification, 2026-07-22)
+
+`combat_gate`'s first run crashed the whole client (`pure virtual method called`,
+`terminate called without an active exception`) moments after a 2-player local game's
+`Event_GameStateChanged` finished processing — before either player had touched a card.
+No 1-player scenario had ever hit this, for a simple reason: it only manifests once a
+*second* real player exists, and this fork's Storm/Poison `CounterGroupBox` (the
+"Counter UI cleanup" section above) had never been exercised with two players' worth of
+counter-resync traffic in flight at once.
+
+Root cause, confirmed with `gdb` against a `RelWithDebInfo` rebuild of this same Docker
+container (the default `Release` build had no symbols for the crash frame):
+`CounterGroupBox::addCounterWidget()` reparents each Storm/Poison `GeneralCounter` widget
+onto itself and appends it to a plain `QList<AbstractCounter *> widgets`, but never
+tracked when one of those widgets got destroyed independently — which happens routinely:
+`PlayerLogic::processPlayerInfo()` (fired by every `Event_GameStateChanged`, and a game
+start fires more than one) calls `clearCounters()` before rebuilding, and
+`AbstractCounter::delCounter()` tears the old widget down via `deleteLater()`, an
+*asynchronous* deletion. By the time that deferred delete actually ran, `widgets` still
+held the now-dangling pointer, and `CounterGroupBox::boundingRect()` (called during Qt's
+own scene bookkeeping as the widget's own destruction completed) dereferenced it —
+calling a pure virtual `boundingRect()` on an object whose vtable had already unwound to
+`QGraphicsItem`'s abstract base mid-destruction. Two real players' worth of setup traffic
+made the race reliably hit; nothing about the logic itself was 2-player-specific.
+
+Fixed in `counter_group_box.{h,cpp}`: `CounterGroupBox` now also inherits `QObject` (it
+was previously a bare `QGraphicsItem`) so it can `connect()` to each widget's
+`destroyed()` signal and remove it from `widgets` the moment that happens, instead of
+only reacting whenever something else later happened to call `boundingRect()`/`paint()`.
+A new `~CounterGroupBox()` destructor also explicitly `qDeleteAll()`s any widgets still
+in the list *before* returning (mirroring `PlayerTarget::~PlayerTarget()`'s pre-existing
+`delete playerCounter` comment) — letting `~QGraphicsItem()` auto-delete them later, after
+this destructor's own body has returned and `CounterGroupBox`'s vtable has itself already
+unwound, would hit the identical bug one level up. `PlayerTarget::~PlayerTarget()` got
+the analogous fix for its own `damageBadges` list (the commander-damage row above), which
+has the exact same `destroyed()`-into-`relayoutDamageBadges()`-into-`boundingRect()`
+shape — not confirmed as the live trigger for this specific crash (the `gdb` backtrace
+pointed at `CounterGroupBox`, not `PlayerTarget`), but the same defect pattern, fixed
+proactively rather than waiting to hit it separately.

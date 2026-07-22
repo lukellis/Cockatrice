@@ -64,15 +64,21 @@ def _running(pattern):
     return len(_pgrep(pattern)) > 0
 
 
-def _wait_for_log(logfile, pattern, timeout=15, poll=0.3):
+def _wait_for_log(logfile, pattern, timeout=15, poll=0.3, since_pos=0):
     """Poll logfile for a line matching regex `pattern`. Returns the matched
     line, or None on timeout. Reads the whole file each poll (these logs stay
-    small for a single scenario run) rather than tailing, for simplicity."""
+    small for a single scenario run) rather than tailing, for simplicity.
+
+    @p since_pos (byte offset) restricts the search to content written at or after that point --
+    needed whenever a scenario asserts on a pattern that can legitimately recur (e.g. a 2-player
+    scenario stepping through "phase: 10" or "active_player_id: 0" more than once across
+    multiple turns), since otherwise this would report success by matching a stale line left
+    over from an earlier occurrence of the same event instead of proving a *new* one happened."""
     deadline = time.time() + timeout
     regex = re.compile(pattern)
     while time.time() < deadline:
         if logfile.exists():
-            text = logfile.read_text(errors="replace")
+            text = logfile.read_bytes()[since_pos:].decode(errors="replace")
             for line in text.splitlines():
                 if regex.search(line):
                     return line
@@ -265,6 +271,10 @@ LOCAL_GAME_DECKS = {
     "variable_mana_gate": REPO_ROOT / ".uitest" / "variablemanatest.cod",
     "turn_structure_gate": REPO_ROOT / ".uitest" / "turnstructuretest.cod",
     "counter_ui_gate": REPO_ROOT / ".uitest" / "countertest.cod",
+    "combat_gate": {
+        "Player 1": REPO_ROOT / ".uitest" / "combat_p1.cod",
+        "Player 2": REPO_ROOT / ".uitest" / "combat_p2.cod",
+    },
 }
 
 
@@ -276,7 +286,11 @@ def ensure_local_game_profile(enabled, deck_path=None):
     startup-time-only setting -- see setup()'s mode-marker handling below for why switching
     between the two (or between two local-game scenarios with different @p deck_path, e.g.
     "mana_gate" vs "variable_mana_gate") requires restarting an already-running client rather
-    than just rewriting this file. Returns True if anything actually changed."""
+    than just rewriting this file. Returns True if anything actually changed.
+
+    @p deck_path is either a single path (1-player hotseat, the common case) or a dict of
+    {"Player N": path} for a multi-player hotseat game (e.g. scenario_combat_gate's 2-player
+    board) -- playerCount is derived from the dict's size in that case."""
     import configparser
 
     settings_dir = Path.home() / ".local" / "share" / "Cockatrice" / "Cockatrice" / "settings"
@@ -291,15 +305,17 @@ def ensure_local_game_profile(enabled, deck_path=None):
         if not parser.has_section(section):
             parser.add_section(section)
 
+    deck_paths = deck_path if isinstance(deck_path, dict) else ({"Player 1": deck_path} if deck_path else {})
     desired = {
         "debug": {"showCardId": "true"},
         "localgame": {
             "onStartup": "true" if enabled else "false",
-            "playerCount": "1",
+            "playerCount": str(len(deck_paths)) if enabled and deck_paths else "1",
         },
     }
     if enabled:
-        desired["localgame"][r"deck\Player 1"] = str(deck_path)
+        for player_name, path in deck_paths.items():
+            desired["localgame"][f"deck\\{player_name}"] = str(path)
     changed = False
     for section, keys in desired.items():
         for key, value in keys.items():
@@ -432,8 +448,8 @@ class Ctx:
     def sleep(self, seconds):
         time.sleep(seconds)
 
-    def assert_log(self, logfile, pattern, timeout=10, label=None):
-        line = _wait_for_log(logfile, pattern, timeout=timeout)
+    def assert_log(self, logfile, pattern, timeout=10, label=None, since_pos=0):
+        line = _wait_for_log(logfile, pattern, timeout=timeout, since_pos=since_pos)
         label = label or pattern
         if line:
             print(f"  [PASS] {label}\n         -> {line.strip()}")
@@ -441,6 +457,12 @@ class Ctx:
         print(f"  [FAIL] {label}\n         (no match for /{pattern}/ in {logfile} within {timeout}s)")
         self.ok = False
         return False
+
+    def log_pos(self, logfile):
+        """Current size (bytes) of @p logfile -- pass as assert_log()'s since_pos to require a
+        *new* match rather than accepting one left over from an earlier occurrence of the same
+        event (see _wait_for_log()'s docstring)."""
+        return logfile.stat().st_size if logfile.exists() else 0
 
 
 # ---------------------------------------------------------------------------
@@ -600,7 +622,7 @@ def scenario_mana_gate(ctx):
         return False
 
     print("[mana_gate] +1 White mana, then casting Sol Ring ({1} -- unambiguous, no dialog expected)")
-    ctx.click(68, 192)  # White mana counter, +1 per left-click
+    ctx.click(*_MANA_COUNTER_XY["w"])
     ctx.sleep(0.3)
     sol_ring_x = next(x for x, color in _hand_colors(2) if color != KAYAS_WRATH_COLOR)
     ctx.click(sol_ring_x, HAND_ROW_Y)
@@ -610,7 +632,8 @@ def scenario_mana_gate(ctx):
         return False
 
     print("[mana_gate] W=2, U=2, B=1 -> Kaya's Wrath's ({2}{W}{B}) generic cost is now ambiguous")
-    for x, y in [(68, 192), (68, 192), (68, 233), (68, 233), (68, 275)]:
+    for x, y in [_MANA_COUNTER_XY["w"], _MANA_COUNTER_XY["w"], _MANA_COUNTER_XY["u"], _MANA_COUNTER_XY["u"],
+                _MANA_COUNTER_XY["b"]]:
         ctx.click(x, y)
         ctx.sleep(0.3)
     ctx.click(_HAND_SLOT_CENTERS[1][0], HAND_ROW_Y)  # only Kaya's Wrath remains in hand
@@ -897,18 +920,117 @@ def scenario_counter_ui_gate(ctx):
                           label="Storm resets to 0 at the start of the new turn")
 
 
+def scenario_combat_gate(ctx):
+    """Placeholder -- filled in after live coordinate sampling."""
+    ctx.sleep(3.0)
+    print("[combat_gate] turn 1 (Player 1): Untap->Upkeep->Draw, no auto-draw (turnNumber==1, playerCount==2)")
+    for _ in range(2):
+        ctx.key("Tab")
+        ctx.sleep(0.5)
+    for _ in range(2):
+        ctx.click(27, 158)  # Draw phase button
+        ctx.sleep(0.5)
+    ctx.key("Tab")  # -> First Main (phase 3)
+    ctx.sleep(0.5)
+
+    # Hand-slot left/right ordering isn't stable card-to-card across runs (unlike the 1-player
+    # scenarios' fixed placeholder-art colors), so this doesn't try to identify Anthem vs. Myr
+    # by position -- it preloads enough White mana up front to cover *both* cards' costs
+    # ({1}{W}=2 and {3}=3, 5 total, all one color so auto-pay is always unambiguous) and then
+    # just clicks whichever card ends up in each slot, in whatever order that happens to be.
+    print("[combat_gate] +5 white mana (covers both Anthem's {1}{W} and Myr's {3}), casting both")
+    for _ in range(5):
+        ctx.click(72, 395)  # Player 1's White mana pip
+        ctx.sleep(0.3)
+    ctx.click(393, 595)  # left hand slot -- whichever card that is
+    ctx.sleep(1.0)
+    ctx.click(411, 595)  # now the only (remaining) card in hand
+    ctx.sleep(1.0)
+
+    # canDeclareAttacker() (rules_engine.cpp) only checks phase + active player -- no
+    # summoning-sickness gate exists in this fork -- so Myr can attack the same turn it was
+    # cast; no need to cycle through Player 2's turn first.
+    print("[combat_gate] stepping Beginning of Combat(4) -> Declare Attackers(5)")
+    for _ in range(2):
+        ctx.key("Tab")
+        ctx.sleep(0.3)
+    # Which battlefield slot (x=253 vs x=308) holds Myr vs Anthem isn't stable across runs (it
+    # follows whatever order the two hand clicks above happened to cast them in, which itself
+    # isn't stable) -- and turned out not to be reliably readable from rendered pixel color
+    # either (confirmed live: sampling the yellow Anthem card-box border at (x, 535) predicted
+    # the wrong slot in 2 of 3 repeated runs, apparently a real repaint-timing race rather than
+    # a fixed offset bug). What *is* deterministic: the server assigns each card an actual table
+    # grid x when it resolves the "auto-place" x: -1 in our Command_MoveCard, and that grid x
+    # reliably increases left-to-right on screen -- whichever of the two cards got the lower
+    # grid x is the one in the x=253 (left) slot, full stop, no rendering race involved.
+    log_text = CLIENT_LOG.read_text(errors="replace")
+    myr_id_match = re.search(r'card_name: "Darksteel Myr".*?new_card_id: (\d+)', log_text)
+    anthem_grid_x_match = re.search(r'card_name: "Glorious Anthem".*?target_zone: "table" x: (\d+)', log_text)
+    myr_grid_x_match = re.search(r'card_name: "Darksteel Myr".*?target_zone: "table" x: (\d+)', log_text)
+    if not (myr_id_match and anthem_grid_x_match and myr_grid_x_match):
+        print("  [FAIL] could not find Anthem/Myr's card_id or assigned table grid x in the client log")
+        ctx.ok = False
+        return False
+    myr_id = myr_id_match.group(1)
+    myr_grid_x, anthem_grid_x = int(myr_grid_x_match.group(1)), int(anthem_grid_x_match.group(1))
+    myr_x = 253 if myr_grid_x < anthem_grid_x else 308
+    print(f"[combat_gate] Myr (grid x={myr_grid_x}) vs. Anthem (grid x={anthem_grid_x}) -- Myr is at"
+          f" battlefield screen x={myr_x} -- right-clicking, declaring it as attacker")
+
+    # "Declare as attacker" (the plain checkbox item) is a target-less toggle kept only for
+    # backward compat with its keyboard shortcut (CardMenu::createTableMenu()'s own comment) --
+    # it never sets AttrAttackTargetPlayerId, so gatherCombatAttacks() silently treats a Myr
+    # declared that way as having no target and resolveCombatDamage() does nothing (confirmed
+    # live: phase advanced to Combat Damage, but no life-loss event was ever logged). The actual
+    # target-setting path is the "Declare as attacker, targeting..." submenu just below it.
+    pos = ctx.log_pos(CLIENT_LOG)
+    ctx.click(myr_x, 520, button=3)
+    ctx.sleep(1.0)
+    ctx.move(myr_x + 90, 232)  # hover to open "Declare as attacker, targeting..." submenu
+    ctx.sleep(1.0)
+    ctx.click(myr_x + 381, 232)  # the submenu's sole entry, "Player 2" (single opponent)
+    ctx.sleep(1.0)
+    if not ctx.assert_log(CLIENT_LOG, rf"AttrAttacking.*card_id: {myr_id}\b|card_id: {myr_id}\b.*AttrAttacking",
+                          timeout=5, since_pos=pos, label="Myr is declared as an attacker, targeting Player 2"):
+        return False
+
+    # Player 2 has no creatures to block with -- Tab through Declare Blockers(6) straight into
+    # Combat Damage(7), which resolves automatically the instant that phase is entered
+    # (Server_Game::setActivePhase() -> resolveCombatDamage(), no separate command needed).
+    print("[combat_gate] stepping Declare Blockers(6) -> Combat Damage(7) -- unblocked, should auto-resolve")
+    pos = ctx.log_pos(CLIENT_LOG)
+    for _ in range(2):
+        ctx.key("Tab")
+        ctx.sleep(0.5)
+    # Player 2 is life counter_id 0; base Myr is 1/1, Glorious Anthem's "Creatures you control
+    # get +1/+1" (an AllYours-scope anthem applying even to itself, and to Myr as another
+    # creature its controller controls) should make this exactly -2, not -1 -- the whole point
+    # of this scenario: proving the static-abilities extension's combat-math effect (previously
+    # GTest-only) actually lands through the real 2-player client/server wire.
+    return ctx.assert_log(CLIENT_LOG, r"player_id: 1.*Event_SetCounter\.ext.*counter_id: 0\b.*value: 18\b",
+                          timeout=5, since_pos=pos,
+                          label="Player 2's life drops from 20 to 18 -- Myr's anthem-boosted 2 damage, unblocked")
+
+
 SCENARIOS = {
     "connect": scenario_connect,
     "mana_gate": scenario_mana_gate,
     "variable_mana_gate": scenario_variable_mana_gate,
     "turn_structure_gate": scenario_turn_structure_gate,
     "counter_ui_gate": scenario_counter_ui_gate,
+    "combat_gate": scenario_combat_gate,
 }
 
 # Scenarios needing a fresh local hotseat game (see ensure_local_game_profile()) rather than
 # the Home tab a plain client launch lands on. Each needs its own fixture deck -- see
 # LOCAL_GAME_DECKS.
-LOCAL_GAME_SCENARIOS = {"mana_gate", "variable_mana_gate", "turn_structure_gate", "counter_ui_gate"}
+LOCAL_GAME_SCENARIOS = {
+    "mana_gate",
+    "variable_mana_gate",
+    "turn_structure_gate",
+    "counter_ui_gate",
+    "combat_gate",
+}
 
 
 def main():

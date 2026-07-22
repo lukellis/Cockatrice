@@ -45,8 +45,8 @@ to silently fill in.
 | 5. Priority passing (simplified stand-in for a full stack) | Partial, by design | [phase5-priority-stack.md](doc/commander-status/phase5-priority-stack.md) |
 | 6. Mana system (pool auto-empty + real cost payment for casting from hand) | Narrow slice done | [phase6-mana.md](doc/commander-status/phase6-mana.md) |
 | 7. Card ability system (display parsing + a real execution engine) | Done at scope (Increments 1–2, Stages 1–6) | [phase7-card-abilities.md](doc/commander-status/phase7-card-abilities.md) |
-| 8. Combat system | Declare-attacker + Stages A/B/C/D (targeting, blocking, automated damage/death, deathtouch/trample/indestructible, first strike/double strike) done | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
-| 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects, combat-math consumers only | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
+| 8. Combat system | Declare-attacker + Stages A/B/C/D (targeting, blocking, automated damage/death, deathtouch/trample/indestructible, first strike/double strike) done; 2-player live-verified | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
+| 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects, combat-math consumers only; live-verified | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
 | 9. State-based actions (advisory warnings) | Partial, by design | [phase9-state-based-actions.md](doc/commander-status/phase9-state-based-actions.md) |
 | §12 UI design & enhancements | Ongoing — command-zone overlap fix, Tax badge on the zone itself, auto-tracked Storm counter, mana pentagon, icon-based Storm/Poison, per-opponent damage row, dark theme default | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
 
@@ -61,12 +61,25 @@ prior sessions reached was actually a version-notification dialog silently swall
 scripted click, not a fundamental limitation. The Phase 6 real-spell-casting-mana-payment
 addendum is now live-verified end to end using the fixed infrastructure
 (`.uitest/scenario.py run mana_gate`), as is its follow-on hybrid/Phyrexian/`{X}`
-addendum (`.uitest/scenario.py run variable_mana_gate`). The static/continuous abilities extension
-(`phase8-static-abilities.md`) is the one row still GTest-only — its own live-verification
-attempt predates this fix and was never re-attempted against it, not a remaining infrastructure
-gap. All work is on the `commander-rules`
+addendum (`.uitest/scenario.py run variable_mana_gate`). All work is on the `commander-rules`
 branch, pushed to `origin` (this host's only remote — see `CLAUDE.md`'s git-remotes
 note, since that setup has changed across hosts this fork has been developed on).
+
+**As of 2026-07-22, the two remaining GTest-only rows — Stage C/D's 2-player combat automation
+and the static/continuous-abilities extension — are both live-verified**, closing the last gap
+this file's "Current status" tracked. A new `.uitest/scenario.py run combat_gate` scenario is
+this fork's first to drive a real *2-player* local-hotseat game (every prior scenario used the
+1-player trick, which can't populate an opponent to attack) — see `phase8-combat.md`'s and
+`phase8-static-abilities.md`'s own "Testing" sections for what it covers and doesn't. Getting
+there surfaced and fixed a real, previously-latent crash in the recently-added commander-damage-
+row/Storm-Poison-grouping UI code (`ui-enhancements.md`'s new "CounterGroupBox dangling-pointer
+crash" section) — every 1-player scenario had structurally never been able to hit it, since it
+needs a second real opponent's counters resyncing in flight. `.uitest/scenario.py`'s
+`ensure_local_game_profile()` also gained multi-player support (a `deck_path` dict instead of a
+single path) to make this possible, and `_wait_for_log()`/`Ctx.assert_log()` gained an optional
+`since_pos` byte offset — a 2-player scenario is the first to assert on phase/active-player
+patterns that legitimately recur turn over turn, which the old whole-file-scan-for-first-match
+approach would silently false-positive against a stale line from an earlier occurrence.
 
 **As of 2026-07-20, by explicit user direction, this fork no longer holds to
 "advisory/manual-only, never hard automation"** (see CLAUDE.md's Design Principles

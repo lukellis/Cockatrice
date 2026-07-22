@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cockatrice_deck version="1">
+    <lastLoadedTimestamp>Wed Jul 22 11:15:28 2026</lastLoadedTimestamp>
+    <deckname>combat_p2</deckname>
+    <format></format>
+    <bannerCard providerId=""></bannerCard>
+    <comments>Fixture deck for scenario_combat_gate (.uitest/scenario.py), Player 2's side --
+    the defending player in the 2-player combat live-verification. Player 2 needs no cards of
+    its own (the scenario only needs its life total to drop from an unblocked attack), just
+    enough filler in library so its own Draw step (not skipped -- rule 103.8a only skips the
+    very first turn of the game, which is Player 1's) has something harmless to draw. Island
+    already exists in .uitest/sample_cards.xml.</comments>
+    <tags/>
+    <zone name="main">
+        <card number="2" name="Island" setShortName="CMD"/>
+    </zone>
+</cockatrice_deck>

@@ -290,26 +290,38 @@ Any further combat depth beyond the above is a new, separate, explicit design de
   participant needs a live `Server_AbstractUserInterface`, not lightweight in this
   harness) — verify live per this fork's standard Xvfb + local-`servatrice` recipe
   (CLAUDE.md) before calling a change like this done.
-- **Stage C's own live-verification attempt found a real, separate infrastructure gap,
-  not a bug in this stage's code**: this fork's built-in local-hotseat "Local Game"
-  feature (`debug.ini`'s `[localgame]` auto-start + per-player `deck\Player N=` auto-load,
-  `MainWindow::startLocalGame()`/`TabGame::addLocalPlayer()`) is the only way to get two
-  players' creatures onto one board without a second real human (the EC2 runbook's own
-  documented requirement) — game creation, per-player deck auto-load, and card drawing
-  all worked correctly over the real client/server wire protocol in this fork's Docker
-  container. But clicking or dragging a hand card to play it never registered — traced
-  as far as confirming `CardItem::playCard()`'s `owner->getPlayerInfo()->getLocalOrJudge()`
-  gate (or something upstream of it) silently no-ops in this specific headless,
-  window-manager-less Xvfb setup, for reasons still unconfirmed (menu/keyboard input
-  *does* work once the window has been given focus by an initial click — this is
-  specifically about `QGraphicsScene` card-item clicks/drags). Not chased further since
-  it's orthogonal to Stage C's actual logic (already covered above by unit tests) and
-  would be a genuinely separate test-infrastructure investigation. `.uitest/sample_cards.xml`
-  now has a Trample creature (Ghor-Clan Rampager) and an Indestructible creature
-  (Darksteel Myr) alongside the pre-existing Deathtouch one (Baleful Strix) ready for
-  whenever this gap gets resolved.
-- **Stage D inherits the same unresolved gap** — not re-attempted, since nothing about
-  it would differ from Stage C's finding. `.uitest/sample_cards.xml` now also has a
-  First Strike creature (Order of Leitbur) and a Double Strike creature (Boros
-  Swiftblade), ready alongside the Stage C cards for whenever the Xvfb card-play gap
-  gets resolved.
+- **Stage C's own live-verification attempt (predating the version-notification-dialog
+  fix noted in CLAUDE.md) found what looked like a real infrastructure gap**: game
+  creation, per-player deck auto-load, and card drawing all worked correctly over the
+  real client/server wire protocol in this fork's Docker container, but clicking or
+  dragging a hand card to play it never registered. Not chased further at the time,
+  since it looked orthogonal to Stage C's actual logic (already covered above by unit
+  tests).
+- **As of 2026-07-22, that gap is closed — 2-player combat is now live-verified end to
+  end** via `.uitest/scenario.py run combat_gate` (`.uitest/combat_p1.cod`/
+  `combat_p2.cod`, added this session), confirming the original Stage C blocker really
+  was the version-dialog issue CLAUDE.md's UI-testing section describes, not a deeper
+  2-player-specific limitation. The scenario: casts Glorious Anthem + Darksteel Myr in a
+  real local-hotseat 2-player game, declares Myr as an attacker via the
+  "Declare as attacker, targeting..." submenu (the plain "Declare as attacker" checkbox
+  item is a target-less legacy toggle that never sets `AttrAttackTargetPlayerId` —
+  `gatherCombatAttacks()` silently no-ops on it, confirmed live), and asserts the
+  defending player's life drops by exactly 2 once Combat Damage auto-resolves — i.e.
+  Myr's own 1 power *plus* Anthem's static +1/+1, closing `phase8-static-abilities.md`'s
+  matching live-verification gap in the same pass. This covers the core Stage
+  A/B (declare + auto-resolve) wiring for one unblocked, indestructible, non-deathtouch/
+  trample/first-strike attacker; it does **not** re-verify deathtouch/trample/first-
+  strike/double-strike/blocking live (those stay GTest-only, unchanged from before) —
+  `.uitest/sample_cards.xml`'s Ghor-Clan Rampager/Baleful Strix/Order of Leitbur/Boros
+  Swiftblade fixtures are still there, unused, for whenever that's picked up.
+  **A real, previously-latent bug was found and fixed getting here**: this session's
+  first attempt crashed the client (`pure virtual method called`) immediately on
+  2-player game setup — every prior scenario was 1-player and never exercised a second
+  human opponent's commander-damage badge, the one path that hits this. See
+  `ui-enhancements.md`'s "CounterGroupBox dangling-pointer crash" section for the fix.
+  A second bug specific to *this* scenario, not a latent one: battlefield card
+  left/right screen position isn't tied to card identity (it follows whichever order the
+  two hand-cast clicks happened to land in, which isn't stable either) — resolved by
+  reading each card's server-assigned table grid-x from the client log rather than
+  guessing from screen position or rendered color (both were tried and found unreliable
+  live; see the scenario's own comments).

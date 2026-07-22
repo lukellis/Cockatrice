@@ -87,6 +87,17 @@ PlayerTarget::~PlayerTarget()
     // Explicit deletion is necessary in spite of parent/child relationship
     // as we need this object to be alive to receive the destroyed() signal.
     delete playerCounter;
+
+    // Same reasoning, but the damageBadges' destroyed() callback also touches boundingRect()
+    // (via relayoutDamageBadges()) -- letting ~QGraphicsItem() auto-delete these children later
+    // (after this destructor body returns and PlayerTarget's own vtable has already unwound to
+    // QGraphicsItem's abstract base) calls a pure virtual boundingRect() on a half-destroyed
+    // `this` and aborts. Deleting them here, while `this` is still fully PlayerTarget, is safe.
+    // Snapshot into a temporary first: the callback mutates damageBadges itself (removeAll()),
+    // which would otherwise invalidate an in-progress iteration/deletion of the same list.
+    const QList<DamageBadge *> badgesToDelete = damageBadges;
+    damageBadges.clear();
+    qDeleteAll(badgesToDelete);
 }
 
 QRectF PlayerTarget::boundingRect() const

@@ -14,11 +14,37 @@ CounterGroupBox::CounterGroupBox(QGraphicsItem *parent) : QGraphicsItem(parent)
 {
 }
 
+CounterGroupBox::~CounterGroupBox()
+{
+    // A widget can be destroyed (AbstractCounter::delCounter() -> deleteLater()) independently
+    // of this box, e.g. PlayerGraphicsItem::onCounterRemoved() during a counter resync
+    // (PlayerLogic::processPlayerInfo()'s clearCounters()+rebuild) -- addCounterWidget() below
+    // reacts to that via the widget's destroyed() signal. But letting ~QGraphicsItem() auto-
+    // delete our own remaining `widgets` later (after this destructor returns and our vtable
+    // has unwound to QGraphicsItem's abstract base) would run that same handler's relayout()
+    // -> boundingRect() call on a half-destroyed `this` and abort with "pure virtual method
+    // called". Deleting them explicitly here, while `this` is still fully CounterGroupBox, is
+    // safe -- same reasoning as PlayerTarget::~PlayerTarget(). Snapshot into a temporary first:
+    // the destroyed() handler mutates `widgets` itself (removeAll()).
+    const QList<AbstractCounter *> widgetsToDelete = widgets;
+    widgets.clear();
+    qDeleteAll(widgetsToDelete);
+}
+
 void CounterGroupBox::addCounterWidget(AbstractCounter *widget)
 {
     prepareGeometryChange();
     widget->setParentItem(this);
     widgets.append(widget);
+    // See ~CounterGroupBox() for why a widget can be destroyed out from under us -- without
+    // this, boundingRect()/paint() below can dereference a dangling pointer left behind in
+    // `widgets` (this is what actually crashed: a stale storm/poison GeneralCounter from a
+    // counter resync, only ever exercised with two real players' worth of setup events in
+    // flight at once).
+    connect(widget, &QObject::destroyed, this, [this, widget]() {
+        widgets.removeAll(widget);
+        relayout();
+    });
     relayout();
 }
 
