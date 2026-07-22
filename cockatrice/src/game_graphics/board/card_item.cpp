@@ -17,7 +17,6 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QMenu>
 #include <QPainter>
-#include <QPainterPath>
 #include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/card/card_info.h>
 #include <libcockatrice/protocol/pb/serverinfo_card.pb.h>
@@ -144,44 +143,39 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         font.setBold(true);
         QFontMetrics fm(font);
 
-        // Cap the badge to a small corner of the card regardless of the ambient device-constant
-        // font size transformPainter() just set -- that size is tuned for the short "N/N" P/T
-        // string, and the wider "+N/+N" text (worse still at double/triple-digit counts) could
-        // otherwise render larger than intended. Shrink the font to fit a fixed fraction of the
-        // card instead of using the ambient size unconditionally.
-        const double maxBadgeWidth = translatedSize.width() * 0.3;
-        const double maxBadgeHeight = translatedSize.height() * 0.14;
-        const double neededWidth = fm.horizontalAdvance(badgeText) * 1.3;
-        const double neededHeight = fm.height() * 1.4;
+        // Cap the badge to a fraction of the card regardless of the ambient device-constant font
+        // size transformPainter() just set -- that size is tuned for the short "N/N" P/T string,
+        // and the wider "+N/+N" text (worse still at double/triple-digit counts) could otherwise
+        // render larger than intended. No hard minimum floor on the shrunk size -- a floor that
+        // overrides the fit-to-width ratio is exactly what let the text get computed larger than
+        // its own box and clip against the card's edge.
+        const double maxBadgeWidth = translatedSize.width() * 0.6;
+        const double maxBadgeHeight = translatedSize.height() * 0.22;
+        const double neededWidth = fm.horizontalAdvance(badgeText) * 1.15;
+        const double neededHeight = fm.height() * 1.25;
         const double shrink = qMin(1.0, qMin(maxBadgeWidth / neededWidth, maxBadgeHeight / neededHeight));
         if (shrink < 1.0) {
-            font.setPixelSize(qMax(8, static_cast<int>(font.pixelSize() * shrink)));
+            font.setPixelSize(qMax(1, static_cast<int>(font.pixelSize() * shrink)));
             fm = QFontMetrics(font);
         }
 
-        const double w = fm.horizontalAdvance(badgeText) * 1.3;
-        const double h = fm.height() * 1.4;
-        // Bottom-left corner -- top-left sits under a real card's own printed name/mana cost, and
-        // bottom-right is already the P/T text's spot.
-        const QRectF badgeRect(4 * scaleFactor, translatedSize.height() - h - 4 * scaleFactor, w, h);
+        // The box always sized from this same, final font's own metrics (not the pre-shrink
+        // estimate), so it can never end up smaller than the text it holds.
+        const double w = fm.horizontalAdvance(badgeText) * 1.15;
+        const double h = fm.height() * 1.25;
+        const QRectF badgeRect((translatedSize.width() - w) / 2.0, (translatedSize.height() - h) / 2.0, w, h);
 
-        // Gray rounded box, no separately-colored border (just a slightly darker/same-tone outline
-        // so the shape reads without competing with the card's own colors) -- deliberately muted
-        // compared to the earlier bright-green square, which was harder to read text over.
-        painter->setPen(QPen(QColor(40, 40, 40, 200), 1.0));
-        painter->setBrush(QBrush(QColor(90, 90, 90, 190)));
-        const double cornerRadius = qMin(w, h) * 0.25;
+        // Dark, heavily-rounded box with no border -- distinct from the generic counters' circles
+        // and legible over any card color/art without competing for attention with a bright color
+        // or an outline.
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QBrush(QColor(20, 20, 20, 210)));
+        const double cornerRadius = qMin(w, h) * 0.5;
         painter->drawRoundedRect(badgeRect, cornerRadius, cornerRadius);
 
-        // White text with a thin black outline (drawn as a stroked+filled path, not two overlaid
-        // drawText() calls) so it stays legible over any card color/art behind the badge.
-        const double textX = badgeRect.left() + (badgeRect.width() - fm.horizontalAdvance(badgeText)) / 2.0;
-        const double textY = badgeRect.top() + (badgeRect.height() + fm.ascent() - fm.descent()) / 2.0;
-        QPainterPath textPath;
-        textPath.addText(textX, textY, font, badgeText);
-        painter->setPen(QPen(Qt::black, qMax(1.0, h * 0.06)));
-        painter->setBrush(Qt::white);
-        painter->drawPath(textPath);
+        painter->setPen(Qt::white);
+        painter->setFont(font);
+        painter->drawText(badgeRect, Qt::AlignCenter, badgeText);
         painter->restore();
     }
 
