@@ -71,8 +71,7 @@ PlayerGraphicsItem::PlayerGraphicsItem(PlayerLogic *_player) : player(_player)
     playerArea = new PlayerArea(this);
 
     playerTarget = new PlayerTarget(player, playerArea);
-    qreal avatarMargin =
-        (counterAreaWidth + CardDimensions::HEIGHT_F + 15 - playerTarget->boundingRect().width()) / 2.0;
+    avatarMargin = (counterAreaWidth + CardDimensions::HEIGHT_F + 15 - playerTarget->boundingRect().width()) / 2.0;
     playerTarget->setPos(QPointF(avatarMargin, avatarMargin));
     connect(player, &PlayerLogic::holdsPriorityChanged, playerTarget, &PlayerTarget::setHoldsPriority);
 
@@ -109,7 +108,7 @@ void PlayerGraphicsItem::onPlayerActiveChanged(bool _active)
 void PlayerGraphicsItem::initializeZones()
 {
     auto base = QPointF(counterAreaWidth + (CardDimensions::HEIGHT_F - CardDimensions::WIDTH_F + 15) / 2.0,
-                        10 + playerTarget->boundingRect().height() + 5 -
+                        avatarMargin + playerTarget->boundingRect().height() + 5 -
                             (CardDimensions::HEIGHT_F - CardDimensions::WIDTH_F) / 2.0);
 
     // The command zone leads the pile stack (ahead of library/graveyard/exile), since it's the
@@ -337,7 +336,7 @@ void PlayerGraphicsItem::onCounterRemoved(int counterId)
 
 void PlayerGraphicsItem::rearrangeCounters()
 {
-    qreal ySize = boundingRect().y() + 80;
+    qreal ySize = avatarMargin + playerTarget->boundingRect().height() + 5;
     constexpr qreal padding = 5;
     for (auto *ctr : counterWidgets.values()) {
         if (!ctr->getShownInCounterArea()) {

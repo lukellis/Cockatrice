@@ -141,6 +141,7 @@ private:
     PlayerDialogs *playerDialogs;
     PlayerArea *playerArea;
     PlayerTarget *playerTarget;
+    qreal avatarMargin = 0;
     QMap<int, AbstractCounter *> counterWidgets;
     CounterGroupBox *specialCounterGroup = nullptr;
     ManaPentagonWidget *manaPentagon = nullptr;
