@@ -21,19 +21,21 @@ AbstractCounter::AbstractCounter(CounterState *state,
                                  PlayerLogic *_player,
                                  bool _shownInCounterArea,
                                  bool _useNameForShortcut,
-                                 QGraphicsItem *parent)
+                                 QGraphicsItem *parent,
+                                 bool _interactive)
     : QGraphicsItem(parent), player(_player), id(state->getId()), name(state->getName()), value(state->getValue()),
       color(state->getColor()), radius(state->getRadius()), useNameForShortcut(_useNameForShortcut),
-      shownInCounterArea(_shownInCounterArea)
+      shownInCounterArea(_shownInCounterArea), interactive(_interactive)
 {
     setAcceptHoverEvents(true);
+    setToolTip(TranslateCounterName::getDisplayName(state->getName()));
 
     connect(state, &CounterState::valueChanged, this, [this](int, int newValue) {
         value = newValue;
         update();
     });
 
-    if (player->getPlayerInfo()->getLocalOrJudge()) {
+    if (interactive && player->getPlayerInfo()->getLocalOrJudge()) {
         menu = new TearOffMenu(TranslateCounterName::getDisplayName(state->getName()));
         aSet = new QAction(this);
         connect(aSet, &QAction::triggered, this, &AbstractCounter::setCounter);
@@ -127,7 +129,7 @@ void AbstractCounter::refreshShortcuts()
 
 void AbstractCounter::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
-    if (!isUnderMouse() || !player->getPlayerInfo()->getLocalOrJudge()) {
+    if (!isUnderMouse() || !player->getPlayerInfo()->getLocalOrJudge() || !interactive) {
         event->ignore();
         return;
     }

@@ -11,21 +11,32 @@
 namespace CommanderCounterNames
 {
 
-// Tracks how many times a commander has been cast from the command zone (rule 903.9).
-// Displayed count * 2 = the additional generic mana cost.
-inline QString tax(const QString &commanderName)
-{
-    return QStringLiteral("Commander Tax: %1").arg(commanderName);
-}
-
 namespace detail
 {
+inline const QString &taxPrefix()
+{
+    static const QString prefix = QStringLiteral("Commander Tax: ");
+    return prefix;
+}
+
 inline const QString &damagePrefix()
 {
     static const QString prefix = QStringLiteral("Commander Damage: ");
     return prefix;
 }
 } // namespace detail
+
+// Tracks how many times a commander has been cast from the command zone (rule 903.9).
+// Displayed count * 2 = the additional generic mana cost.
+inline QString tax(const QString &commanderName)
+{
+    return detail::taxPrefix() + commanderName;
+}
+
+inline bool isTaxCounter(const QString &counterName)
+{
+    return counterName.startsWith(detail::taxPrefix());
+}
 
 // Tracks combat damage a player has been dealt by a specific opposing commander.
 // A player loses the game if any single one of these reaches 21 (rule 704.5g).

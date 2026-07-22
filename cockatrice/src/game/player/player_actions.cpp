@@ -1861,7 +1861,25 @@ bool PlayerActions::gateManaCostForHandPlay(const CardItem *card,
 
     const CardInfo &info = exactCard.getInfo();
     if (info.getMainCardType() == QLatin1String("Land")) {
-        return true; // land drops are free, rule 305.1
+        return true; // land drops are free, rule 305.1, and don't count as casting a spell either
+    }
+
+    // Storm count: every non-land card leaving hand this way is a spell being cast (rule 305.1
+    // excludes lands from "casting" already; nothing else can reach here uncast). The server has
+    // no card-type awareness of its own, so -- like the mana-payment commands below -- the +1 is
+    // appended here, the one place that does; Server_Player::resetStormCount() zeroes it again
+    // once per turn. Appended unconditionally at this point (ahead of any later `return false`),
+    // which is safe: every early-return below is a cancelled cast, and the caller only ever sends
+    // extraCommands alongside a Command_MoveCard that's actually going out.
+    for (auto counterIt = player->getCounters().constBegin(); counterIt != player->getCounters().constEnd();
+         ++counterIt) {
+        if (counterIt.value()->getName() == QLatin1String("storm")) {
+            auto *stormCmd = new Command_IncCounter;
+            stormCmd->set_counter_id(counterIt.key());
+            stormCmd->set_delta(1);
+            extraCommands.append(stormCmd);
+            break;
+        }
     }
 
     const std::optional<ManaCost> parsedCost = SpellManaCost::parse(info);

@@ -33,7 +33,29 @@ mechanism.
   a `PileZone` subclass with a gold border/tint and a "CMD" label, rendered upright
   (identity transform, not `PileZone`'s default 90° rotation) and reordered ahead of
   deck/graveyard/exile in the pile stack so the commander has a visibly distinct,
-  readable location.
+  readable location. The Commander Tax counter now renders as a small badge in the
+  command zone's own top-right corner (`PlayerGraphicsItem::onCounterAdded()`, gated on
+  the new `CommanderCounterNames::isTaxCounter()`) instead of an anonymous circle in the
+  generic per-player counter column — it's still the same fully interactive
+  `GeneralCounter` (TearOffMenu, click to increment), just re-parented onto
+  `commandZoneGraphicsItem` and excluded from that column's stacking via the existing
+  `shownInCounterArea=false` mechanism.
+
+## UI cleanup (2026-07-21)
+
+- **Fixed a real overlap bug**: the command zone's vertical position formula in
+  `PlayerGraphicsItem::initializeZones()` carried a `-(HEIGHT_F - WIDTH_F)/2` rotation
+  compensation term left over from when that same position used to place the
+  *rotated* deck pile (pre-dating the command zone entirely — see `git show
+  04d7884d`). Since `CommandZone` renders unrotated, that term left it ~15px too high,
+  overlapping the bottom of the player avatar box. Fixed by deriving the command
+  zone's own y separately (undoing just that term) while leaving the rotated piles'
+  own position formula untouched.
+- Per-player counters that fall back to the same generic "colorless" icon (poison,
+  per-commander damage, and colorless mana) now get a short text label drawn under the
+  circle (`GeneralCounter::paint()`), since they were previously visually
+  indistinguishable from one another. The full name is also available via a tooltip on
+  every counter (`AbstractCounter`'s constructor).
 
 ## Real bug found and fixed
 
@@ -65,4 +87,10 @@ Covered by `tests/commander/` (deck-validator integration tests exercise command
 placement indirectly) and live verification: local servatrice + client, confirming the
 commander starts in the command zone, the tax counter exists at 0, tax increments to 1
 on casting, and starting life/players match the Commander defaults. See `CLAUDE.md`'s
-UI-testing recipe.
+UI-testing recipe. The 2026-07-21 UI cleanup (overlap fix, Tax badge relocation, Storm
+counter — see `ui-enhancements.md` for the latter) is live-verified via
+`.uitest/scenario.py run counter_ui_gate` (`.uitest/countertest.cod`: Atraxa, Praetors'
+Voice as commander, Plains, Lightning Bolt), confirming via screenshots that the
+command zone no longer overlaps the avatar box and the Tax badge renders on the zone
+itself, plus log-verified Storm increment/reset and its read-only behavior (a click
+does nothing).

@@ -48,7 +48,7 @@ to silently fill in.
 | 8. Combat system | Declare-attacker + Stages A/B/C/D (targeting, blocking, automated damage/death, deathtouch/trample/indestructible, first strike/double strike) done | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
 | 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects, combat-math consumers only | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
 | 9. State-based actions (advisory warnings) | Partial, by design | [phase9-state-based-actions.md](doc/commander-status/phase9-state-based-actions.md) |
-| §12 UI design & enhancements | Ongoing | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
+| §12 UI design & enhancements | Ongoing — command-zone overlap fix, Tax badge on the zone itself, auto-tracked Storm counter, look-alike-counter labels | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
 
 ## Current status
 
@@ -104,6 +104,20 @@ prior scenario had dodged this by coincidence (always clicking before ever press
 Fixed by clicking a known-safe point inside the game board right after launch, scoped to
 local-game mode only (the same fix at the wrong screen position, or applied to the Home-tab
 "connect" scenario too, was confirmed live to actively break things instead).
+
+**As of 2026-07-21, per user feedback on the command-zone/counter UI**, four changes ship
+together (`doc/commander-status/ui-enhancements.md`'s "Counter UI cleanup + Storm counter"
+section, `phase3-command-zone.md`'s "UI cleanup" section): (1) fixed a real command-zone/avatar
+overlap bug (a stale rotation-compensation term in `PlayerGraphicsItem::initializeZones()`,
+left over from before the command zone existed); (2) the Commander Tax counter now renders as a
+badge on the command zone itself instead of an anonymous circle in the counter column; (3) the
+old manually-adjustable, upstream-Cockatrice "storm" counter (confusingly unlabeled orange) is
+replaced by a genuine (informal, not a Commander rule) auto-tracked, read-only "Storm: N"
+display — incremented client-side on every non-land cast (piggybacked the same way Phase 6's
+real mana payment already is), reset once per turn server-side; (4) counters that fall back to
+the same generic icon (poison, colorless mana, per-commander damage) get a short label plus a
+full-name tooltip, since they were previously visually identical. Live-verified via
+`.uitest/scenario.py run counter_ui_gate`.
 
 **The Phase 7/8 staged execution-engine roadmap and the `libcockatrice_rules`
 reorganization are both fully worked through at this fork's current scope.** Any of the

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cockatrice_deck version="1">
+    <lastLoadedTimestamp>Wed Jul 22 02:16:47 2026</lastLoadedTimestamp>
+    <deckname>countertest</deckname>
+    <format></format>
+    <bannerCard providerId="">Atraxa, Praetors' Voice</bannerCard>
+    <comments>Fixture deck for scenario_counter_ui_gate (.uitest/scenario.py) -- exercises the
+    command-zone layout fix, the auto-tracked Storm counter, and the Commander Tax badge on the
+    command zone: Atraxa, Praetors' Voice (already in .uitest/sample_cards.xml, a Legendary
+    Creature, so it's a legal commander and gets routed to the command zone instead of the
+    library -- see Server_Player::setupZones()), Plains (a land, sorcery-speed) and Lightning
+    Bolt (an instant, cheap enough to cast for {R} alone), both already exercised by
+    turnstructuretest.cod.</comments>
+    <tags/>
+    <zone name="main">
+        <card number="1" name="Atraxa, Praetors' Voice" setShortName="CMD"/>
+        <card number="1" name="Plains" setShortName="CMD"/>
+        <card number="1" name="Lightning Bolt" setShortName="M11"/>
+    </zone>
+</cockatrice_deck>

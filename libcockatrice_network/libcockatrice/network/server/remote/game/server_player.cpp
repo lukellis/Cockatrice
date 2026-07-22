@@ -108,6 +108,14 @@ void Server_Player::setupZones()
     addCounter(new Server_Counter(4, "r", makeColor(250, 150, 150), 20, 0));
     addCounter(new Server_Counter(5, "g", makeColor(150, 255, 150), 20, 0));
     addCounter(new Server_Counter(6, "x", makeColor(255, 255, 255), 20, 0));
+    // "storm": spells cast so far this turn (rule not Commander-specific, but tracked here for
+    // every game the same as the mana/poison counters above). The server has no card-type
+    // awareness of its own (see PlayerActions::gateManaCostForHandPlay()'s "Land" check), so
+    // the +1 is sent client-side as an ordinary Command_IncCounter alongside the move, the same
+    // way real mana payment already piggybacks its own IncCounters there; auto-reset in
+    // resetStormCount() below is server-authoritative. Rendered client-side as a read-only
+    // "Storm: N" text display, not a manually-adjustable counter (see
+    // PlayerGraphicsItem::onCounterAdded() and TextCounter).
     addCounter(new Server_Counter(7, "storm", makeColor(255, 150, 30), 20, 0));
     // Poison counters: a player loses the game upon reaching 10 (rule 104.3c). Always created --
     // this fork is wholly Commander-dedicated.
@@ -239,6 +247,25 @@ void Server_Player::emptyManaPool(GameEventStorage &ges)
             event.set_value(counter->getCount());
             ges.enqueueGameEvent(event, playerId);
         }
+    }
+}
+
+void Server_Player::resetStormCount(GameEventStorage &ges)
+{
+    // Storm count (spells cast so far this turn) resets for every player at the start of each
+    // new turn (Untap step) -- called from Server_Game::setActivePhase() only when entering
+    // RulesEngine::UNTAP_PHASE, unlike emptyManaPool() above which runs on every phase/step.
+    for (Server_Counter *counter : counters) {
+        if (counter->getName() != "storm") {
+            continue;
+        }
+        if (counter->setCount(0)) {
+            Event_SetCounter event;
+            event.set_counter_id(counter->getId());
+            event.set_value(counter->getCount());
+            ges.enqueueGameEvent(event, playerId);
+        }
+        break;
     }
 }
 

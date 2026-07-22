@@ -4,6 +4,7 @@
 #include "../../interface/widgets/tabs/tab_game.h"
 #include "../board/abstract_card_item.h"
 #include "../board/counter_general.h"
+#include "../board/counter_text.h"
 #include "../hand_counter.h"
 #include "../zones/command_zone.h"
 #include "../zones/hand_zone.h"
@@ -114,9 +115,15 @@ void PlayerGraphicsItem::initializeZones()
     // piles below, which PileZone rotates 90° to stack compactly — CommandZone renders the
     // commander portrait/untapped (see CommandZone), so it reserves a full card-height's worth
     // of vertical space rather than the narrower rotated-pile step used by the rest.
+    //
+    // `base.y()` bakes in a `-(HEIGHT_F - WIDTH_F)/2` rotation-compensation term that's only
+    // correct for the rotated piles below (this point used to be deckZoneGraphicsItem's position,
+    // pre-dating the command zone) -- applying it to the unrotated CommandZone leaves it ~15px
+    // too high, overlapping the bottom of the avatar box above it. Undo just that term here.
+    qreal commandZoneY = base.y() + (CardDimensions::HEIGHT_F - CardDimensions::WIDTH_F) / 2.0;
     commandZoneGraphicsItem = new CommandZone(player->getCommandZone(), this);
-    commandZoneGraphicsItem->setPos(base);
-    qreal commandZoneStep = CardDimensions::HEIGHT_F + 5;
+    commandZoneGraphicsItem->setPos(QPointF(base.x(), commandZoneY));
+    qreal commandZoneStep = commandZoneY - base.y() + CardDimensions::HEIGHT_F + 5;
 
     deckZoneGraphicsItem = new PileZone(player->getDeckZone(), this);
     deckZoneGraphicsItem->setPos(base + QPointF(0, commandZoneStep));
@@ -214,6 +221,20 @@ void PlayerGraphicsItem::onCounterAdded(CounterState *state)
     AbstractCounter *widget;
     if (state->getName() == "life") {
         widget = playerTarget->addCounter(state);
+    } else if (state->getName() == "storm") {
+        widget = new TextCounter(state, player, this);
+    } else if (CommanderCounterNames::isTaxCounter(state->getName())) {
+        // Rendered as a small badge on the command zone itself rather than in the generic
+        // counter column -- it conceptually belongs to that zone (rule 903.9). shownInCounterArea
+        // = false excludes it from rearrangeCounters()'s vertical stacking, the same mechanism
+        // that already excludes "life" (handled by playerTarget above) from that stack.
+        widget = new GeneralCounter(state, player, /*useNameForShortcut=*/false, commandZoneGraphicsItem,
+                                    /*shownInCounterArea=*/false);
+        // Top-right corner: the center is taken by the card-count ellipse (paintNumberEllipse's
+        // position=-1 in CommandZone::paint()) and bottom-center by the "CMD" label.
+        QRectF zoneRect = commandZoneGraphicsItem->boundingRect();
+        QRectF widgetRect = widget->boundingRect();
+        widget->setPos(zoneRect.right() - widgetRect.width() - 4, zoneRect.top() + 4);
     } else {
         widget = new GeneralCounter(state, player, true, this);
     }

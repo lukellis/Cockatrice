@@ -146,6 +146,12 @@ public:
      */
     static bool canEndTurn(int phase);
 
+    /**
+     * @brief Phase index for the Untap step, i.e. the first step of a new turn (see
+     * canAdvanceToPhase()'s doc comment: reaching this phase again is what marks a new turn).
+     */
+    static constexpr int UNTAP_PHASE = 0;
+
     /** @brief Phase index for the First Main phase (see isCombatPhase()'s phase-index doc). */
     static constexpr int FIRST_MAIN_PHASE = 3;
 

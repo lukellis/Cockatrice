@@ -53,3 +53,45 @@ tested" precedent. Live-verified: activating two abilities without passing prior
 produces two list entries in the correct LIFO order with correct human-readable text,
 persists unchanged across an unrelated phase transition, and correctly drains as
 priority passes resolve each entry. See `CLAUDE.md`'s UI-testing recipe.
+
+## Counter UI cleanup + Storm counter (2026-07-21)
+
+Player feedback: the command zone visually overlapped the avatar box (see
+`phase3-command-zone.md`'s own "UI cleanup" section for that fix and the Commander
+Tax badge's move onto the command zone), several per-player counters rendered as
+identical unlabeled circles, and one ("storm", upstream Cockatrice's generic manually-
+adjustable "Other" counter) was confusing and unused in practice.
+
+**Storm count, replacing the old manual counter**: rather than just deleting it, it's
+now a genuine (if informal — not a Commander rule) auto-tracked "spells cast this
+turn" count, rendered read-only:
+- **Client-side increment**: the server has no card-type awareness of its own, so the
+  +1 is appended as an ordinary `Command_IncCounter` from
+  `PlayerActions::gateManaCostForHandPlay()` (`cockatrice/src/game/player/player_actions.cpp`)
+  — the same established point that already piggybacks real-mana-payment
+  `Command_IncCounter`s (Phase 6) — for any non-land card leaving hand (rule 305.1
+  already excludes lands from "casting" a spell).
+- **Server-side reset**: `Server_Player::resetStormCount()`, called once per turn from
+  `Server_Game::setActivePhase()` on entering `Rules::RulesEngine::UNTAP_PHASE`,
+  mirroring the existing per-phase mana-pool-empty sweep's "loop every player" pattern.
+- **Read-only rendering**: a new `AbstractCounter` constructor flag (`interactive`,
+  defaulted `true` so the two pre-existing subclasses need no changes) suppresses both
+  the TearOffMenu and click-to-increment; `TextCounter`
+  (`cockatrice/src/game_graphics/board/counter_text.{h,cpp}`) renders it as plain
+  `"Storm: N"` text instead of `GeneralCounter`'s colored-circle-plus-icon, since a
+  dynamic per-commander name wouldn't have a themed icon anyway.
+
+**Look-alike-counter labels**: `CounterPixmapGenerator::generatePixmap` only has
+dedicated icons for w/u/b/r/g — colorless mana, poison, and per-commander damage all
+silently fall back to the same generic circle. `GeneralCounter::paint()` now draws a
+short text label under any counter that isn't one of those five (abbreviated for the
+per-commander damage counter's otherwise-long name), and every counter now has a
+hover tooltip with its full display name (`AbstractCounter`'s constructor). Skipped
+for counters rendered outside the shared counter column (currently only the Commander
+Tax badge — see `phase3-command-zone.md`), since position alone already disambiguates
+those.
+
+Live-verified via `.uitest/scenario.py run counter_ui_gate` — see
+`phase3-command-zone.md`'s Testing section for what it covers. No dedicated GTest
+beyond `CommanderCounterNames::isTaxCounter()`'s pure-logic cases in
+`tests/rules/rules_engine_test.cpp`, matching this doc's established precedent above.

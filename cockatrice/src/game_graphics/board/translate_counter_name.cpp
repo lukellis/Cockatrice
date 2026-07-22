@@ -8,4 +8,4 @@ const QMap<QString, QString> TranslateCounterName::translated = {
     {"r", QT_TRANSLATE_NOOP("TranslateCounterName", "Red")},
     {"g", QT_TRANSLATE_NOOP("TranslateCounterName", "Green")},
     {"x", QT_TRANSLATE_NOOP("TranslateCounterName", "Colorless")},
-    {"storm", QT_TRANSLATE_NOOP("TranslateCounterName", "Other")}};
+    {"storm", QT_TRANSLATE_NOOP("TranslateCounterName", "Storm")}};

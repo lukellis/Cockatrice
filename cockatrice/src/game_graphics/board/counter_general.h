@@ -17,9 +17,13 @@ public:
     GeneralCounter(CounterState *state,
                    PlayerLogic *player,
                    bool useNameForShortcut = false,
-                   QGraphicsItem *parent = nullptr);
+                   QGraphicsItem *parent = nullptr,
+                   bool shownInCounterArea = true);
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+
+private:
+    bool needsLabel() const;
 };
 
 #endif

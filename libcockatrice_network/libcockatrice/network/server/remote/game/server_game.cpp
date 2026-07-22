@@ -772,6 +772,18 @@ void Server_Game::setActivePhase(int newPhase)
     }
     manaGes.sendToGame(this);
 
+    // Storm count resets for every player once per turn, at the Untap step -- unlike the
+    // mana-pool sweep just above, which runs on every phase/step transition.
+    if (newPhase == Rules::RulesEngine::UNTAP_PHASE) {
+        GameEventStorage stormGes;
+        for (auto *anyPlayer : getPlayers().values()) {
+            if (auto *player = dynamic_cast<Server_Player *>(anyPlayer)) {
+                player->resetStormCount(stormGes);
+            }
+        }
+        stormGes.sendToGame(this);
+    }
+
     // Phase 8 combat automation, Stage B: rule 510, resolved automatically on entering the
     // Combat Damage step -- see resolveCombatDamage()'s own doc comment for exactly what this
     // does and doesn't cover.

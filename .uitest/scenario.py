@@ -264,6 +264,7 @@ LOCAL_GAME_DECKS = {
     "mana_gate": REPO_ROOT / ".uitest" / "manatest.cod",
     "variable_mana_gate": REPO_ROOT / ".uitest" / "variablemanatest.cod",
     "turn_structure_gate": REPO_ROOT / ".uitest" / "turnstructuretest.cod",
+    "counter_ui_gate": REPO_ROOT / ".uitest" / "countertest.cod",
 }
 
 
@@ -816,17 +817,95 @@ def scenario_turn_structure_gate(ctx):
                           label="Plains casts once in the controller's own main phase")
 
 
+def scenario_counter_ui_gate(ctx):
+    """Live-verifies the command-zone/counter UI cleanup: the command-zone/avatar overlap fix
+    (player_graphics_item.cpp's commandZoneY derivation), the auto-tracked read-only Storm
+    counter (TextCounter, Server_Player::onCardBeingMoved()/resetStormCount()), and the
+    Commander Tax badge now rendered on the command zone itself instead of the counter column
+    (CommanderCounterNames::isTaxCounter()). .uitest/countertest.cod's bannerCard is Atraxa,
+    Praetors' Voice (a Legendary Creature, so a legal commander -- routed to the command zone
+    by Server_Player::setupZones() instead of the library), plus Plains and Lightning Bolt --
+    the same 2-card-hand shape as turnstructuretest.cod, reusing its hand-building sequence.
+
+    Screenshots are taken for the parts that are genuinely visual (layout/overlap, label text)
+    rather than asserted against the log -- read them with the Read tool afterward.
+    """
+    print("[counter_ui_gate] stepping Untap->Upkeep->Draw and drawing the starting 2-card hand")
+    for _ in range(2):
+        ctx.key("Tab")
+        ctx.sleep(0.5)
+    ctx.click(23, 190)  # Draw phase button, already active -- fires its double-click draw action
+    ctx.sleep(0.5)
+
+    print("[counter_ui_gate] screenshotting the board: command zone (with its Tax badge) vs. avatar overlap")
+    ctx.shot("/tmp/counter_ui_gate_board.png")
+
+    samples = _hand_colors(2)
+    print(f"  sampled hand colors: {samples}")
+    plains_x = next((x for x, color in samples if color != _LIGHTNING_BOLT_COLOR), None)
+    bolt_x = next((x for x, color in samples if color == _LIGHTNING_BOLT_COLOR), None)
+    if plains_x is None or bolt_x is None:
+        print(f"  [FAIL] expected one red (Lightning Bolt) and one non-red (Plains) hand slot, sampled {samples}")
+        ctx.ok = False
+        return False
+
+    print("[counter_ui_gate] casting Lightning Bolt -- expect Storm (counter id 7) to auto-increment to 1")
+    ctx.click(*_MANA_COUNTER_XY["r"])
+    ctx.sleep(0.3)
+    ctx.click(bolt_x, HAND_ROW_Y)
+    ctx.sleep(1.0)
+    if not ctx.assert_log(CLIENT_LOG, _moved_to_table_pattern("Lightning Bolt"), timeout=5,
+                          label="Lightning Bolt is cast"):
+        return False
+    if not ctx.assert_log(CLIENT_LOG, r"Event_SetCounter\.ext.*counter_id: 7\b.*value: 1\b", timeout=5,
+                          label="Storm auto-increments to 1 after casting a spell"):
+        return False
+
+    print("[counter_ui_gate] screenshotting again: Storm should read as plain text, no colored circle")
+    ctx.shot("/tmp/counter_ui_gate_storm.png")
+
+    print("[counter_ui_gate] left-clicking on Storm's text -- expect no reaction (read-only, interactive=false)")
+    # A left-click on an ordinary counter is its quick +1 gesture (AbstractCounter::mousePressEvent) --
+    # this is the actual interaction TextCounter's interactive=false is meant to suppress, more so than
+    # a plain right-click (which is the quick -1 gesture, not the menu -- that's middle-click/shift-click).
+    ctx.click(40, 452, button=1)
+    ctx.sleep(0.5)
+    ctx.shot("/tmp/counter_ui_gate_storm_rightclick.png")
+    if _wait_for_log(CLIENT_LOG, r"Event_SetCounter\.ext.*counter_id: 7\b.*value: 2\b", timeout=2) is not None:
+        print("  [FAIL] Storm reacted to a click -- it should be read-only")
+        ctx.ok = False
+        return False
+    print("  [PASS] Storm did not react to a click (still read-only)")
+
+    print("[counter_ui_gate] stepping Draw(2) -> End/Cleanup(10), then ending the turn")
+    for _ in range(8):
+        ctx.key("Tab")
+        ctx.sleep(0.4)
+    if not ctx.assert_log(CLIENT_LOG, r"Event_SetActivePhase\.ext.*phase: 10\b", timeout=5,
+                          label="reached End/Cleanup (phase 10)"):
+        return False
+
+    ctx.key_combo("ctrl", "Return")  # Next Turn (Player/aNextTurn)
+    ctx.sleep(1.0)
+    if not ctx.assert_log(CLIENT_LOG, r"Event_SetActivePhase\.ext.*phase: 0\b", timeout=5,
+                          label="Next Turn lands back on Untap (phase 0)"):
+        return False
+    return ctx.assert_log(CLIENT_LOG, r"Event_SetCounter\.ext.*counter_id: 7\b.*value: 0\b", timeout=5,
+                          label="Storm resets to 0 at the start of the new turn")
+
+
 SCENARIOS = {
     "connect": scenario_connect,
     "mana_gate": scenario_mana_gate,
     "variable_mana_gate": scenario_variable_mana_gate,
     "turn_structure_gate": scenario_turn_structure_gate,
+    "counter_ui_gate": scenario_counter_ui_gate,
 }
 
 # Scenarios needing a fresh local hotseat game (see ensure_local_game_profile()) rather than
 # the Home tab a plain client launch lands on. Each needs its own fixture deck -- see
 # LOCAL_GAME_DECKS.
-LOCAL_GAME_SCENARIOS = {"mana_gate", "variable_mana_gate", "turn_structure_gate"}
+LOCAL_GAME_SCENARIOS = {"mana_gate", "variable_mana_gate", "turn_structure_gate", "counter_ui_gate"}
 
 
 def main():

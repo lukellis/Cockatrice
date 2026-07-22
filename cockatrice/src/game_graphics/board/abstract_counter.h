@@ -46,6 +46,7 @@ private:
     bool deleteAfterDialog = false;
     bool shownInCounterArea;
     bool shortcutActive = false;
+    bool interactive;
 
 private slots:
     void refreshShortcuts();
@@ -57,7 +58,8 @@ public:
                     PlayerLogic *player,
                     bool shownInCounterArea,
                     bool useNameForShortcut = false,
-                    QGraphicsItem *parent = nullptr);
+                    QGraphicsItem *parent = nullptr,
+                    bool interactive = true);
     ~AbstractCounter() override;
 
     void retranslateUi() override;

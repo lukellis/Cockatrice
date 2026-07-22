@@ -853,6 +853,22 @@ TEST(RulesEngineTest, CommanderTaxCounterNameForMoveIsNulloptForAMoveBackIntoThe
     EXPECT_FALSE(RulesEngine::commanderTaxCounterNameForMove("command", "command", "Atraxa").has_value());
 }
 
+TEST(RulesEngineTest, IsTaxCounterMatchesATaxCounterName)
+{
+    EXPECT_TRUE(CommanderCounterNames::isTaxCounter(CommanderCounterNames::tax("Atraxa, Praetors' Voice")));
+}
+
+TEST(RulesEngineTest, IsTaxCounterRejectsADamageCounterName)
+{
+    EXPECT_FALSE(CommanderCounterNames::isTaxCounter(CommanderCounterNames::damage("Atraxa, Praetors' Voice")));
+}
+
+TEST(RulesEngineTest, IsTaxCounterRejectsUnrelatedCounterNames)
+{
+    EXPECT_FALSE(CommanderCounterNames::isTaxCounter("poison"));
+    EXPECT_FALSE(CommanderCounterNames::isTaxCounter("w"));
+}
+
 // ---- RulesEngine::nextPriorityPlayer (pure decision logic) ----
 
 TEST(RulesEngineTest, NextPriorityPlayerAdvancesToNextInOrder)
