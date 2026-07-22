@@ -88,6 +88,8 @@
         <file>resources/counters/g_highlight.svg</file>
         <file>resources/counters/storm.svg</file>
         <file>resources/counters/storm_highlight.svg</file>
+        <file>resources/counters/poison.svg</file>
+        <file>resources/counters/poison_highlight.svg</file>
         <file>resources/counters/general.svg</file>
         <file>resources/counters/general_highlight.svg</file>
 

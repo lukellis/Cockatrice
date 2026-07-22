@@ -12,7 +12,9 @@
 
 #include <QGraphicsObject>
 
+class CounterGroupBox;
 class HandZone;
+class ManaPentagonWidget;
 class PileZone;
 class PlayerDialogs;
 class PlayerMenu;
@@ -35,7 +37,9 @@ public:
         return Type;
     }
 
-    static constexpr int counterAreaWidth = 55;
+    // Wide enough to fit ManaPentagonWidget (a bordered circle ~88px across) centered, plus its
+    // own small margin either side -- was 55 back when counters just stacked individually.
+    static constexpr int counterAreaWidth = 90;
 
     explicit PlayerGraphicsItem(PlayerLogic *player);
     void initializeZones();
@@ -138,6 +142,8 @@ private:
     PlayerArea *playerArea;
     PlayerTarget *playerTarget;
     QMap<int, AbstractCounter *> counterWidgets;
+    CounterGroupBox *specialCounterGroup = nullptr;
+    ManaPentagonWidget *manaPentagon = nullptr;
     QMap<QString, CardZone *> zoneGraphicsItems;
     PileZone *deckZoneGraphicsItem;
     PileZone *sideboardGraphicsItem;

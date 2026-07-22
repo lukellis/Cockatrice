@@ -4,7 +4,8 @@
 #include "../../interface/widgets/tabs/tab_game.h"
 #include "../board/abstract_card_item.h"
 #include "../board/counter_general.h"
-#include "../board/counter_text.h"
+#include "../board/counter_group_box.h"
+#include "../board/mana_pentagon_widget.h"
 #include "../hand_counter.h"
 #include "../zones/command_zone.h"
 #include "../zones/hand_zone.h"
@@ -17,6 +18,7 @@
 #include <QGraphicsView>
 #include <QMessageBox>
 #include <libcockatrice/rules/commander_counter_names.h>
+#include <libcockatrice/rules/rules_engine.h>
 
 PlayerGraphicsItem::PlayerGraphicsItem(PlayerLogic *_player) : player(_player)
 {
@@ -221,8 +223,29 @@ void PlayerGraphicsItem::onCounterAdded(CounterState *state)
     AbstractCounter *widget;
     if (state->getName() == "life") {
         widget = playerTarget->addCounter(state);
-    } else if (state->getName() == "storm") {
-        widget = new TextCounter(state, player, this);
+    } else if (Rules::RulesEngine::manaCounterNames().contains(state->getName())) {
+        // Laid out on ManaPentagonWidget (five colors at pentagon vertices, colorless centered)
+        // instead of PlayerGraphicsItem::rearrangeCounters()'s generic vertical stack.
+        widget = new GeneralCounter(state, player, /*useNameForShortcut=*/true, /*parent=*/nullptr,
+                                    /*shownInCounterArea=*/false);
+        if (!manaPentagon) {
+            manaPentagon = new ManaPentagonWidget(this);
+        }
+        manaPentagon->addManaCounter(state->getName(), widget);
+    } else if (state->getName() == "storm" || state->getName() == CommanderCounterNames::poisonCounterName()) {
+        // Grouped together in one small bordered box (CounterGroupBox) instead of each stacking
+        // individually in the counter column -- both render via their own themed icon now
+        // (storm.svg/poison.svg), so no per-counter label is needed (see GeneralCounter's
+        // hasOwnIcon()). Storm stays read-only (interactive=false, auto-tracked -- see
+        // Server_Player::onCardBeingMoved()/resetStormCount()); poison remains manually
+        // adjustable, same as before.
+        const bool isStorm = state->getName() == "storm";
+        widget = new GeneralCounter(state, player, /*useNameForShortcut=*/false, /*parent=*/nullptr,
+                                    /*shownInCounterArea=*/false, /*interactive=*/!isStorm);
+        if (!specialCounterGroup) {
+            specialCounterGroup = new CounterGroupBox(this);
+        }
+        specialCounterGroup->addCounterWidget(widget);
     } else if (CommanderCounterNames::isTaxCounter(state->getName())) {
         // Rendered as a small badge on the command zone itself rather than in the generic
         // counter column -- it conceptually belongs to that zone (rule 903.9). shownInCounterArea
@@ -230,11 +253,15 @@ void PlayerGraphicsItem::onCounterAdded(CounterState *state)
         // that already excludes "life" (handled by playerTarget above) from that stack.
         widget = new GeneralCounter(state, player, /*useNameForShortcut=*/false, commandZoneGraphicsItem,
                                     /*shownInCounterArea=*/false);
-        // Top-right corner: the center is taken by the card-count ellipse (paintNumberEllipse's
-        // position=-1 in CommandZone::paint()) and bottom-center by the "CMD" label.
+        // Bottom-right corner, clear of the bottom-center "CMD" label.
         QRectF zoneRect = commandZoneGraphicsItem->boundingRect();
         QRectF widgetRect = widget->boundingRect();
-        widget->setPos(zoneRect.right() - widgetRect.width() - 4, zoneRect.top() + 4);
+        widget->setPos(zoneRect.right() - widgetRect.width() - 4, zoneRect.bottom() - widgetRect.height() - 4);
+    } else if (CommanderCounterNames::isDamageCounter(state->getName())) {
+        // A small badge above the life total in the avatar box (PlayerTarget::addDamageCounter())
+        // instead of the generic counter column -- one per opponent commander, count varies by
+        // table size/partners so this must not assume a fixed number.
+        widget = playerTarget->addDamageCounter(state);
     } else {
         widget = new GeneralCounter(state, player, true, this);
     }
@@ -319,6 +346,17 @@ void PlayerGraphicsItem::rearrangeCounters()
         QRectF br = ctr->boundingRect();
         ctr->setPos((counterAreaWidth - br.width()) / 2, ySize);
         ySize += br.height() + padding;
+    }
+
+    if (manaPentagon) {
+        QRectF br = manaPentagon->boundingRect();
+        manaPentagon->setPos((counterAreaWidth - br.width()) / 2, ySize);
+        ySize += br.height() + padding;
+    }
+
+    if (specialCounterGroup) {
+        QRectF br = specialCounterGroup->boundingRect();
+        specialCounterGroup->setPos((counterAreaWidth - br.width()) / 2, ySize);
     }
 }
 

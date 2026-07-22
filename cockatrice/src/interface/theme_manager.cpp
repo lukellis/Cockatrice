@@ -25,10 +25,14 @@
 #define PLAYERZONE_BG_NAME "playerzone"
 #define STACKZONE_BG_NAME "stackzone"
 #define TABLEZONE_BG_NAME "tablezone"
-static const QColor HANDZONE_BG_DEFAULT = QColor(80, 100, 50);
-static const QColor TABLEZONE_BG_DEFAULT = QColor(70, 50, 100);
-static const QColor PLAYERZONE_BG_DEFAULT = QColor(200, 200, 200);
-static const QColor STACKZONE_BG_DEFAULT = QColor(113, 43, 43);
+// Darker versions of the same hues (not a different palette) -- these are the flat fallback
+// fills used whenever a theme has no zone-background image of its own (e.g. this fork's default,
+// image-less "Default" theme, now also defaulting to a dark QPalette -- see
+// cockatrice/themes/Default/theme.cfg).
+static const QColor HANDZONE_BG_DEFAULT = QColor(35, 45, 20);
+static const QColor TABLEZONE_BG_DEFAULT = QColor(32, 24, 45);
+static const QColor PLAYERZONE_BG_DEFAULT = QColor(42, 42, 42);
+static const QColor STACKZONE_BG_DEFAULT = QColor(50, 20, 20);
 static const QStringList DEFAULT_RESOURCE_PATHS = {":/resources"};
 
 struct PaletteColorInfo

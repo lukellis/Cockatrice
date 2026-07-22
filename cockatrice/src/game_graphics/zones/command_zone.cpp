@@ -37,7 +37,9 @@ void CommandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*op
         CardItem *card = getLogic()->getCards().at(0);
         card->paintPicture(painter, card->getTranslatedSize(painter), 0);
     }
-    paintNumberEllipse(getLogic()->getCards().size(), 28, Qt::white, -1, -1, painter);
+    // Deliberately no card-count badge here (unlike the other piles) -- a commander is either in
+    // the zone or it isn't, "CMD" plus the card art already says that, and the badge only ever
+    // collided with the Tax counter badge in this corner.
 
     painter->save();
     QPen goldPen(COMMAND_ZONE_ACCENT, 4);
@@ -45,7 +47,7 @@ void CommandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*op
     painter->setBrush(Qt::NoBrush);
     painter->drawRoundedRect(boundingRect().adjusted(2, 2, -2, -2), 4, 4);
 
-    QFont font(QStringLiteral("Serif"));
+    QFont font; // inherits the app-wide sans-serif default (see main.cpp)
     font.setPixelSize(11);
     font.setWeight(QFont::Bold);
     painter->setFont(font);

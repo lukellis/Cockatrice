@@ -34,12 +34,14 @@ mechanism.
   (identity transform, not `PileZone`'s default 90° rotation) and reordered ahead of
   deck/graveyard/exile in the pile stack so the commander has a visibly distinct,
   readable location. The Commander Tax counter now renders as a small badge in the
-  command zone's own top-right corner (`PlayerGraphicsItem::onCounterAdded()`, gated on
-  the new `CommanderCounterNames::isTaxCounter()`) instead of an anonymous circle in the
-  generic per-player counter column — it's still the same fully interactive
+  command zone's own bottom-right corner (`PlayerGraphicsItem::onCounterAdded()`, gated
+  on the new `CommanderCounterNames::isTaxCounter()`) instead of an anonymous circle in
+  the generic per-player counter column — it's still the same fully interactive
   `GeneralCounter` (TearOffMenu, click to increment), just re-parented onto
   `commandZoneGraphicsItem` and excluded from that column's stacking via the existing
-  `shownInCounterArea=false` mechanism.
+  `shownInCounterArea=false` mechanism. `CommandZone::paint()` no longer draws a
+  card-count badge (see `ui-enhancements.md`'s "pass 2" — a Commander either is or isn't
+  there, and the badge only ever collided with Tax's corner).
 
 ## UI cleanup (2026-07-21)
 

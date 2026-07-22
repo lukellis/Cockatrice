@@ -11,6 +11,26 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <libcockatrice/protocol/pb/command_move_card.pb.h>
+#include <libcockatrice/utility/zone_names.h>
+
+namespace
+{
+// Short, compact labels rather than CardZoneLogic::getTranslatedName()'s longer possessive-case
+// phrasing ("their library") -- this is a minimal, low-opacity in-corner label, not prose.
+QString shortZoneLabel(const QString &zoneName)
+{
+    if (zoneName == ZoneNames::DECK) {
+        return QObject::tr("Deck");
+    }
+    if (zoneName == ZoneNames::GRAVE) {
+        return QObject::tr("Graveyard");
+    }
+    if (zoneName == ZoneNames::EXILE) {
+        return QObject::tr("Exile");
+    }
+    return {};
+}
+} // namespace
 
 PileZone::PileZone(PileZoneLogic *_logic, QGraphicsItem *parent) : CardZone(_logic, parent)
 {
@@ -57,6 +77,17 @@ void PileZone::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*optio
     painter->rotate(-90);
     painter->translate(-CardDimensions::WIDTH_HALF_F, -CardDimensions::HEIGHT_HALF_F);
     paintNumberEllipse(getLogic()->getCards().size(), 28, Qt::white, -1, -1, painter);
+
+    const QString label = shortZoneLabel(getLogic()->getName());
+    if (!label.isEmpty()) {
+        painter->save();
+        QFont f("Sans Serif");
+        f.setPixelSize(9);
+        painter->setFont(f);
+        painter->setPen(QColor(255, 255, 255, 100));
+        painter->drawText(boundingRect(), Qt::AlignHCenter | Qt::AlignBottom, label);
+        painter->restore();
+    }
 }
 
 void PileZone::handleDropEvent(const QList<CardDragItem *> &dragItems, CardZoneLogic *startZone, const QPoint &)

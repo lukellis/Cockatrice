@@ -48,7 +48,7 @@ to silently fill in.
 | 8. Combat system | Declare-attacker + Stages A/B/C/D (targeting, blocking, automated damage/death, deathtouch/trample/indestructible, first strike/double strike) done | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
 | 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects, combat-math consumers only | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
 | 9. State-based actions (advisory warnings) | Partial, by design | [phase9-state-based-actions.md](doc/commander-status/phase9-state-based-actions.md) |
-| §12 UI design & enhancements | Ongoing — command-zone overlap fix, Tax badge on the zone itself, auto-tracked Storm counter, look-alike-counter labels | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
+| §12 UI design & enhancements | Ongoing — command-zone overlap fix, Tax badge on the zone itself, auto-tracked Storm counter, mana pentagon, icon-based Storm/Poison, per-opponent damage row, dark theme default | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
 
 ## Current status
 
@@ -118,6 +118,21 @@ real mana payment already is), reset once per turn server-side; (4) counters tha
 the same generic icon (poison, colorless mana, per-commander damage) get a short label plus a
 full-name tooltip, since they were previously visually identical. Live-verified via
 `.uitest/scenario.py run counter_ui_gate`.
+
+**As of 2026-07-21, a follow-up "pass 2" on the same UI** (`ui-enhancements.md`'s "Counter UI
+pass 2" section) — the mana counters (w/u/b/r/g/x) now live in a bordered pentagon
+(`ManaPentagonWidget`) with each color's real mana-symbol pip as a faint background watermark;
+Storm and Poison now render via real themed icons (a lightning bolt, an original stylized
+droplet — not Wizards' trademarked Phyrexian symbol) grouped in a small bordered box instead of
+Storm's plain text; the command zone's card-count badge is gone and Tax moved to the
+bottom-right corner; mana counters are now server-clamped to a floor of 0; Deck/Graveyard/
+Exile/Hand each got a minimal low-opacity label; a compact per-opponent commander-damage badge
+row was added above the life total (`PlayerTarget::addDamageCounter()`, count is genuinely
+variable, never assume a fixed 3); and this fork's default theme now ships dark
+(`cockatrice/themes/Default/theme.cfg`) with an app-wide sans-serif font. Live-verified via the
+same `counter_ui_gate` scenario (re-pointed at the pentagon's new click coordinates) for
+everything except the damage row, which needs a real opponent to populate and so has no live
+UI-test coverage yet (code-reviewed and build/`ctest`-verified only).
 
 **The Phase 7/8 staged execution-engine roadmap and the `libcockatrice_rules`
 reorganization are both fully worked through at this fork's current scope.** Any of the

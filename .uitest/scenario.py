@@ -621,11 +621,12 @@ def scenario_mana_gate(ctx):
                           label="Kaya's Wrath casts via the ambiguous-payment dialog's default split")
 
 
-# Mana-counter click targets (Server_Player::setupZones()'s ids 1-6 -- w,u,b,r,g,x), verified
-# live this session by clicking each and reading the resulting Command_IncCounter/
-# Event_SetCounter counter_id off the client's debug log: 1=w (68,192), 2=u (68,233),
-# 3=b (68,275), 4=r (68,316), 5=g (68,358). x (6) isn't needed by any scenario below.
-_MANA_COUNTER_XY = {"w": (68, 192), "u": (68, 233), "b": (68, 275), "r": (68, 316), "g": (68, 358)}
+# Mana-counter click targets (Server_Player::setupZones()'s ids 1-6 -- w,u,b,r,g,x), re-verified
+# live (2026-07-21 UI pass 2) against ManaPentagonWidget's pentagon layout by clicking each and
+# reading the resulting Command_IncCounter counter_id off the client's debug log: 1=w (81,205),
+# 2=u (100,209), 3=b (92,232), 4=r (69,239), 5=g (60,209). These replace the old simple-vertical-
+# stack coordinates -- x (6) isn't needed by any scenario below.
+_MANA_COUNTER_XY = {"w": (81, 205), "u": (100, 209), "b": (92, 232), "r": (69, 239), "g": (60, 209)}
 
 # Placeholder card-art colors for the three DlgChooseVariableManaCost fixture cards (no real
 # card images exist in this sandbox -- WITH_ORACLE=OFF -- so Cockatrice paints a flat color
@@ -861,14 +862,16 @@ def scenario_counter_ui_gate(ctx):
                           label="Storm auto-increments to 1 after casting a spell"):
         return False
 
-    print("[counter_ui_gate] screenshotting again: Storm should read as plain text, no colored circle")
+    print("[counter_ui_gate] screenshotting again: Storm should show its lightning-bolt icon, count 1")
     ctx.shot("/tmp/counter_ui_gate_storm.png")
 
-    print("[counter_ui_gate] left-clicking on Storm's text -- expect no reaction (read-only, interactive=false)")
+    print("[counter_ui_gate] left-clicking Storm's icon -- expect no reaction (read-only, interactive=false)")
     # A left-click on an ordinary counter is its quick +1 gesture (AbstractCounter::mousePressEvent) --
-    # this is the actual interaction TextCounter's interactive=false is meant to suppress, more so than
-    # a plain right-click (which is the quick -1 gesture, not the menu -- that's middle-click/shift-click).
-    ctx.click(40, 452, button=1)
+    # this is the actual interaction GeneralCounter's interactive=false (see PlayerGraphicsItem::
+    # onCounterAdded()'s storm branch) is meant to suppress. (65, 278): Storm's position inside the
+    # CounterGroupBox it shares with Poison, re-verified live against the current layout (2026-07-21
+    # UI pass 2 -- ManaPentagonWidget/CounterGroupBox).
+    ctx.click(65, 278, button=1)
     ctx.sleep(0.5)
     ctx.shot("/tmp/counter_ui_gate_storm_rightclick.png")
     if _wait_for_log(CLIENT_LOG, r"Event_SetCounter\.ext.*counter_id: 7\b.*value: 2\b", timeout=2) is not None:

@@ -18,7 +18,8 @@ public:
                    PlayerLogic *player,
                    bool useNameForShortcut = false,
                    QGraphicsItem *parent = nullptr,
-                   bool shownInCounterArea = true);
+                   bool shownInCounterArea = true,
+                   bool interactive = true);
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 

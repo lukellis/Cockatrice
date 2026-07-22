@@ -71,6 +71,16 @@ void HandZone::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*optio
 {
     QBrush brush = themeManager->getExtraBgBrush(ThemeManager::Hand, getLogic()->getPlayer()->getZoneId());
     painter->fillRect(boundingRect(), brush);
+
+    // Minimal, low-opacity label, same visual language as PileZone's -- a corner is enough since
+    // the hand's contents make the zone self-evident either way.
+    painter->save();
+    QFont f("Sans Serif");
+    f.setPixelSize(9);
+    painter->setFont(f);
+    painter->setPen(QColor(255, 255, 255, 100));
+    painter->drawText(boundingRect().adjusted(4, 2, -4, -2), Qt::AlignLeft | Qt::AlignTop, tr("Hand"));
+    painter->restore();
 }
 
 void HandZone::reorganizeCards()

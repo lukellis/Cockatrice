@@ -12,7 +12,7 @@ void AbstractGraphicsItem::paintNumberEllipse(int number,
     painter->save();
 
     QString numStr = QString::number(number);
-    QFont font("Serif");
+    QFont font; // inherits the app-wide sans-serif default (see main.cpp)
     font.setPixelSize(fontSize);
     font.setWeight(QFont::Bold);
 

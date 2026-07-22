@@ -56,6 +56,7 @@
 #include <libcockatrice/utility/color.h>
 #include <libcockatrice/utility/string_limits.h>
 #include <libcockatrice/utility/zone_names.h>
+#include <tuple>
 
 Server_Player::Server_Player(Server_Game *_game,
                              int _playerId,
@@ -102,24 +103,27 @@ void Server_Player::setupZones()
     addZone(commandZone);
 
     addCounter(new Server_Counter(0, "life", makeColor(255, 255, 255), 25, game->getStartingLifeTotal()));
-    addCounter(new Server_Counter(1, "w", makeColor(255, 255, 150), 20, 0));
-    addCounter(new Server_Counter(2, "u", makeColor(150, 150, 255), 20, 0));
-    addCounter(new Server_Counter(3, "b", makeColor(150, 150, 150), 20, 0));
-    addCounter(new Server_Counter(4, "r", makeColor(250, 150, 150), 20, 0));
-    addCounter(new Server_Counter(5, "g", makeColor(150, 255, 150), 20, 0));
-    addCounter(new Server_Counter(6, "x", makeColor(255, 255, 255), 20, 0));
+    // Mana counters: smaller radius (12 vs the old 20) -- laid out compactly by ManaPentagonWidget
+    // (five colors at pentagon vertices, colorless in the center) rather than stacked full-size.
+    addCounter(new Server_Counter(1, "w", makeColor(255, 255, 150), 12, 0));
+    addCounter(new Server_Counter(2, "u", makeColor(150, 150, 255), 12, 0));
+    addCounter(new Server_Counter(3, "b", makeColor(150, 150, 150), 12, 0));
+    addCounter(new Server_Counter(4, "r", makeColor(250, 150, 150), 12, 0));
+    addCounter(new Server_Counter(5, "g", makeColor(150, 255, 150), 12, 0));
+    addCounter(new Server_Counter(6, "x", makeColor(255, 255, 255), 12, 0));
     // "storm": spells cast so far this turn (rule not Commander-specific, but tracked here for
     // every game the same as the mana/poison counters above). The server has no card-type
     // awareness of its own (see PlayerActions::gateManaCostForHandPlay()'s "Land" check), so
     // the +1 is sent client-side as an ordinary Command_IncCounter alongside the move, the same
     // way real mana payment already piggybacks its own IncCounters there; auto-reset in
-    // resetStormCount() below is server-authoritative. Rendered client-side as a read-only
-    // "Storm: N" text display, not a manually-adjustable counter (see
-    // PlayerGraphicsItem::onCounterAdded() and TextCounter).
-    addCounter(new Server_Counter(7, "storm", makeColor(255, 150, 30), 20, 0));
+    // resetStormCount() below is server-authoritative. Rendered client-side as a read-only,
+    // icon-based counter (a lightning bolt, storm.svg), not a manually-adjustable one (see
+    // PlayerGraphicsItem::onCounterAdded()). Smaller radius (14 vs the mana counters' 20) --
+    // grouped with poison in a compact CounterGroupBox, not stacked in the main counter column.
+    addCounter(new Server_Counter(7, "storm", makeColor(255, 150, 30), 14, 0));
     // Poison counters: a player loses the game upon reaching 10 (rule 104.3c). Always created --
-    // this fork is wholly Commander-dedicated.
-    addCounter(new Server_Counter(8, CommanderCounterNames::poisonCounterName(), makeColor(80, 200, 80), 20, 0));
+    // this fork is wholly Commander-dedicated. Same compact radius as storm, see above.
+    addCounter(new Server_Counter(8, CommanderCounterNames::poisonCounterName(), makeColor(80, 200, 80), 14, 0));
 
     // ------------------------------------------------------------------
 
@@ -523,6 +527,19 @@ Server_Player::cmdUndoDraw(const Command_UndoDraw & /*cmd*/, ResponseContainer &
     return retVal;
 }
 
+namespace
+{
+// Mana pools have no real-world negative quantity -- unlike life/poison/damage counters
+// (which may legitimately need manual correction below zero), clamp these to a floor of 0
+// regardless of which entry point (increment or direct set) drove them there.
+void clampManaCounterFloor(Server_Counter *c)
+{
+    if (Rules::RulesEngine::manaCounterNames().contains(c->getName()) && c->getCount() < 0) {
+        std::ignore = c->setCount(0);
+    }
+}
+} // namespace
+
 Response::ResponseCode
 Server_Player::cmdIncCounter(const Command_IncCounter &cmd, ResponseContainer & /*rc*/, GameEventStorage &ges)
 {
@@ -539,8 +556,13 @@ Server_Player::cmdIncCounter(const Command_IncCounter &cmd, ResponseContainer & 
         return Response::RespNameNotFound;
     }
 
-    bool didChange = c->incrementCount(cmd.delta());
-    if (didChange) {
+    // Computed around the clamp rather than using incrementCount()'s own return value, so a
+    // delta that lands below zero and gets clamped straight back to its starting value (e.g.
+    // 0 - 1 -> clamped to 0) correctly reports "no change" instead of a spurious event.
+    const int oldCount = c->getCount();
+    std::ignore = c->incrementCount(cmd.delta());
+    clampManaCounterFloor(c);
+    if (c->getCount() != oldCount) {
         Event_SetCounter event;
         event.set_counter_id(c->getId());
         event.set_value(c->getCount());
@@ -592,8 +614,10 @@ Server_Player::cmdSetCounter(const Command_SetCounter &cmd, ResponseContainer & 
         return Response::RespNameNotFound;
     }
 
-    bool didChange = c->setCount(cmd.value());
-    if (didChange) {
+    const int oldCount = c->getCount();
+    std::ignore = c->setCount(cmd.value());
+    clampManaCounterFloor(c);
+    if (c->getCount() != oldCount) {
         Event_SetCounter event;
         event.set_counter_id(c->getId());
         event.set_value(c->getCount());

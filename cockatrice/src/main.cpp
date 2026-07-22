@@ -35,6 +35,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
+#include <QFont>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QSystemTrayIcon>
@@ -196,6 +197,13 @@ int main(int argc, char *argv[])
         "%{if-debug}\033[36mD%{endif}%{if-info}\033[32mI%{endif}%{if-warning}\033[33mW%{endif}%{if-critical}\033[31mC%{"
         "endif}%{if-fatal}\033[1;31mF%{endif}\033[0m] [%{function}] - %{message} [%{file}:%{line}]");
     QApplication app(argc, argv);
+
+    // A clean sans-serif rather than whatever serif the platform default happens to be --
+    // styleHint (not a specific family name) so it respects whatever the OS actually ships,
+    // no bundled font file needed.
+    QFont defaultFont;
+    defaultFont.setStyleHint(QFont::SansSerif);
+    app.setFont(defaultFont);
 
     QObject::connect(&app, &QApplication::lastWindowClosed, &app, &QApplication::quit);
 

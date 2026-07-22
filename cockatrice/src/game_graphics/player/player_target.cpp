@@ -39,12 +39,36 @@ void PlayerCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*
 
     QRectF translatedRect = path.controlPointRect();
     QSize translatedSize = translatedRect.size().toSize();
-    QFont font("Serif");
+    QFont font; // inherits the app-wide sans-serif default (see main.cpp)
     font.setWeight(QFont::Bold);
     font.setPixelSize(qMax(qRound(translatedSize.height() / 1.3), 9));
     painter->setFont(font);
     painter->setPen(Qt::white);
     painter->drawText(translatedRect, Qt::AlignCenter, QString::number(value));
+}
+
+DamageBadge::DamageBadge(CounterState *state, PlayerLogic *player, QGraphicsItem *parent)
+    : AbstractCounter(state, player, false, false, parent)
+{
+}
+
+QRectF DamageBadge::boundingRect() const
+{
+    return {0, 0, 22, 15};
+}
+
+void DamageBadge::paint(QPainter *painter, const QStyleOptionGraphicsItem * /*option*/, QWidget * /*widget*/)
+{
+    painter->setPen(QPen(QColor(120, 40, 40), 1));
+    painter->setBrush(hovered ? QColor(90, 30, 30, 200) : QColor(60, 20, 20, 200));
+    painter->drawRoundedRect(boundingRect().adjusted(0.5, 0.5, -0.5, -0.5), 3, 3);
+
+    QFont font("Sans Serif");
+    font.setWeight(QFont::Bold);
+    font.setPixelSize(10);
+    painter->setFont(font);
+    painter->setPen(Qt::white);
+    painter->drawText(boundingRect(), Qt::AlignCenter, QString::number(value));
 }
 
 PlayerTarget::PlayerTarget(PlayerLogic *_owner, QGraphicsItem *parentItem)
@@ -171,6 +195,29 @@ AbstractCounter *PlayerTarget::addCounter(CounterState *state)
                           boundingRect().height() - playerCounter->boundingRect().height());
     connect(playerCounter, &PlayerCounter::destroyed, this, &PlayerTarget::counterDeleted);
     return playerCounter;
+}
+
+AbstractCounter *PlayerTarget::addDamageCounter(CounterState *state)
+{
+    auto *badge = new DamageBadge(state, owner, this);
+    damageBadges.append(badge);
+    connect(badge, &DamageBadge::destroyed, this, [this, badge]() {
+        damageBadges.removeAll(badge);
+        relayoutDamageBadges();
+    });
+    relayoutDamageBadges();
+    return badge;
+}
+
+void PlayerTarget::relayoutDamageBadges()
+{
+    constexpr qreal spacing = 2;
+    qreal x = boundingRect().width() - spacing;
+    for (auto *badge : damageBadges) {
+        x -= badge->boundingRect().width();
+        badge->setPos(x, spacing);
+        x -= spacing;
+    }
 }
 
 void PlayerTarget::counterDeleted()

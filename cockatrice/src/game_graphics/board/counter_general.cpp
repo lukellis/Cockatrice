@@ -10,13 +10,14 @@
 
 namespace
 {
-// The six mana-color counters already read fine via their own colored icon; every other
-// counter (poison, per-commander damage, and any future colorless-fallback counter) renders as
-// the same generic circle (see CounterPixmapGenerator::generatePixmap's fallback), so those get
-// a short text label underneath instead.
+// Counters with their own themed icon (mana colors, storm's lightning bolt, poison's droplet --
+// see cockatrice/resources/counters/) already read fine without a label; every other counter
+// (per-commander tax/damage, and any future colorless-fallback counter) renders as the same
+// generic circle (see CounterPixmapGenerator::generatePixmap's fallback), so those get a short
+// text label underneath instead.
 bool hasOwnIcon(const QString &name)
 {
-    static const QSet<QString> namesWithIcons = {"w", "u", "b", "r", "g"};
+    static const QSet<QString> namesWithIcons = {"w", "u", "b", "r", "g", "storm", "poison"};
     return namesWithIcons.contains(name);
 }
 
@@ -39,8 +40,9 @@ GeneralCounter::GeneralCounter(CounterState *state,
                                PlayerLogic *player,
                                bool useNameForShortcut,
                                QGraphicsItem *parent,
-                               bool shownInCounterArea)
-    : AbstractCounter(state, player, shownInCounterArea, useNameForShortcut, parent)
+                               bool shownInCounterArea,
+                               bool interactive)
+    : AbstractCounter(state, player, shownInCounterArea, useNameForShortcut, parent, interactive)
 {
     setCacheMode(DeviceCoordinateCache);
 }
@@ -73,7 +75,7 @@ void GeneralCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /
     painter->drawPixmap(QPoint(0, 0), pixmap);
 
     if (value) {
-        QFont f("Serif");
+        QFont f; // inherits the app-wide sans-serif default (see main.cpp)
         f.setPixelSize(qMax((int)(radius * scaleFactor), 10));
         f.setWeight(QFont::Bold);
         painter->setPen(Qt::black);
@@ -86,7 +88,7 @@ void GeneralCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /
         // Drawn in plain item-local coordinates (painter is back to its normal transform after
         // the restore() above), unlike the icon/value above which deliberately draws in
         // device-pixel space for crisp caching (see resetPainterTransform()).
-        QFont labelFont("Serif");
+        QFont labelFont; // inherits the app-wide sans-serif default (see main.cpp)
         labelFont.setPixelSize(9);
         painter->setFont(labelFont);
         painter->setPen(Qt::white);

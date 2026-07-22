@@ -197,7 +197,7 @@ void DeckViewCardContainer::paint(QPainter *painter, const QStyleOptionGraphicsI
     painter->drawLine(QPointF(0, separatorY), QPointF(width, separatorY));
 
     painter->setPen(QColor(Qt::white));
-    QFont f("Serif");
+    QFont f; // inherits the app-wide sans-serif default (see main.cpp)
     f.setStyleHint(QFont::Serif);
     f.setPixelSize(24);
     f.setWeight(QFont::Bold);
@@ -249,7 +249,7 @@ QList<QPair<int, int>> DeckViewCardContainer::getRowsAndCols() const
 
 int DeckViewCardContainer::getCardTypeTextWidth() const
 {
-    QFont f("Serif");
+    QFont f; // inherits the app-wide sans-serif default (see main.cpp)
     f.setStyleHint(QFont::Serif);
     f.setPixelSize(16);
     f.setWeight(QFont::Bold);

@@ -24,13 +24,31 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 };
 
+/**
+ * A small numeric badge for one opponent's commander-damage-against-this-player counter,
+ * shown in a compact row above the life total (see PlayerTarget::addDamageCounter()) -- like
+ * PlayerCounter but smaller, with a plain (not corner-cut) rounded rect, since several sit
+ * side by side.
+ */
+class DamageBadge : public AbstractCounter
+{
+    Q_OBJECT
+public:
+    DamageBadge(CounterState *state, PlayerLogic *player, QGraphicsItem *parent);
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+};
+
 class PlayerTarget : public ArrowTarget
 {
     Q_OBJECT
 private:
     QPixmap fullPixmap;
     PlayerCounter *playerCounter;
+    QList<DamageBadge *> damageBadges;
     bool holdsPriority = false;
+
+    void relayoutDamageBadges();
 public slots:
     void counterDeleted();
 
@@ -50,6 +68,14 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
     AbstractCounter *addCounter(CounterState *state);
+
+    // One small badge per opponent commander's damage-against-this-player counter (see
+    // CommanderCounterNames::damage()) -- variable count (as few as 1 in a 2-player game),
+    // laid out right-to-left along the top edge (above where the life badge sits, bottom-right),
+    // re-flowed as each one arrives. Deliberately kept inside the existing fixed 160x64 box
+    // rather than growing it, so nothing else in PlayerGraphicsItem's layout (which reads
+    // playerTarget->boundingRect() to position the command zone/piles) needs to react to it.
+    AbstractCounter *addDamageCounter(CounterState *state);
 public slots:
     /**
      * @brief Commander-only priority-holder indicator, visible to every player/spectator (unlike

@@ -69,7 +69,8 @@ set(cockatrice_SOURCES
     src/game/board/card_list.cpp
     src/game/board/card_state.cpp
     src/game_graphics/board/counter_general.cpp
-    src/game_graphics/board/counter_text.cpp
+    src/game_graphics/board/counter_group_box.cpp
+    src/game_graphics/board/mana_pentagon_widget.cpp
     src/game/board/counter_state.cpp
     src/game_graphics/board/translate_counter_name.cpp
     src/game_graphics/deckview/deck_view.cpp
