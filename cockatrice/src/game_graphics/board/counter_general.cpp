@@ -127,9 +127,28 @@ void GeneralCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /
         QFont f; // inherits the app-wide sans-serif default (see main.cpp)
         f.setPixelSize(qMax((int)(radius * scaleFactor), 10));
         f.setWeight(QFont::Bold);
-        painter->setPen(Qt::black);
         painter->setFont(f);
-        painter->drawText(mapRect, Qt::AlignCenter, QString::number(value));
+
+        // Local (0,0)-based rect matching the pixmap/glyph coordinate frame above -- using
+        // mapRect directly here (its position component, not just its size) drew the numeral
+        // offset from the glyph/sphere it's supposed to sit on top of.
+        const QRectF textRect(0, 0, translatedHeight, translatedHeight);
+        const QString text = QString::number(value);
+
+        // White fill with a dark outline (drawn as an 8-direction 1px-offset shadow) so the
+        // numeral stays readable regardless of what's underneath -- a pale sphere (w/u/g/x) or
+        // the dark-gray glyph silhouette itself, both of which a flat black or white fill alone
+        // would lose contrast against on at least one of them.
+        painter->setPen(Qt::black);
+        for (qreal dx = -1; dx <= 1; ++dx) {
+            for (qreal dy = -1; dy <= 1; ++dy) {
+                if (dx != 0 || dy != 0) {
+                    painter->drawText(textRect.translated(dx, dy), Qt::AlignCenter, text);
+                }
+            }
+        }
+        painter->setPen(Qt::white);
+        painter->drawText(textRect, Qt::AlignCenter, text);
     }
     painter->restore();
 

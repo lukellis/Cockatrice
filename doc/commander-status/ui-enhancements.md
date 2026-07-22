@@ -135,6 +135,18 @@ yellow to true white (`counters/w.svg`) and gave colorless its own dedicated lig
 sphere (new `counters/x.svg`, no longer redirected to the shared `general.svg` fallback
 that per-commander tax/damage badges also use) so the two are visually distinct.
 
+**Numeral readability + position fix**: once the dark-gray glyphs were in place, the
+counter's numeral (drawn on top, same spot) turned out to have two real bugs, both
+caught live via screenshot: (1) a flat black fill lost contrast against both the dark
+glyph underneath and the `b` counter's own dark sphere; (2) it was drawn via
+`painter->drawText(mapRect, Qt::AlignCenter, ...)` — `mapRect`, unlike the glyph/sphere
+pixmaps drawn at local `(0,0)`, carries a position component from the item's actual
+scene placement, so the numeral rendered visibly offset from the glyph it's supposed to
+sit on. Fixed by switching to a local `(0,0)`-based rect (matching the pixmap/glyph
+frame) and a white-fill-with-black-outline numeral (an 8-direction 1px-offset "shadow"
+pass in black, then the fill in white) — readable against any sphere/glyph combination
+underneath, not just some of them.
+
 **Icon-based Storm + Poison, grouped in `CounterGroupBox`**
 (`cockatrice/src/game_graphics/board/counter_group_box.{h,cpp}`): both now render via
 `GeneralCounter` (the old text-only `TextCounter` widget is retired/deleted) pointed at
