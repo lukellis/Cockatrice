@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <algorithm>
+#include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/deck_list/deck_list.h>
 #include <libcockatrice/protocol/pb/command_attach_card.pb.h>
 #include <libcockatrice/protocol/pb/command_change_zone_properties.pb.h>
@@ -1439,6 +1440,12 @@ Response::ResponseCode Server_AbstractPlayer::cmdSetCardCounter(const Command_Se
     event.set_card_id(card->getId());
     if (card->setCounter(cmd.counter_id(), cmd.counter_value(), &event)) {
         ges.enqueueGameEvent(event, playerId);
+
+        // A +1/+1 counter changing on the battlefield directly changes this creature's effective
+        // P/T (see recomputeEffectivePT()'s doc comment) -- other counter ids don't affect display.
+        if (zone->getName() == ZoneNames::TABLE && cmd.counter_id() == PLUS_ONE_ONE_COUNTER_ID) {
+            game->recomputeEffectivePT(this, ges);
+        }
     }
 
     return Response::RespOk;
@@ -1476,6 +1483,12 @@ Response::ResponseCode Server_AbstractPlayer::cmdIncCardCounter(const Command_In
     }
 
     ges.enqueueGameEvent(event, playerId);
+
+    // See cmdSetCardCounter()'s matching comment: a +1/+1 counter changing on the battlefield
+    // directly changes this creature's effective P/T.
+    if (zone->getName() == ZoneNames::TABLE && cmd.counter_id() == PLUS_ONE_ONE_COUNTER_ID) {
+        game->recomputeEffectivePT(this, ges);
+    }
 
     return Response::RespOk;
 }

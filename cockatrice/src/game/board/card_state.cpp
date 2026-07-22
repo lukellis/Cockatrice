@@ -8,6 +8,7 @@ void CardState::resetState(bool keepAnnotations)
     blockedCardId = -1;
     counters.clear();
     pt.clear();
+    effectivePt.clear();
     if (!keepAnnotations) {
         annotation.clear();
     }
@@ -98,6 +99,16 @@ void CardState::setPT(const QString &_pt)
     }
     pt = _pt;
     emit ptChanged(pt);
+    emit stateChanged();
+}
+
+void CardState::setEffectivePT(const QString &_effectivePt)
+{
+    if (effectivePt == _effectivePt) {
+        return;
+    }
+    effectivePt = _effectivePt;
+    emit effectivePtChanged(effectivePt);
     emit stateChanged();
 }
 

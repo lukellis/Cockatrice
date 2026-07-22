@@ -46,7 +46,7 @@ to silently fill in.
 | 6. Mana system (pool auto-empty + real cost payment for casting from hand) | Narrow slice done | [phase6-mana.md](doc/commander-status/phase6-mana.md) |
 | 7. Card ability system (display parsing + a real execution engine) | Done at scope (Increments 1–2, Stages 1–6) | [phase7-card-abilities.md](doc/commander-status/phase7-card-abilities.md) |
 | 8. Combat system | Declare-attacker + Stages A/B/C/D (targeting, blocking, automated damage/death, deathtouch/trample/indestructible, first strike/double strike) done; 2-player live-verified | [phase8-combat.md](doc/commander-status/phase8-combat.md) |
-| 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects, combat-math consumers only; live-verified | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
+| 8 (extension). Static/continuous abilities | First slice done — P/T-boost + keyword-grant anthem/lord effects (combat math), plus a live client-display extension (boosted P/T shown in green, folding in a dedicated +1/+1 counter too); live-verified | [phase8-static-abilities.md](doc/commander-status/phase8-static-abilities.md) |
 | 9. State-based actions (advisory warnings) | Partial, by design | [phase9-state-based-actions.md](doc/commander-status/phase9-state-based-actions.md) |
 | §12 UI design & enhancements | Ongoing — command-zone overlap fix, Tax badge on the zone itself, auto-tracked Storm counter, mana pentagon, icon-based Storm/Poison, per-opponent damage row, dark theme default | [ui-enhancements.md](doc/commander-status/ui-enhancements.md) |
 
@@ -192,8 +192,9 @@ future change doesn't collide with a retired or in-use extension number.
 - No legend rule, 0-toughness, or illegal-aura state-based actions (see
   `phase9-state-based-actions.md`).
 - Static/continuous abilities (anthem/lord effects) are recognized for only two exact line
-  shapes (P/T boost, keyword grant, both scoped to "creatures you control"), consumed by combat
-  math only — no client display of the boost, no creature-type restrictions, no combined
+  shapes (P/T boost, keyword grant, both scoped to "creatures you control"). P/T boosts are
+  now shown live on the board (green, folding in a dedicated +1/+1 counter too); keyword grants
+  are still combat-math-only with no client display. No creature-type restrictions, no combined
   single-line phrasing — see `phase8-static-abilities.md`.
 - Command zone has no dedicated context menu (graveyard/exile do).
 - Real mana payment for casting spells from hand only covers non-land cards with a

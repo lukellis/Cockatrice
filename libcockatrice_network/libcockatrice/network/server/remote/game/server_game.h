@@ -283,6 +283,22 @@ public:
      */
     void pushPendingAbility(const Rules::PendingAbility &ability);
 
+    /**
+     * @brief Static/continuous ability slice, client-display extension: recomputes and broadcasts
+     * (via AttrEffectivePT) every creature on @p controller's table zone whose "power/toughness
+     * after folding in anthem/lord static effects and +1/+1 counters" (PLUS_ONE_ONE_COUNTER_ID) has
+     * changed since the last broadcast. Only @p controller's own battlefield needs recomputing --
+     * static abilities never affect anyone else's creatures (see applyStaticEffects()'s "you
+     * control" scoping) -- so a card entering/leaving *any* other player's board never needs this
+     * called for @p controller. Called from Server_Player::onCardBeingMoved() whenever a card
+     * enters or leaves @p controller's table zone, and from Server_AbstractPlayer::cmdSetCardCounter()
+     * /cmdIncCardCounter() whenever a PLUS_ONE_ONE_COUNTER_ID counter changes there. Combat math
+     * itself is unaffected by this -- it already applies the same static effects fresh at each of
+     * its own three read sites (see staticAbilitySourcesFor()'s doc comment) rather than trusting
+     * this display-only broadcast value.
+     */
+    void recomputeEffectivePT(Server_AbstractPlayer *controller, GameEventStorage &ges);
+
     int getSecondsElapsed() const
     {
         return secondsElapsed;

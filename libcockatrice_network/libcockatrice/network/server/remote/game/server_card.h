@@ -50,6 +50,7 @@ private:
     bool facedown;
     QString color;
     QString ptString;
+    QString effectivePtString;
     QString keywordsString;
     QString staticAbilitiesString;
     QString annotation;
@@ -140,6 +141,17 @@ public:
     QString getPT() const
     {
         return ptString;
+    }
+    /**
+     * @brief Static/continuous ability slice, client-display extension: this creature's current
+     * "power/toughness" after folding in anthem/lord static effects and +1/+1 counters -- see
+     * Server_Game::recomputeEffectivePT(). Empty until the first recompute pass touches this card
+     * (e.g. a card that never entered a table zone), and equal to getPT() once computed if nothing
+     * is currently boosting it.
+     */
+    QString getEffectivePT() const
+    {
+        return effectivePtString;
     }
     QString getKeywords() const
     {
@@ -247,6 +259,10 @@ public:
     void setPT(const QString &_pt)
     {
         ptString = _pt;
+    }
+    void setEffectivePT(const QString &_effectivePt)
+    {
+        effectivePtString = _effectivePt;
     }
     void setKeywords(const QString &_keywords)
     {

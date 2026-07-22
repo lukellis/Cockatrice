@@ -236,6 +236,10 @@ void PlayerEventHandler::setCardAttrHelper(const GameEventContext &context,
             card->setPT(avalue);
             break;
         }
+        case AttrEffectivePT: {
+            card->setEffectivePT(avalue);
+            break;
+        }
         case AttrAttackTarget: {
             card->setAttackTargetPlayerId(avalue.toInt());
             break;

@@ -47,6 +47,11 @@ public:
 
     QList<QAction *> aAddCounter, aSetCounter, aRemoveCounter;
 
+    // A dedicated +1/+1 counter action, distinct from the generic lettered aAddCounter/aRemoveCounter
+    // slots above -- see PLUS_ONE_ONE_COUNTER_ID's doc comment (card_effects.h) for why it isn't
+    // just one more entry in that loop.
+    QAction *aAddPlusOneOneCounter, *aRemovePlusOneOneCounter;
+
 private:
     PlayerGraphicsItem *player;
     const CardItem *card;

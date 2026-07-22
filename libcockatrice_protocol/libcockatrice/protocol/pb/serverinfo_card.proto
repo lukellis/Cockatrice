@@ -73,4 +73,9 @@ message ServerInfo_Card {
     // Static/continuous ability slice: the card's own printed static abilities
     // (StaticAbilities::parse(), serialized), synced from the client's local card database.
     optional string static_abilities = 22;
+
+    // Static/continuous ability slice, client-display extension: server-computed "power/toughness
+    // after folding in anthem/lord static effects and +1/+1 counters" -- see AttrEffectivePT in
+    // card_attributes.proto. Equal to pt (above) when nothing is currently boosting this creature.
+    optional string effective_pt = 23;
 }

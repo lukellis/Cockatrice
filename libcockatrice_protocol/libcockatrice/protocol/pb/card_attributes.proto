@@ -24,4 +24,11 @@ enum CardAttribute {
     // doc/commander-status/phase8-static-abilities.md. Server-only consumer today (combat math) --
     // no client display change.
     AttrStaticAbilities = 11;
+    // Static/continuous ability slice, client-display extension: the server-computed "P/T after
+    // folding in anthem/lord static effects and +1/+1 counters" for this creature, as a plain
+    // "power/toughness" string -- server-originated only (no client ever sends this via
+    // Command_SetCardAttr). Equal to AttrPT's current value when nothing is currently boosting the
+    // creature. See Server_Game::recomputeEffectivePT() and
+    // doc/commander-status/phase8-static-abilities.md's "client display" section.
+    AttrEffectivePT = 12;
 }

@@ -127,6 +127,11 @@ public:
         return state->getPT();
     }
     void setPT(const QString &_pt);
+    [[nodiscard]] QString getEffectivePT() const
+    {
+        return state->getEffectivePT();
+    }
+    void setEffectivePT(const QString &_effectivePt);
     [[nodiscard]] bool getDestroyOnZoneChange() const
     {
         return state->getDestroyOnZoneChange();

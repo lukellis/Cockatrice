@@ -57,14 +57,56 @@ already consumed server-side today (combat), not as a general characteristic-mod
   base toughness) has to be what's compared against marked damage, or a 3/3-boosted-to-4/4 would
   incorrectly die to 3 damage.
 
+## Client display extension (2026-07-22)
+
+The "no client-side display" exclusion below was lifted by explicit user request: a creature
+currently boosted by an anthem/lord or by +1/+1 counters now shows its *boosted* P/T on the board,
+in green, instead of silently staying at its base/printed number the way it did through the first
+slice above. Keyword grants are still not displayed (only P/T) — narrower than the original
+exclusion's wording, a deliberate smaller cut.
+
+- **New `AttrEffectivePT` card attribute** (`card_attributes.proto` ext 12, mirrored as
+  `effective_pt` on `ServerInfo_Card`) — server-originated only, no client ever sends it via
+  `Command_SetCardAttr`. Holds a plain "power/toughness" string equal to `AttrPT`'s current value
+  whenever nothing is boosting the creature, so the client can tell "boosted" from "not" by a
+  simple string comparison against its own `AttrPT` without needing an empty/null sentinel.
+- **`Server_Game::recomputeEffectivePT(controller, ges)`** (`server_game.{h,cpp}`) folds
+  `applyStaticEffects()` (unchanged from the slice above) together with a new dedicated
+  `PLUS_ONE_ONE_COUNTER_ID` card counter (`card_effects.h`, id 6) into each of `controller`'s
+  battlefield creatures' effective P/T, and pushes any that changed via the existing
+  `setCardAttrHelper()`/`AttrEffectivePT` plumbing — no bespoke event type needed. Called from two
+  trigger points, matching the "full live recompute" scope actually requested: whenever a card
+  enters or leaves `controller`'s own table zone (`Server_Player::onCardBeingMoved()` — covers a
+  creature or an anthem source itself showing up or leaving), and whenever a
+  `PLUS_ONE_ONE_COUNTER_ID` counter changes there (`Server_AbstractPlayer::cmdSetCardCounter()`/
+  `cmdIncCardCounter()`). Only `controller`'s own battlefield is ever recomputed — static abilities
+  never affect anyone else's creatures (see `applyStaticEffects()`'s "you control" scoping), so a
+  card entering/leaving *another* player's board never needs this. Combat math itself is
+  unaffected: it still calls `applyStaticEffects()` fresh at its own three read sites rather than
+  trusting this display-only broadcast value.
+- **Dedicated +1/+1 counter, not one of the six generic lettered counter slots**: reusing a
+  generic slot (`card_menu.cpp`'s `aAddCounter`/`aRemoveCounter` ids 0-5) would let a player's own
+  generic-counter bookkeeping for some *other* purpose silently feed into the P/T-boost display —
+  exactly the collision `DAMAGE_CARD_COUNTER_ID` (id 0) already has with generic slot "A" (a
+  pre-existing wart this change doesn't attempt to fix). `PLUS_ONE_ONE_COUNTER_ID = 6` is its own
+  id instead, with its own dedicated "Add/Remove +1/+1 counter" menu actions (fixed green icon, not
+  a lettered/settings-configurable color) sitting outside the generic "Card counters" submenu.
+- **Paint coloring** (`CardItem::paint()`, `card_item.cpp`): white/orange (unmodified/manually-set)
+  is unchanged for a non-boosted creature; a boosted creature shows green if the boost is a clean
+  buff (power and toughness both ≥ base, strictly greater in at least one) or falls back to the
+  existing orange otherwise (a debuff, or a mixed +X/-Y static ability this codebase doesn't
+  currently parse anyway).
+- **Not done**: keyword-grant display (still server-only), and no recompute hook for a static
+  ability changing on a card that's already on the battlefield without a zone move (e.g. `cmClone`/
+  `cmFlip` on an already-in-play card) — only entering/leaving the battlefield and +1/+1-counter
+  changes trigger a recompute, matching exactly what was scoped, not a general
+  "watch everything" invalidation.
+
 ## Explicitly out of scope
 
 Named deliberately, matching this fork's practice of documenting exclusions rather than leaving
 silent gaps:
 
-- **No client-side display of boosted P/T or granted keywords** — a card's shown P/T/keyword row
-  stays base-only. This slice is combat-math-only, the same kind of bounded first cut as Phase 8
-  Stage 6's declare-only attacker toggle.
 - **No creature-type/tribal restriction** ("Elves you control get +1/+1") — no creature-type
   modeling exists anywhere in this codebase.
 - **No combined single-line phrasing** ("get +1/+1 and have vigilance") — the parser recognizes
@@ -76,8 +118,10 @@ silent gaps:
   or keywords elsewhere will need its own `applyStaticEffects()` call, same as combat's three
   sites; it isn't automatically covered.
 
-Any further static-ability depth (creature types, combined phrasing, client display, non-combat
-consumers) is a new, separate, explicit design decision — not a gap left over from this slice.
+Any further static-ability depth (creature types, combined phrasing, keyword-grant client display,
+non-combat consumers) is a new, separate, explicit design decision — not a gap left over from this
+slice. (Boosted-P/T client display itself is no longer in this list — see the dedicated section
+above.)
 
 ## Testing
 
@@ -108,3 +152,17 @@ consumers) is a new, separate, explicit design decision — not a gap left over 
   UI-testing section already explained the underlying cause (a version-notification dialog
   swallowing scripted clicks) was fixed after that attempt; this session's re-attempt against the
   same `cockatrice-build` container confirms it.
+- **Client display extension, live-verified 2026-07-22** via the same `combat_gate` scenario plus
+  manual follow-up clicks in the same running game: the client log shows
+  `Event_SetCardAttr.ext { ... card_id: 1 attribute: AttrEffectivePT attr_value: "2/2" }` the
+  instant Myr resolves onto a battlefield Glorious Anthem already occupies — proving
+  `recomputeEffectivePT()`'s zone-move hook fires over the real wire, not just in a pure-function
+  test. A screenshot at that point shows Myr's board box reading **2/2 in green**. Manually
+  triggering the new dedicated "Add +1/+1 counter" menu action on the same Myr produced
+  `Event_SetCardCounter.ext { ... counter_id: 6 counter_value: 1 }` immediately followed by
+  `AttrEffectivePT attr_value: "3/3"`, and a follow-up screenshot confirms the board shows a green
+  counter badge and **3/3** in green (base 1/1 + anthem's +1/+1 + one +1/+1 counter) — proving the
+  counter-change recompute hook and the two boost sources compose correctly. This same menu
+  addition grew the card context menu by one row, which shifted `combat_gate`'s own hardcoded
+  right-click submenu coordinates (calibrated to the old menu height) by ~22px; `scenario.py`'s
+  coordinates were updated to match and the scenario re-verified passing.

@@ -48,6 +48,15 @@ enum class TargetKind
 // server-side applyPendingAbility() resolution handler (Phase 7 Stage 3) so both agree on the id.
 constexpr int DAMAGE_CARD_COUNTER_ID = 0;
 
+// Fork convention: the per-card counter id reserved for +1/+1 counters (rule 121.1). Deliberately
+// its own dedicated id rather than one of the six generic lettered counter slots the "Add counter"
+// card-menu action exposes (card_menu.cpp's aAddCounter loop, ids 0-5) -- reusing a generic slot
+// would let a player's own generic-counter bookkeeping silently feed into the P/T-boost display,
+// the same collision DAMAGE_CARD_COUNTER_ID above already has with slot 0 ("A"). Shared by the
+// server's live P/T-boost recompute (Server_Game::recomputeEffectivePT) and the client's dedicated
+// "+1/+1 Counter" menu action / paint() badge coloring, so both agree on the id.
+constexpr int PLUS_ONE_ONE_COUNTER_ID = 6;
+
 struct CardEffect
 {
     EffectKind kind;

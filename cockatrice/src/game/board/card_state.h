@@ -18,6 +18,7 @@ private:
     QMap<int, int> counters;
     QString annotation;
     QString pt;
+    QString effectivePt;
     bool doesntUntap = false;
     bool destroyOnZoneChange = false;
 
@@ -31,6 +32,7 @@ signals:
     void countersChanged(const QMap<int, int> &newCounters);
     void annotationChanged(const QString &newAnnotation);
     void ptChanged(const QString &newPt);
+    void effectivePtChanged(const QString &newEffectivePt);
     void doesntUntapChanged(bool newValue);
     void destroyOnZoneChangeChanged(bool newValue);
     void attachedToChanged(CardItem *newAttachedTo);
@@ -100,6 +102,19 @@ public:
     }
 
     void setPT(const QString &_pt);
+
+    /**
+     * @brief Static/continuous ability slice, client-display extension: this creature's current
+     * "power/toughness" after folding in anthem/lord static effects and +1/+1 counters (see
+     * AttrEffectivePT in card_attributes.proto) -- empty until the server has broadcast one, and
+     * equal to getPT() once it has if nothing is currently boosting this creature.
+     */
+    QString getEffectivePT() const
+    {
+        return effectivePt;
+    }
+
+    void setEffectivePT(const QString &_effectivePt);
 
     bool getDoesntUntap() const
     {

@@ -62,6 +62,7 @@ void Server_Card::resetState(bool keepAnnotations)
     setAttackTargetPlayerId(-1);
     setBlocked(-1, -1);
     setPT(QString());
+    setEffectivePT(QString());
     setKeywords(QString());
     setStaticAbilities(QString());
     if (!keepAnnotations) {
@@ -105,6 +106,12 @@ QString Server_Card::setAttribute(CardAttribute attribute, const QString &avalue
                 event->set_attr_value(getPT().toStdString());
             }
             return getPT();
+        case AttrEffectivePT:
+            setEffectivePT(avalue);
+            if (event) {
+                event->set_attr_value(getEffectivePT().toStdString());
+            }
+            return getEffectivePT();
         case AttrAnnotation:
             setAnnotation(avalue);
             break;
@@ -230,6 +237,9 @@ void Server_Card::getInfo(ServerInfo_Card *info)
     }
     if (!ptString.isEmpty()) {
         info->set_pt(ptString.toStdString());
+    }
+    if (!effectivePtString.isEmpty()) {
+        info->set_effective_pt(effectivePtString.toStdString());
     }
     if (!keywordsString.isEmpty()) {
         info->set_keywords(keywordsString.toStdString());

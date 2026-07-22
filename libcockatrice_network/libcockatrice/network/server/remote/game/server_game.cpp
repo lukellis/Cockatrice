@@ -1039,6 +1039,39 @@ void Server_Game::applyCombatDamageResult(const Rules::RulesEngine::CombatDamage
     }
 }
 
+void Server_Game::recomputeEffectivePT(Server_AbstractPlayer *controller, GameEventStorage &ges)
+{
+    if (!controller) {
+        return;
+    }
+    Server_CardZone *table = controller->getZones().value(ZoneNames::TABLE);
+    if (!table) {
+        return;
+    }
+
+    const QList<QPair<int, QString>> sources = staticAbilitySourcesFor(table);
+    for (Server_Card *card : table->getCards()) {
+        const auto basePT = Rules::RulesEngine::parseNumericPT(card->getPT());
+        if (!basePT) {
+            continue;
+        }
+
+        const auto effective = Rules::RulesEngine::applyStaticEffects(card->getId(), basePT->first, basePT->second,
+                                                                      card->getKeywordSet(), sources);
+        const int plusOneOne = card->getCounter(PLUS_ONE_ONE_COUNTER_ID);
+        const int effPower = effective.power + plusOneOne;
+        const int effToughness = effective.toughness + plusOneOne;
+
+        const QString newEffectivePT = QStringLiteral("%1/%2").arg(effPower).arg(effToughness);
+        if (newEffectivePT == card->getEffectivePT()) {
+            continue;
+        }
+
+        controller->setCardAttrHelper(ges, controller->getPlayerId(), table->getName(), card->getId(), AttrEffectivePT,
+                                      newEffectivePT);
+    }
+}
+
 void Server_Game::resetPriorityTo(int playerId)
 {
     QMutexLocker locker(&gameMutex);

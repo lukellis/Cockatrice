@@ -319,6 +319,16 @@ void Server_Player::onCardBeingMoved(GameEventStorage &ges,
     if (targetzone->getName() == ZoneNames::STACK && startzone->getName() != ZoneNames::STACK) {
         game->resetPriorityTo(playerId);
     }
+
+    // Static/continuous ability slice, client-display extension: a card entering or leaving this
+    // player's own battlefield may itself be a creature newly gaining/losing a static-effect boost,
+    // or a static-ability source that starts/stops applying to everything else this player
+    // controls -- either way, only this player's own table needs recomputing (see
+    // recomputeEffectivePT()'s doc comment on why "you control" scoping means one player is enough).
+    Server_CardZone *table = zones.value(ZoneNames::TABLE);
+    if (table && (startzone == table || targetzone == table)) {
+        game->recomputeEffectivePT(this, ges);
+    }
 }
 
 Response::ResponseCode

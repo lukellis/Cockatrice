@@ -17,8 +17,10 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QMenu>
 #include <QPainter>
+#include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/card/card_info.h>
 #include <libcockatrice/protocol/pb/serverinfo_card.pb.h>
+#include <optional>
 
 CardItem::CardItem(PlayerLogic *_owner,
                    QGraphicsItem *parent,
@@ -75,6 +77,30 @@ void CardItem::retranslateUi()
 {
 }
 
+/**
+ * @brief Parses a plain "power/toughness" string (as sent by AttrPT/AttrEffectivePT -- always a
+ * literal integer pair for any card this fork's static-effect display applies to) into (power,
+ * toughness), or std::nullopt if either half isn't a plain integer. Deliberately separate from
+ * CardItem::parsePT(), which parses "+X"/"-X" deltas for the manual P/T-adjustment shortcuts --
+ * this is only ever used to compare two already-resolved P/T strings for the augmented-stats paint
+ * coloring below.
+ */
+static std::optional<QPair<int, int>> parseAbsolutePT(const QString &pt)
+{
+    const int sep = pt.indexOf('/');
+    if (sep <= 0 || sep == pt.size() - 1) {
+        return std::nullopt;
+    }
+    bool powerOk = false;
+    bool toughnessOk = false;
+    const int power = pt.left(sep).toInt(&powerOk);
+    const int toughness = pt.mid(sep + 1).toInt(&toughnessOk);
+    if (!powerOk || !toughnessOk) {
+        return std::nullopt;
+    }
+    return QPair<int, int>(power, toughness);
+}
+
 void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     auto &cardCounterSettings = SettingsCache::instance().cardCounters();
@@ -86,7 +112,12 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     QMapIterator<int, int> counterIterator(state->getCounters());
     while (counterIterator.hasNext()) {
         counterIterator.next();
-        QColor _color = cardCounterSettings.color(counterIterator.key());
+        // The dedicated +1/+1 counter always renders in the same fixed green as its menu icon and
+        // the augmented-P/T text color below, rather than the settings-configurable per-id color
+        // the generic lettered counters use -- it isn't one of those user-recolorable slots.
+        QColor _color = counterIterator.key() == PLUS_ONE_ONE_COUNTER_ID
+                            ? QColor(80, 220, 100)
+                            : cardCounterSettings.color(counterIterator.key());
 
         paintNumberEllipse(counterIterator.value(), 14, _color, i, state->getCounters().size(), painter);
         ++i;
@@ -99,7 +130,27 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         painter->save();
         transformPainter(painter, translatedSize, tapAngle);
 
-        if (!getFaceDown() && state->getPT() == exactCard.getInfo().getPowTough()) {
+        // Static/continuous ability slice, client-display extension: if the server has told us this
+        // creature's boosted P/T (anthem/lord static effects plus +1/+1 counters -- see
+        // AttrEffectivePT) and it actually differs from the base P/T below, show the boosted number
+        // instead, colored to flag it as augmented rather than reusing the plain modified/unmodified
+        // white-vs-orange distinction below.
+        const QString &basePt = state->getPT();
+        const QString &effectivePt = state->getEffectivePT();
+        const bool hasBoost = !effectivePt.isEmpty() && effectivePt != basePt;
+
+        QString displayedPt = basePt;
+        if (hasBoost) {
+            displayedPt = effectivePt;
+            const auto baseParsed = parseAbsolutePT(basePt);
+            const auto effectiveParsed = parseAbsolutePT(effectivePt);
+            bool buffed = false;
+            if (baseParsed && effectiveParsed) {
+                buffed = effectiveParsed->first >= baseParsed->first && effectiveParsed->second >= baseParsed->second;
+            }
+            painter->setPen(buffed ? QColor(80, 220, 100) /* augmented green */
+                                   : QColor(255, 150, 0) /* dark orange, same as a plain modification */);
+        } else if (!getFaceDown() && basePt == exactCard.getInfo().getPowTough()) {
             painter->setPen(Qt::white);
         } else {
             painter->setPen(QColor(255, 150, 0)); // dark orange
@@ -110,7 +161,7 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 
         painter->drawText(QRectF(4 * scaleFactor, 4 * scaleFactor, translatedSize.width() - 10 * scaleFactor,
                                  translatedSize.height() - 8 * scaleFactor),
-                          Qt::AlignRight | Qt::AlignBottom, state->getPT());
+                          Qt::AlignRight | Qt::AlignBottom, displayedPt);
         painter->restore();
     }
 
@@ -223,6 +274,12 @@ void CardItem::setPT(const QString &_pt)
     update();
 }
 
+void CardItem::setEffectivePT(const QString &_effectivePt)
+{
+    state->setEffectivePT(_effectivePt);
+    update();
+}
+
 void CardItem::setAttachedTo(CardItem *_attachedTo)
 {
     if (state->getAttachedTo() != nullptr) {
@@ -289,6 +346,7 @@ void CardItem::processCardInfo(const ServerInfo_Card &_info)
     setBlocked(_info.blocked_player_id(), _info.blocked_card_id());
     setFaceDown(_info.face_down());
     setPT(QString::fromStdString(_info.pt()));
+    setEffectivePT(QString::fromStdString(_info.effective_pt()));
     setAnnotation(QString::fromStdString(_info.annotation()));
     setColor(QString::fromStdString(_info.color()));
     setTapped(_info.tapped());

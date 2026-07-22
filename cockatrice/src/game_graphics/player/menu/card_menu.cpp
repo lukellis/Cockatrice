@@ -14,6 +14,7 @@
 #include "pt_menu.h"
 
 #include <QPainter>
+#include <libcockatrice/card/ability/card_effects.h>
 #include <libcockatrice/card/database/card_database_manager.h>
 #include <libcockatrice/card/relation/card_relation.h>
 #include <libcockatrice/utility/zone_names.h>
@@ -124,6 +125,17 @@ CardMenu::CardMenu(PlayerGraphicsItem *_player, const CardItem *_card, bool _sho
         aSetCounter.append(setAction);
     }
 
+    // Dedicated +1/+1 counter action -- reuses the same generic actAddCardCounter/actRemoveCardCounter
+    // plumbing as the lettered counters above, just pinned to PLUS_ONE_ONE_COUNTER_ID instead of one
+    // of the loop's ids, and with its own fixed green icon/label rather than a lettered one.
+    QIcon plusOneOneIcon = createCircleIcon(QColor(80, 220, 100));
+    aAddPlusOneOneCounter =
+        makeAction(this, [actions, sel]() { actions->actAddCardCounter(sel(), PLUS_ONE_ONE_COUNTER_ID); });
+    aAddPlusOneOneCounter->setIcon(plusOneOneIcon);
+    aRemovePlusOneOneCounter =
+        makeAction(this, [actions, sel]() { actions->actRemoveCardCounter(sel(), PLUS_ONE_ONE_COUNTER_ID); });
+    aRemovePlusOneOneCounter->setIcon(plusOneOneIcon);
+
     setShortcutsActive();
 
     retranslateUi();
@@ -232,6 +244,10 @@ void CardMenu::createTableMenu(bool canModifyCard)
     addAction(aDrawArrow);
     addSeparator();
     addMenu(new PtMenu(player));
+    addAction(aAddPlusOneOneCounter);
+    if (card->getCounters().contains(PLUS_ONE_ONE_COUNTER_ID)) {
+        addAction(aRemovePlusOneOneCounter);
+    }
     addAction(aSetAnnotation);
     addSeparator();
     addAction(aReduceLifeByPower);
@@ -575,6 +591,9 @@ void CardMenu::retranslateUi()
     aDrawArrow->setText(tr("&Draw arrow..."));
     aSetAnnotation->setText(tr("&Set annotation..."));
     aReduceLifeByPower->setText(tr("Reduce life by power"));
+
+    aAddPlusOneOneCounter->setText(tr("Add &+1/+1 counter"));
+    aRemovePlusOneOneCounter->setText(tr("Remove +1/+1 &counter"));
 
     mCardCounters->setTitle(tr("Ca&rd counters"));
 
