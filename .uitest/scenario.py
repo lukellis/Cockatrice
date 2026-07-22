@@ -986,13 +986,13 @@ def scenario_combat_gate(ctx):
     pos = ctx.log_pos(CLIENT_LOG)
     ctx.click(myr_x, 520, button=3)
     ctx.sleep(1.0)
-    # Static-abilities client-display extension added a new "Add +1/+1 counter" row to this menu
-    # (CardMenu::createTableMenu()), growing it by one line -- since the menu opens bottom-anchored
-    # near the y=520 click point (not enough room below it in an 800px-tall screen), every row's
-    # absolute y shifted up ~22px from this fixture's previously-calibrated 232.
-    ctx.move(myr_x + 90, 210)  # hover to open "Declare as attacker, targeting..." submenu
+    # Static-abilities client-display extension added "Add +1/+1 counter" and "Add -1/-1 counter"
+    # rows to this menu (CardMenu::createTableMenu()), growing it by two lines -- since the menu
+    # opens bottom-anchored near the y=520 click point (not enough room below it in an 800px-tall
+    # screen), every row's absolute y shifted up accordingly from this fixture's original 232.
+    ctx.move(myr_x + 90, 188)  # hover to open "Declare as attacker, targeting..." submenu
     ctx.sleep(1.0)
-    ctx.click(myr_x + 381, 210)  # the submenu's sole entry, "Player 2" (single opponent)
+    ctx.click(myr_x + 381, 188)  # the submenu's sole entry, "Player 2" (single opponent)
     ctx.sleep(1.0)
     if not ctx.assert_log(CLIENT_LOG, rf"AttrAttacking.*card_id: {myr_id}\b|card_id: {myr_id}\b.*AttrAttacking",
                           timeout=5, since_pos=pos, label="Myr is declared as an attacker, targeting Player 2"):

@@ -666,6 +666,30 @@ Response::ResponseCode Server_AbstractPlayer::setCardAttrHelper(GameEventStorage
     return Response::RespOk;
 }
 
+void Server_AbstractPlayer::annihilatePlusMinusCounters(Server_CardZone *zone, Server_Card *card, GameEventStorage &ges)
+{
+    const int plus = card->getCounter(PLUS_ONE_ONE_COUNTER_ID);
+    const int minus = card->getCounter(MINUS_ONE_ONE_COUNTER_ID);
+    const int cancel = qMin(plus, minus);
+    if (cancel == 0) {
+        return;
+    }
+
+    Event_SetCardCounter plusEvent;
+    plusEvent.set_zone_name(zone->getName().toStdString());
+    plusEvent.set_card_id(card->getId());
+    if (card->setCounter(PLUS_ONE_ONE_COUNTER_ID, plus - cancel, &plusEvent)) {
+        ges.enqueueGameEvent(plusEvent, playerId);
+    }
+
+    Event_SetCardCounter minusEvent;
+    minusEvent.set_zone_name(zone->getName().toStdString());
+    minusEvent.set_card_id(card->getId());
+    if (card->setCounter(MINUS_ONE_ONE_COUNTER_ID, minus - cancel, &minusEvent)) {
+        ges.enqueueGameEvent(minusEvent, playerId);
+    }
+}
+
 Response::ResponseCode
 Server_AbstractPlayer::cmdConcede(const Command_Concede & /*cmd*/, ResponseContainer & /*rc*/, GameEventStorage &ges)
 {
@@ -1441,9 +1465,12 @@ Response::ResponseCode Server_AbstractPlayer::cmdSetCardCounter(const Command_Se
     if (card->setCounter(cmd.counter_id(), cmd.counter_value(), &event)) {
         ges.enqueueGameEvent(event, playerId);
 
-        // A +1/+1 counter changing on the battlefield directly changes this creature's effective
-        // P/T (see recomputeEffectivePT()'s doc comment) -- other counter ids don't affect display.
-        if (zone->getName() == ZoneNames::TABLE && cmd.counter_id() == PLUS_ONE_ONE_COUNTER_ID) {
+        // A +1/+1 or -1/-1 counter changing on the battlefield can change this creature's
+        // effective P/T (see recomputeEffectivePT()'s doc comment), and the two counters can never
+        // coexist (rule 704.5q) -- other counter ids affect neither.
+        if (zone->getName() == ZoneNames::TABLE &&
+            (cmd.counter_id() == PLUS_ONE_ONE_COUNTER_ID || cmd.counter_id() == MINUS_ONE_ONE_COUNTER_ID)) {
+            annihilatePlusMinusCounters(zone, card, ges);
             game->recomputeEffectivePT(this, ges);
         }
     }
@@ -1484,9 +1511,11 @@ Response::ResponseCode Server_AbstractPlayer::cmdIncCardCounter(const Command_In
 
     ges.enqueueGameEvent(event, playerId);
 
-    // See cmdSetCardCounter()'s matching comment: a +1/+1 counter changing on the battlefield
-    // directly changes this creature's effective P/T.
-    if (zone->getName() == ZoneNames::TABLE && cmd.counter_id() == PLUS_ONE_ONE_COUNTER_ID) {
+    // See cmdSetCardCounter()'s matching comment: a +1/+1 or -1/-1 counter changing on the
+    // battlefield can change this creature's effective P/T, and the two counters can never coexist.
+    if (zone->getName() == ZoneNames::TABLE &&
+        (cmd.counter_id() == PLUS_ONE_ONE_COUNTER_ID || cmd.counter_id() == MINUS_ONE_ONE_COUNTER_ID)) {
+        annihilatePlusMinusCounters(zone, card, ges);
         game->recomputeEffectivePT(this, ges);
     }
 

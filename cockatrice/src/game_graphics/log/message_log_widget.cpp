@@ -676,12 +676,14 @@ void MessageLogWidget::logSetCardCounter(PlayerLogic *player, QString cardName, 
         finalStr = tr("%1 removes %2 %3 counter(s) from %4 (now %5).", "", delta);
     }
 
-    // The dedicated +1/+1 counter (see PLUS_ONE_ONE_COUNTER_ID's doc comment) isn't one of the
-    // generic lettered counters, so it gets its own "+1/+1" label instead of a settings-driven
-    // color dot + letter (which would otherwise read as a meaningless "G counter").
+    // The dedicated +1/+1 and -1/-1 counters (see PLUS_ONE_ONE_COUNTER_ID's doc comment) aren't
+    // among the generic lettered counters, so they get their own "+1/+1"/"-1/-1" labels instead of
+    // a settings-driven color dot + letter (which would otherwise read as a meaningless "G counter").
     QString counterLabel;
     if (counterId == PLUS_ONE_ONE_COUNTER_ID) {
         counterLabel = QStringLiteral("<font color=\"#50dc64\">+1/+1</font>");
+    } else if (counterId == MINUS_ONE_ONE_COUNTER_ID) {
+        counterLabel = QStringLiteral("<font color=\"#dc5050\">-1/-1</font>");
     } else {
         auto &cardCounterSettings = SettingsCache::instance().cardCounters();
         QString hex = cardCounterSettings.color(counterId).name();

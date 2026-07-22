@@ -306,13 +306,17 @@ public:
     static bool isLethallyDamaged(int markedDamage, int toughness, bool anyDamageFromDeathtouch, bool indestructible);
 
     /**
-     * @brief Parses a P/T string (Server_Card::getPT(), already "effective" -- counters are baked
-     * into it by the client's existing +1/+1-counter menu, see CardItem::parsePT()) into
-     * (power, toughness), or std::nullopt if either half isn't a plain integer. Real Magic P/T is
-     * sometimes non-numeric (characteristic-defining "*", "X/X", etc.); this deliberately returns
-     * nullopt rather than defaulting to 0 like the delta-parser's own, different, purpose does, so
-     * callers can leave such a creature out of automatic combat-damage calculation entirely
-     * instead of silently mis-calculating it as a 0-power/0-toughness creature.
+     * @brief Parses a P/T string (Server_Card::getPT()) into (power, toughness), or std::nullopt if
+     * either half isn't a plain integer. This is the *base* P/T only -- it reflects the printed
+     * value plus any manual edits (the PtMenu's Ctrl+/- shortcuts, the "Set P/T" dialog), but does
+     * NOT include static-ability (anthem/lord) bonuses or the +1/+1 / -1/-1 counter net
+     * (PLUS_ONE_ONE_COUNTER_ID / MINUS_ONE_ONE_COUNTER_ID) -- every caller of this function folds
+     * those in itself afterward (see applyStaticEffects() and each call site's own counter-net
+     * arithmetic in Server_Game). Real Magic P/T is sometimes non-numeric (characteristic-defining
+     * "*", "X/X", etc.); this deliberately returns nullopt rather than defaulting to 0 like the
+     * delta-parser's own, different, purpose does, so callers can leave such a creature out of
+     * automatic combat-damage calculation entirely instead of silently mis-calculating it as a
+     * 0-power/0-toughness creature.
      */
     static std::optional<std::pair<int, int>> parseNumericPT(const QString &pt);
 

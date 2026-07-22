@@ -125,9 +125,12 @@ CardMenu::CardMenu(PlayerGraphicsItem *_player, const CardItem *_card, bool _sho
         aSetCounter.append(setAction);
     }
 
-    // Dedicated +1/+1 counter action -- reuses the same generic actAddCardCounter/actRemoveCardCounter
-    // plumbing as the lettered counters above, just pinned to PLUS_ONE_ONE_COUNTER_ID instead of one
-    // of the loop's ids, and with its own fixed green icon/label rather than a lettered one.
+    // Dedicated +1/+1 and -1/-1 counter actions -- reuse the same generic
+    // actAddCardCounter/actRemoveCardCounter plumbing as the lettered counters above, just pinned
+    // to PLUS_ONE_ONE_COUNTER_ID/MINUS_ONE_ONE_COUNTER_ID instead of one of the loop's ids, and
+    // with their own fixed green/red icons rather than a lettered one. The server annihilates the
+    // two in full the moment both are nonzero on the same card (rule 704.5q), so they share one
+    // on-card badge (see CardItem::paint()) even though each has its own menu action here.
     QIcon plusOneOneIcon = createCircleIcon(QColor(80, 220, 100));
     aAddPlusOneOneCounter =
         makeAction(this, [actions, sel]() { actions->actAddCardCounter(sel(), PLUS_ONE_ONE_COUNTER_ID); });
@@ -135,6 +138,14 @@ CardMenu::CardMenu(PlayerGraphicsItem *_player, const CardItem *_card, bool _sho
     aRemovePlusOneOneCounter =
         makeAction(this, [actions, sel]() { actions->actRemoveCardCounter(sel(), PLUS_ONE_ONE_COUNTER_ID); });
     aRemovePlusOneOneCounter->setIcon(plusOneOneIcon);
+
+    QIcon minusOneOneIcon = createCircleIcon(QColor(220, 80, 80));
+    aAddMinusOneOneCounter =
+        makeAction(this, [actions, sel]() { actions->actAddCardCounter(sel(), MINUS_ONE_ONE_COUNTER_ID); });
+    aAddMinusOneOneCounter->setIcon(minusOneOneIcon);
+    aRemoveMinusOneOneCounter =
+        makeAction(this, [actions, sel]() { actions->actRemoveCardCounter(sel(), MINUS_ONE_ONE_COUNTER_ID); });
+    aRemoveMinusOneOneCounter->setIcon(minusOneOneIcon);
 
     setShortcutsActive();
 
@@ -247,6 +258,10 @@ void CardMenu::createTableMenu(bool canModifyCard)
     addAction(aAddPlusOneOneCounter);
     if (card->getCounters().contains(PLUS_ONE_ONE_COUNTER_ID)) {
         addAction(aRemovePlusOneOneCounter);
+    }
+    addAction(aAddMinusOneOneCounter);
+    if (card->getCounters().contains(MINUS_ONE_ONE_COUNTER_ID)) {
+        addAction(aRemoveMinusOneOneCounter);
     }
     addAction(aSetAnnotation);
     addSeparator();
@@ -594,6 +609,8 @@ void CardMenu::retranslateUi()
 
     aAddPlusOneOneCounter->setText(tr("Add &+1/+1 counter"));
     aRemovePlusOneOneCounter->setText(tr("Remove +1/+1 &counter"));
+    aAddMinusOneOneCounter->setText(tr("Add &-1/-1 counter"));
+    aRemoveMinusOneOneCounter->setText(tr("Remove -1/-1 c&ounter"));
 
     mCardCounters->setTitle(tr("Ca&rd counters"));
 

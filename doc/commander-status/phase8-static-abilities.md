@@ -71,34 +71,59 @@ exclusion's wording, a deliberate smaller cut.
   whenever nothing is boosting the creature, so the client can tell "boosted" from "not" by a
   simple string comparison against its own `AttrPT` without needing an empty/null sentinel.
 - **`Server_Game::recomputeEffectivePT(controller, ges)`** (`server_game.{h,cpp}`) folds
-  `applyStaticEffects()` (unchanged from the slice above) together with a new dedicated
-  `PLUS_ONE_ONE_COUNTER_ID` card counter (`card_effects.h`, id 6) into each of `controller`'s
-  battlefield creatures' effective P/T, and pushes any that changed via the existing
-  `setCardAttrHelper()`/`AttrEffectivePT` plumbing — no bespoke event type needed. Called from two
-  trigger points, matching the "full live recompute" scope actually requested: whenever a card
-  enters or leaves `controller`'s own table zone (`Server_Player::onCardBeingMoved()` — covers a
-  creature or an anthem source itself showing up or leaving), and whenever a
-  `PLUS_ONE_ONE_COUNTER_ID` counter changes there (`Server_AbstractPlayer::cmdSetCardCounter()`/
-  `cmdIncCardCounter()`). Only `controller`'s own battlefield is ever recomputed — static abilities
-  never affect anyone else's creatures (see `applyStaticEffects()`'s "you control" scoping), so a
-  card entering/leaving *another* player's board never needs this. Combat math itself is
-  unaffected: it still calls `applyStaticEffects()` fresh at its own three read sites rather than
-  trusting this display-only broadcast value.
-- **Dedicated +1/+1 counter, not one of the six generic lettered counter slots**: reusing a
-  generic slot (`card_menu.cpp`'s `aAddCounter`/`aRemoveCounter` ids 0-5) would let a player's own
+  `applyStaticEffects()` (unchanged from the slice above) together with the net of two new dedicated
+  counters, `PLUS_ONE_ONE_COUNTER_ID` (`card_effects.h`, id 6) and `MINUS_ONE_ONE_COUNTER_ID` (id 7),
+  into each of `controller`'s battlefield creatures' effective P/T, and pushes any that changed via
+  the existing `setCardAttrHelper()`/`AttrEffectivePT` plumbing — no bespoke event type needed.
+  Called from two trigger points, matching the "full live recompute" scope actually requested:
+  whenever a card enters or leaves `controller`'s own table zone (`Server_Player::onCardBeingMoved()`
+  — covers a creature or an anthem source itself showing up or leaving), and whenever either counter
+  changes there (`Server_AbstractPlayer::cmdSetCardCounter()`/`cmdIncCardCounter()`). Only
+  `controller`'s own battlefield is ever recomputed — static abilities never affect anyone else's
+  creatures (see `applyStaticEffects()`'s "you control" scoping), so a card entering/leaving
+  *another* player's board never needs this.
+- **-1/-1 counters, and rule 704.5q annihilation**: a permanent can never simultaneously have both a
+  +1/+1 and a -1/-1 counter — whichever pair count is smaller annihilates in full the instant both
+  are nonzero. `Server_AbstractPlayer::annihilatePlusMinusCounters(zone, card, ges)` enforces this,
+  called right before `recomputeEffectivePT()` from both counter-changing command handlers whenever
+  either counter's id was just touched. Because of this invariant, at most one of the two is ever
+  actually nonzero at once, so the client (and every combat-math read site below) can just take
+  `+1/+1 count − -1/-1 count` as *the* net bonus without needing to reason about both being present.
+  The two share one on-card display (see paint coloring below) rather than each getting its own
+  badge, since by rule they're never simultaneously meaningful.
+- **Combat math bug found and fixed in the same pass**: gathering combat attackers/blockers
+  (`gatherCombatAttacks()`, both halves) and the post-damage lethal check
+  (`applyCombatDamageResult()`) all read `Server_Card::getPT()` (the base/manual P/T) and apply
+  `applyStaticEffects()` on top — but, until this pass, none of them added the +1/+1-counter net at
+  all. A creature boosted *only* by +1/+1 counters (no anthem in play) would show the correct boosted
+  number on the client (via `recomputeEffectivePT()`) while actually fighting, and being checked for
+  lethal damage, at its unboosted base stats — display and reality silently diverging. All three
+  sites now separately add the same `PLUS_ONE_ONE_COUNTER_ID − MINUS_ONE_ONE_COUNTER_ID` net on top
+  of `applyStaticEffects()`'s result, matching what `recomputeEffectivePT()` already computed for
+  display. `RulesEngine::parseNumericPT()`'s doc comment (`rules_engine.h`) — which used to claim
+  counters were "already baked into" `getPT()` by a client-side +1/+1 menu that predates the
+  dedicated counter (see git history) — is corrected to say what's actually true now: it returns
+  only the base P/T, and every caller must fold in static effects *and* the counter net itself.
+- **Dedicated +1/+1 and -1/-1 counters, not two of the six generic lettered counter slots**: reusing
+  a generic slot (`card_menu.cpp`'s `aAddCounter`/`aRemoveCounter` ids 0-5) would let a player's own
   generic-counter bookkeeping for some *other* purpose silently feed into the P/T-boost display —
   exactly the collision `DAMAGE_CARD_COUNTER_ID` (id 0) already has with generic slot "A" (a
-  pre-existing wart this change doesn't attempt to fix). `PLUS_ONE_ONE_COUNTER_ID = 6` is its own
-  id instead, with its own dedicated "Add/Remove +1/+1 counter" menu actions (fixed green icon, not
-  a lettered/settings-configurable color) sitting outside the generic "Card counters" submenu.
-- **Paint coloring** (`CardItem::paint()`, `card_item.cpp`): white/orange (unmodified/manually-set)
-  is unchanged for a non-boosted creature; a boosted creature shows green if the boost is a clean
-  buff (power and toughness both ≥ base, strictly greater in at least one) or falls back to the
-  existing orange otherwise (a debuff, or a mixed +X/-Y static ability this codebase doesn't
-  currently parse anyway).
+  pre-existing wart this change doesn't attempt to fix). `PLUS_ONE_ONE_COUNTER_ID = 6` /
+  `MINUS_ONE_ONE_COUNTER_ID = 7` are their own ids instead, each with its own dedicated
+  "Add/Remove ±1/±1 counter" menu action (fixed green/red icon, not a lettered/settings-configurable
+  color) sitting outside the generic "Card counters" submenu.
+- **Paint coloring and shape** (`CardItem::paint()`, `card_item.cpp`) — iterated live with the user
+  a few times before landing here: the badge is its own dark-gray, heavily-rounded, solid (not
+  translucent) box centered on the card, showing plain white "+N/+N" or "-N/-N" text sized from its
+  own font metrics so it can never render larger than the box or clip against it. Separate from this,
+  the *base* P/T text's own white/orange (unmodified/manually-set) convention is unchanged for a
+  non-boosted creature; a boosted creature's P/T text itself shows green if the boost is a clean buff
+  (power and toughness both ≥ base, strictly greater in at least one) or falls back to the existing
+  orange otherwise (a debuff, or a mixed +X/-Y static ability this codebase doesn't currently parse
+  anyway).
 - **Not done**: keyword-grant display (still server-only), and no recompute hook for a static
   ability changing on a card that's already on the battlefield without a zone move (e.g. `cmClone`/
-  `cmFlip` on an already-in-play card) — only entering/leaving the battlefield and +1/+1-counter
+  `cmFlip` on an already-in-play card) — only entering/leaving the battlefield and ±1/±1-counter
   changes trigger a recompute, matching exactly what was scoped, not a general
   "watch everything" invalidation.
 
@@ -165,4 +190,19 @@ above.)
   counter-change recompute hook and the two boost sources compose correctly. This same menu
   addition grew the card context menu by one row, which shifted `combat_gate`'s own hardcoded
   right-click submenu coordinates (calibrated to the old menu height) by ~22px; `scenario.py`'s
-  coordinates were updated to match and the scenario re-verified passing.
+  coordinates were updated to match and the scenario re-verified passing. The badge's look (square
+  vs. circle, color, translucency, corner radius, position, outline) went through several more
+  iterations after this against the same live scenario, ending at the dark solid rounded box
+  described above in "What's built".
+- **-1/-1 counters and annihilation, live-verified 2026-07-22**: added a second +1/+1 counter to the
+  same live Myr (now 2 — base 1/1 + anthem 1/1 + 2 counters = 4/4, confirmed via
+  `AttrEffectivePT attr_value: "4/4"`), then triggered the new "Add -1/-1 counter" menu action once.
+  The client log shows all three resulting events in one batch: `counter_id: 7 counter_value: 1`
+  (the -1/-1 counter being added), immediately followed by `counter_id: 6 counter_value: 1` and
+  `counter_id: 7 counter_value: 0` (annihilation canceling one pair), then
+  `AttrEffectivePT attr_value: "3/3"` — proving `annihilatePlusMinusCounters()` fires over the real
+  wire and nets out correctly (base 1/1 + anthem 1/1 + net 1 remaining +1/+1 counter = 3/3). A
+  follow-up screenshot confirms the board shows a single **+1/+1** badge (not two, and not a stale
+  -1/-1) and **3/3** in green, matching. `combat_gate`'s menu coordinates needed a second
+  recalibration (the new -1/-1 menu row shifted things again); `scenario.py` updated and
+  re-verified passing.

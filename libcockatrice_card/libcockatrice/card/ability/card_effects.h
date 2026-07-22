@@ -57,6 +57,14 @@ constexpr int DAMAGE_CARD_COUNTER_ID = 0;
 // "+1/+1 Counter" menu action / paint() badge coloring, so both agree on the id.
 constexpr int PLUS_ONE_ONE_COUNTER_ID = 6;
 
+// Fork convention: the per-card counter id reserved for -1/-1 counters, the same dedicated-id
+// reasoning as PLUS_ONE_ONE_COUNTER_ID above. Rule 704.5q: a permanent can never simultaneously
+// have both a +1/+1 and a -1/-1 counter -- whichever pair count is smaller annihilates in full the
+// moment both are nonzero (see Server_AbstractPlayer::annihilatePlusMinusCounters()), so the two
+// share the same on-card badge (paint()'s net-value square, signed "+N/+N" or "-N/-N") rather than
+// each getting its own -- they're mutually exclusive by rule, never simultaneously displayed.
+constexpr int MINUS_ONE_ONE_COUNTER_ID = 7;
+
 struct CardEffect
 {
     EffectKind kind;

@@ -861,12 +861,17 @@ Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAtt
             }
             const auto attackerEffective = Rules::RulesEngine::applyStaticEffects(
                 card->getId(), attackerPT->first, attackerPT->second, card->getKeywordSet(), attackerStaticSources);
+            // Rule 704.5q: the two counters annihilate in full whenever both are nonzero (see
+            // Server_AbstractPlayer::annihilatePlusMinusCounters()), so at most one of these is
+            // ever nonzero in practice -- the subtraction is just the net either way.
+            const int attackerCounterNet =
+                card->getCounter(PLUS_ONE_ONE_COUNTER_ID) - card->getCounter(MINUS_ONE_ONE_COUNTER_ID);
 
             Rules::RulesEngine::CombatAttack attack;
             attack.attacker = {it.key(),
                                card->getId(),
-                               attackerEffective.power,
-                               attackerEffective.toughness,
+                               attackerEffective.power + attackerCounterNet,
+                               attackerEffective.toughness + attackerCounterNet,
                                attackerEffective.keywords.contains(QStringLiteral("Deathtouch")),
                                attackerEffective.keywords.contains(QStringLiteral("Trample")),
                                attackerEffective.keywords.contains(QStringLiteral("First strike")),
@@ -896,8 +901,10 @@ Server_Game::gatherCombatAttacks(const QSet<QPair<int, int>> &declaredBlockedAtt
                     const auto blockerEffective = Rules::RulesEngine::applyStaticEffects(
                         blockerCard->getId(), blockerPT->first, blockerPT->second, blockerCard->getKeywordSet(),
                         blockerStaticSources);
-                    blockers.append({blockerIt.key(), blockerCard->getId(), blockerEffective.power,
-                                     blockerEffective.toughness,
+                    const int blockerCounterNet = blockerCard->getCounter(PLUS_ONE_ONE_COUNTER_ID) -
+                                                  blockerCard->getCounter(MINUS_ONE_ONE_COUNTER_ID);
+                    blockers.append({blockerIt.key(), blockerCard->getId(), blockerEffective.power + blockerCounterNet,
+                                     blockerEffective.toughness + blockerCounterNet,
                                      blockerEffective.keywords.contains(QStringLiteral("Deathtouch")),
                                      blockerEffective.keywords.contains(QStringLiteral("Trample")),
                                      blockerEffective.keywords.contains(QStringLiteral("First strike")),
@@ -1013,8 +1020,10 @@ void Server_Game::applyCombatDamageResult(const Rules::RulesEngine::CombatDamage
             if (pt) {
                 const auto effective = Rules::RulesEngine::applyStaticEffects(card->getId(), pt->first, pt->second,
                                                                               card->getKeywordSet(), staticSources);
+                const int counterNet =
+                    card->getCounter(PLUS_ONE_ONE_COUNTER_ID) - card->getCounter(MINUS_ONE_ONE_COUNTER_ID);
                 if (Rules::RulesEngine::isLethallyDamaged(
-                        card->getCounter(DAMAGE_CARD_COUNTER_ID), effective.toughness, anyDeathtouchDamage,
+                        card->getCounter(DAMAGE_CARD_COUNTER_ID), effective.toughness + counterNet, anyDeathtouchDamage,
                         effective.keywords.contains(QStringLiteral("Indestructible")))) {
                     lethalCards.append({ownerIt.key(), card->getId()});
                 }
@@ -1058,9 +1067,13 @@ void Server_Game::recomputeEffectivePT(Server_AbstractPlayer *controller, GameEv
 
         const auto effective = Rules::RulesEngine::applyStaticEffects(card->getId(), basePT->first, basePT->second,
                                                                       card->getKeywordSet(), sources);
-        const int plusOneOne = card->getCounter(PLUS_ONE_ONE_COUNTER_ID);
-        const int effPower = effective.power + plusOneOne;
-        const int effToughness = effective.toughness + plusOneOne;
+        // Rule 704.5q: the two counters annihilate in full whenever both are nonzero (see
+        // Server_AbstractPlayer::annihilatePlusMinusCounters()), so at most one of these is ever
+        // nonzero in practice -- the subtraction is just the net either way.
+        const int netPlusMinusCounters =
+            card->getCounter(PLUS_ONE_ONE_COUNTER_ID) - card->getCounter(MINUS_ONE_ONE_COUNTER_ID);
+        const int effPower = effective.power + netPlusMinusCounters;
+        const int effToughness = effective.toughness + netPlusMinusCounters;
 
         const QString newEffectivePT = QStringLiteral("%1/%2").arg(effPower).arg(effToughness);
         if (newEffectivePT == card->getEffectivePT()) {

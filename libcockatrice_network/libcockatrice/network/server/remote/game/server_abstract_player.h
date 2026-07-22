@@ -119,6 +119,13 @@ public:
                                              CardAttribute attribute,
                                              const QString &attrValue,
                                              Server_Card *unzonedCard = nullptr);
+    /**
+     * @brief Rule 704.5q: a permanent can never simultaneously have both a +1/+1 and a -1/-1
+     * counter -- whichever pair count is smaller annihilates in full. Called from
+     * cmdSetCardCounter()/cmdIncCardCounter() any time either counter on @p card (in @p zone) just
+     * changed; a no-op if @p card doesn't currently have both counters nonzero.
+     */
+    void annihilatePlusMinusCounters(Server_CardZone *zone, Server_Card *card, GameEventStorage &ges);
 
     virtual Response::ResponseCode
     cmdConcede(const Command_Concede &cmd, ResponseContainer &rc, GameEventStorage &ges) override;

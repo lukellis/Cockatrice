@@ -108,17 +108,22 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     painter->save();
     AbstractCardItem::paint(painter, option, widget);
 
-    // The dedicated +1/+1 counter gets its own translucent-square "+N/+N" badge (below) instead of
-    // one of the generic lettered counters' small colored circles -- it's excluded from this loop
-    // (and from its position/count stacking) entirely so it doesn't fight the generic counters for
-    // a grid slot.
+    // The dedicated +1/+1 and -1/-1 counters share one translucent-square "+N/+N"/"-N/-N" badge
+    // (below) instead of one of the generic lettered counters' small colored circles -- they're
+    // excluded from this loop (and from its position/count stacking) entirely so they don't fight
+    // the generic counters for a grid slot. Rule 704.5q means the two never coexist (whichever pair
+    // count is smaller annihilates in full server-side -- see annihilatePlusMinusCounters()), so at
+    // most one of these two is ever nonzero; the net covers both directions with one code path.
     const int plusOneOneValue = state->getCounters().value(PLUS_ONE_ONE_COUNTER_ID, 0);
-    const int genericCounterCount = state->getCounters().size() - (plusOneOneValue > 0 ? 1 : 0);
+    const int minusOneOneValue = state->getCounters().value(MINUS_ONE_ONE_COUNTER_ID, 0);
+    const int netPlusMinusCounters = plusOneOneValue - minusOneOneValue;
+    const int hiddenCounterSlots = (plusOneOneValue > 0 ? 1 : 0) + (minusOneOneValue > 0 ? 1 : 0);
+    const int genericCounterCount = state->getCounters().size() - hiddenCounterSlots;
     int i = 0;
     QMapIterator<int, int> counterIterator(state->getCounters());
     while (counterIterator.hasNext()) {
         counterIterator.next();
-        if (counterIterator.key() == PLUS_ONE_ONE_COUNTER_ID) {
+        if (counterIterator.key() == PLUS_ONE_ONE_COUNTER_ID || counterIterator.key() == MINUS_ONE_ONE_COUNTER_ID) {
             continue;
         }
         QColor _color = cardCounterSettings.color(counterIterator.key());
@@ -129,7 +134,7 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     QSizeF translatedSize = getTranslatedSize(painter);
     qreal scaleFactor = translatedSize.width() / boundingRect().width();
 
-    if (plusOneOneValue > 0) {
+    if (netPlusMinusCounters != 0) {
         painter->save();
         // Drawn in transformPainter()'s reset, device-pixel coordinate space (like the P/T text
         // below), not the raw untransformed space the generic counter circles above use -- that
@@ -138,7 +143,8 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         // apparent size regardless of zoom, the same convention the P/T/annotation text relies on.
         transformPainter(painter, translatedSize, tapAngle);
 
-        const QString badgeText = QStringLiteral("+%1/+%1").arg(plusOneOneValue);
+        const QString badgeText = netPlusMinusCounters > 0 ? QStringLiteral("+%1/+%1").arg(netPlusMinusCounters)
+                                                           : QStringLiteral("-%1/-%1").arg(-netPlusMinusCounters);
         QFont font = painter->font();
         font.setBold(true);
         QFontMetrics fm(font);
