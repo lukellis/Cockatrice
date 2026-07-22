@@ -117,10 +117,17 @@ via a screenshot and rejected (the oversized pip bled past the counter's own edg
 the pentagon widget itself (purely a layout container now); each mana counter
 (`GeneralCounter::paint()`, `counter_general.cpp`) draws a small hand-drawn pictograph
 evoking its color — sun (W), water drop (U), skull (B), flame (R), tree (G) — from new
-transparent-background SVGs at `cockatrice/resources/icons/counter_glyphs/`, each in a
-natural contrasting tone (not a uniform gray recolor) against its own counter sphere,
-sized to ~62% of the counter's diameter so it's always fully contained. Colorless
-deliberately gets no glyph. The counters themselves are still real `CounterState`-backed
+transparent-background SVGs at `cockatrice/resources/icons/counter_glyphs/`, sized to
+~62% of the counter's diameter (fully contained, no halo) and nudged up ~8% of its own
+size from dead-center (these pointed-top/rounded-bottom silhouettes have more visual
+weight low, so exact geometric centering reads as sitting low). Went through two more
+color iterations after that: first each glyph in its own natural contrasting tone, then
+(per explicit follow-up feedback) all five recolored to one flat dark gray (`#2a2a2a`,
+matching the board's own dark-theme background tone) — including the skull, even though
+its counter sphere (`b`, black mana) is itself dark enough that the contrast there is
+genuinely weak; that trade-off was requested explicitly ("even skull") after seeing the
+alternative, not an oversight. Colorless deliberately gets no glyph. The counters
+themselves are still real `CounterState`-backed
 `GeneralCounter`s (unchanged click/tooltip/menu behavior), just reparented onto the
 pentagon and shrunk (radius 20→12) to fit. `PlayerGraphicsItem::counterAreaWidth` grew
 55→90 to fit the ~88px-wide pentagon centered. Also swapped `w`'s sphere color from pale

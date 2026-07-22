@@ -115,8 +115,12 @@ void GeneralCounter::paint(QPainter *painter, const QStyleOptionGraphicsItem * /
         // watermark/halo bleeding past the counter's own edge.
         const int glyphSize = static_cast<int>(translatedHeight * 0.62);
         const QPixmap glyph = manaGlyphPixmap(glyphIt.value(), glyphSize);
-        const qreal offset = (translatedHeight - glyphSize) / 2.0;
-        painter->drawPixmap(QPointF(offset, offset), glyph);
+        const qreal xOffset = (translatedHeight - glyphSize) / 2.0;
+        // Nudged up slightly from dead-center: these glyphs (pointed-top, rounded-bottom
+        // silhouettes) have more visual weight in their lower half, so a geometrically centered
+        // placement reads as sitting a bit low.
+        const qreal yOffset = xOffset - glyphSize * 0.08;
+        painter->drawPixmap(QPointF(xOffset, yOffset), glyph);
     }
 
     if (value) {

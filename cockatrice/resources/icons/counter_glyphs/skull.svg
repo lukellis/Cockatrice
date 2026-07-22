@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <path fill-rule="evenodd" fill="#eeeeee" d="
+  <path fill-rule="evenodd" fill="#2a2a2a" d="
     M50 15 A32 30 0 0 1 82 45 C82 56 76 62 70 66 L70 78 C70 84 64 88 58 88 L58 78 L50 84 L42 78 L42 88
     C36 88 30 84 30 78 L30 66 C24 62 18 56 18 45 A32 30 0 0 1 50 15 Z
     M38 42 a6 6 0 1 0 0.01 0 Z
