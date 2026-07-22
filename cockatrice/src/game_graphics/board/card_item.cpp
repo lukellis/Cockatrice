@@ -142,8 +142,24 @@ void CardItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         QFont font = painter->font();
         font.setBold(true);
         QFontMetrics fm(font);
-        const double w = fm.horizontalAdvance(badgeText) * 1.3;
-        const double h = fm.height() * 1.4;
+
+        // Cap the badge to a modest corner of the card regardless of the ambient device-constant
+        // font size transformPainter() just set -- that size is tuned for the short "N/N" P/T
+        // string, and the wider "+N/+N" text (worse still at double/triple-digit counts) could
+        // otherwise render wider than the whole card and spill off its edge. Shrink the font to fit
+        // a fixed fraction of the card instead of using the ambient size unconditionally.
+        const double maxBadgeWidth = translatedSize.width() * 0.4;
+        const double maxBadgeHeight = translatedSize.height() * 0.25;
+        const double neededWidth = fm.horizontalAdvance(badgeText) * 1.25;
+        const double neededHeight = fm.height() * 1.3;
+        const double shrink = qMin(1.0, qMin(maxBadgeWidth / neededWidth, maxBadgeHeight / neededHeight));
+        if (shrink < 1.0) {
+            font.setPixelSize(qMax(6, static_cast<int>(font.pixelSize() * shrink)));
+            fm = QFontMetrics(font);
+        }
+
+        const double w = fm.horizontalAdvance(badgeText) * 1.25;
+        const double h = fm.height() * 1.3;
         const QRectF badgeRect(4 * scaleFactor, 4 * scaleFactor, w, h);
 
         // Translucent green square, deliberately distinct in shape and text from the generic
